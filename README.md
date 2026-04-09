@@ -132,6 +132,8 @@ At runtime the API writes under `SPECRAIL_DATA_DIR` (default from config), with 
       <runId>.json
     events/
       <runId>.jsonl
+    github-run-comment-sync/
+      <trackId>.json
   sessions/
     <sessionRef>.json
     <sessionRef>.events.jsonl
@@ -143,6 +145,7 @@ At runtime the API writes under `SPECRAIL_DATA_DIR` (default from config), with 
 Notes:
 - `artifacts/tracks/<trackId>/events.jsonl` is materialized as part of the artifact contract.
 - the current API reads run events from `state/events/<runId>.jsonl`.
+- GitHub run summary sync metadata is persisted under `state/github-run-comment-sync/<trackId>.json`.
 - session-level executor logs are also persisted separately under `sessions/`.
 
 ## Domain model snapshot
@@ -159,6 +162,7 @@ Notes:
 - terminal run states reconcile back into track status with a first-pass policy: `completed -> review`, `failed -> failed`, `cancelled -> blocked`
 - run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, and event summary
 - `@specrail/core` exposes `formatGitHubRunCommentSummary(...)` plus `SpecRailService.publishRunSummary(...)` for deterministic linked issue/PR comment sync
+- published summary sync state stores last comment ids and sync outcomes so retries can reuse known GitHub comments before falling back to marker scans
 
 ### Event types
 Normalized event types currently defined in core:

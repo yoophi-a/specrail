@@ -6,6 +6,7 @@ import test from "node:test";
 
 import type { Execution, ExecutionEvent, Project, Track } from "../../domain/types.js";
 import {
+  FileGitHubRunCommentSyncStore,
   FileExecutionRepository,
   FileProjectRepository,
   FileTrackRepository,
@@ -122,4 +123,44 @@ test("jsonl event store appends and lists events in order", async () => {
 
   assert.deepEqual(await eventStore.listByExecution("execution-1"), events);
   assert.deepEqual(await eventStore.listByExecution("missing-execution"), []);
+});
+
+test("github run comment sync store persists comment metadata by track id", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-sync-"));
+  const syncStore = new FileGitHubRunCommentSyncStore(rootDir);
+
+  await syncStore.upsert({
+    id: "track-1",
+    trackId: "track-1",
+    updatedAt: "2026-04-10T00:20:00.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 31, url: "https://github.com/yoophi-a/specrail/issues/31" },
+        commentId: 3101,
+        lastRunId: "run-1",
+        lastRunStatus: "completed",
+        lastPublishedAt: "2026-04-10T00:20:00.000Z",
+        lastCommentBody: "summary",
+        lastSyncStatus: "success",
+      },
+    ],
+  });
+
+  assert.deepEqual(await syncStore.getByTrackId("track-1"), {
+    id: "track-1",
+    trackId: "track-1",
+    updatedAt: "2026-04-10T00:20:00.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 31, url: "https://github.com/yoophi-a/specrail/issues/31" },
+        commentId: 3101,
+        lastRunId: "run-1",
+        lastRunStatus: "completed",
+        lastPublishedAt: "2026-04-10T00:20:00.000Z",
+        lastCommentBody: "summary",
+        lastSyncStatus: "success",
+      },
+    ],
+  });
+  assert.equal(await syncStore.getByTrackId("missing-track"), null);
 });

@@ -7,6 +7,7 @@ import {
   type ExecutionEvent,
   type GitHubRunCommentPublishResult,
   type GitHubRunCommentPublisher,
+  type GitHubRunCommentSyncState,
   type GitHubRunCommentTarget,
   type Track,
 } from "@specrail/core";
@@ -75,7 +76,12 @@ export class GitHubRunCommentGhPublisher implements GitHubRunCommentPublisher {
     this.apiClient = options.apiClient ?? new GhCliApiClient();
   }
 
-  async publishRunSummary(input: { track: Track; run: Execution; events: ExecutionEvent[] }): Promise<GitHubRunCommentPublishResult[]> {
+  async publishRunSummary(input: {
+    track: Track;
+    run: Execution;
+    events: ExecutionEvent[];
+    syncState?: GitHubRunCommentSyncState;
+  }): Promise<GitHubRunCommentPublishResult[]> {
     const body = formatGitHubRunCommentSummary({
       track: input.track,
       run: input.run,
@@ -87,7 +93,12 @@ export class GitHubRunCommentGhPublisher implements GitHubRunCommentPublisher {
 
     for (const target of this.listTargets(input.track)) {
       const { owner, repo, number } = parseGitHubTarget(target);
-      const existing = await this.findExistingComment({ owner, repo, number, markerKey, viewerLogin });
+      const syncRecord = input.syncState?.comments.find(
+        (comment) => comment.target.kind === target.kind && comment.target.url === target.url,
+      );
+      const existing =
+        (await this.findCommentById({ owner, repo, commentId: syncRecord?.commentId, markerKey, viewerLogin })) ??
+        (await this.findExistingComment({ owner, repo, number, markerKey, viewerLogin }));
 
       if (existing && (existing.body ?? "") === body) {
         results.push({ action: "noop", body, target, commentId: existing.id });
@@ -166,6 +177,36 @@ export class GitHubRunCommentGhPublisher implements GitHubRunCommentPublisher {
     return comments.find(
       (comment) => comment.user?.login === input.viewerLogin && typeof comment.body === "string" && comment.body.includes(input.markerKey),
     );
+  }
+
+  private async findCommentById(input: {
+    owner: string;
+    repo: string;
+    commentId: number | undefined;
+    markerKey: string;
+    viewerLogin: string;
+  }): Promise<GitHubCommentRecord | undefined> {
+    if (!input.commentId) {
+      return undefined;
+    }
+
+    try {
+      const comment = await this.apiClient.request<GitHubCommentRecord>([
+        `repos/${input.owner}/${input.repo}/issues/comments/${input.commentId}`,
+      ]);
+
+      if (
+        comment.user?.login === input.viewerLogin &&
+        typeof comment.body === "string" &&
+        comment.body.includes(input.markerKey)
+      ) {
+        return comment;
+      }
+
+      return undefined;
+    } catch {
+      return undefined;
+    }
   }
 }
 

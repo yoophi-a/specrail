@@ -33,6 +33,30 @@ export interface GitHubPullRequestReference {
   url: string;
 }
 
+export interface GitHubRunCommentSyncTarget {
+  kind: "issue" | "pull_request";
+  number: number;
+  url: string;
+}
+
+export interface GitHubRunCommentSyncRecord {
+  target: GitHubRunCommentSyncTarget;
+  commentId?: number;
+  lastRunId: string;
+  lastRunStatus: ExecutionStatus;
+  lastPublishedAt: string;
+  lastCommentBody?: string;
+  lastSyncStatus: "success" | "failed";
+  lastSyncError?: string;
+}
+
+export interface GitHubRunCommentSyncState {
+  id: string;
+  trackId: string;
+  updatedAt: string;
+  comments: GitHubRunCommentSyncRecord[];
+}
+
 export type ExecutionStatus =
   | "created"
   | "queued"

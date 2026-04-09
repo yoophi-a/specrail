@@ -1,4 +1,4 @@
-import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.js";
+import type { Execution, ExecutionEvent, GitHubRunCommentSyncState, Project, Track } from "../domain/types.js";
 
 export interface GitHubRunCommentTarget {
   kind: "issue" | "pull_request";
@@ -18,7 +18,13 @@ export interface GitHubRunCommentPublisher {
     track: Track;
     run: Execution;
     events: ExecutionEvent[];
+    syncState?: GitHubRunCommentSyncState;
   }): Promise<GitHubRunCommentPublishResult[]>;
+}
+
+export interface GitHubRunCommentSyncStore {
+  getByTrackId(trackId: string): Promise<GitHubRunCommentSyncState | null>;
+  upsert(state: GitHubRunCommentSyncState): Promise<void>;
 }
 
 export interface ProjectRepository {

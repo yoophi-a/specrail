@@ -8,6 +8,7 @@ import { CodexAdapter, GitHubRunCommentGhPublisher } from "@specrail/adapters";
 import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
 import {
   APPROVAL_STATUSES,
+  FileGitHubRunCommentSyncStore,
   FileExecutionRepository,
   FileProjectRepository,
   FileTrackRepository,
@@ -122,6 +123,7 @@ function createDependencies(dataDir: string, repoArtifactRoot: string, githubPub
   const templateDir = path.resolve(process.cwd(), ".specrail-template");
 
   const eventStore = new JsonlEventStore(stateDir);
+  const githubRunCommentSyncStore = new FileGitHubRunCommentSyncStore(stateDir);
   const projectRepository = new FileProjectRepository(stateDir);
   const trackRepository = new FileTrackRepository(stateDir);
   const executionRepository = new FileExecutionRepository(stateDir);
@@ -168,6 +170,7 @@ function createDependencies(dataDir: string, repoArtifactRoot: string, githubPub
     },
     workspaceRoot,
     githubRunCommentPublisher: githubPublishEnabled ? new GitHubRunCommentGhPublisher() : undefined,
+    githubRunCommentSyncStore,
   };
 
   service = new SpecRailService(serviceDependencies);

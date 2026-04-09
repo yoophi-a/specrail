@@ -198,3 +198,159 @@ test("GitHubRunCommentGhPublisher updates existing marker-matched comments and n
     1,
   );
 });
+
+test("GitHubRunCommentGhPublisher reuses persisted comment ids before falling back to comment scans", async () => {
+  const client = new FakeGitHubApiClient(async (args) => {
+    if (args[0] === "user") {
+      return { login: "specrail-bot" };
+    }
+
+    if (args[0] === "repos/yoophi-a/specrail/issues/comments/3001") {
+      return {
+        id: 3001,
+        body: "<!-- specrail:run-summary track=track-30 run=run-1 status=completed -->\nbody\n",
+        user: { login: "specrail-bot" },
+      };
+    }
+
+    throw new Error(`Unexpected request: ${args.join(" ")}`);
+  });
+
+  const publisher = new GitHubRunCommentGhPublisher({ apiClient: client });
+  const results = await publisher.publishRunSummary({
+    track: {
+      id: "track-30",
+      projectId: "project-default",
+      title: "Publish run summaries",
+      description: "",
+      status: "review",
+      specStatus: "approved",
+      planStatus: "approved",
+      priority: "high",
+      createdAt: "2026-04-10T00:00:00.000Z",
+      updatedAt: "2026-04-10T00:16:00.000Z",
+      githubIssue: { number: 30, url: "https://github.com/yoophi-a/specrail/issues/30" },
+    },
+    run: {
+      id: "run-1",
+      trackId: "track-30",
+      backend: "codex",
+      profile: "default",
+      workspacePath: "/tmp/specrail/run-1",
+      branchName: "specrail/run-1",
+      sessionRef: "session:run-1",
+      status: "completed",
+      createdAt: "2026-04-10T00:10:00.000Z",
+      startedAt: "2026-04-10T00:10:00.000Z",
+      finishedAt: "2026-04-10T00:15:00.000Z",
+      summary: {
+        eventCount: 2,
+        lastEventSummary: "Run completed",
+        lastEventAt: "2026-04-10T00:15:00.000Z",
+      },
+    },
+    events,
+    syncState: {
+      id: "track-30",
+      trackId: "track-30",
+      updatedAt: "2026-04-10T00:15:00.000Z",
+      comments: [
+        {
+          target: { kind: "issue", number: 30, url: "https://github.com/yoophi-a/specrail/issues/30" },
+          commentId: 3001,
+          lastRunId: "run-1",
+          lastRunStatus: "completed",
+          lastPublishedAt: "2026-04-10T00:15:00.000Z",
+          lastCommentBody: "body",
+          lastSyncStatus: "success",
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(results.map((result) => result.action), ["updated"]);
+  assert.equal(client.calls.some((args) => args[0] === "repos/yoophi-a/specrail/issues/30/comments" && args.includes("--paginate")), false);
+});
+
+test("GitHubRunCommentGhPublisher falls back to comment scans when persisted comment id is stale", async () => {
+  const client = new FakeGitHubApiClient(async (args) => {
+    if (args[0] === "user") {
+      return { login: "specrail-bot" };
+    }
+
+    if (args[0] === "repos/yoophi-a/specrail/issues/comments/9999") {
+      throw new Error("comment not found");
+    }
+
+    if (args[0] === "repos/yoophi-a/specrail/issues/30/comments" && args.includes("--paginate")) {
+      return [
+        {
+          id: 3001,
+          body: "<!-- specrail:run-summary track=track-30 run=run-1 status=running -->\nold\n",
+          user: { login: "specrail-bot" },
+        },
+      ];
+    }
+
+    if (args[0] === "repos/yoophi-a/specrail/issues/comments/3001" && args.includes("PATCH")) {
+      return { id: 3001 };
+    }
+
+    throw new Error(`Unexpected request: ${args.join(" ")}`);
+  });
+
+  const publisher = new GitHubRunCommentGhPublisher({ apiClient: client });
+  const results = await publisher.publishRunSummary({
+    track: {
+      id: "track-30",
+      projectId: "project-default",
+      title: "Publish run summaries",
+      description: "",
+      status: "review",
+      specStatus: "approved",
+      planStatus: "approved",
+      priority: "high",
+      createdAt: "2026-04-10T00:00:00.000Z",
+      updatedAt: "2026-04-10T00:16:00.000Z",
+      githubIssue: { number: 30, url: "https://github.com/yoophi-a/specrail/issues/30" },
+    },
+    run: {
+      id: "run-1",
+      trackId: "track-30",
+      backend: "codex",
+      profile: "default",
+      workspacePath: "/tmp/specrail/run-1",
+      branchName: "specrail/run-1",
+      sessionRef: "session:run-1",
+      status: "completed",
+      createdAt: "2026-04-10T00:10:00.000Z",
+      startedAt: "2026-04-10T00:10:00.000Z",
+      finishedAt: "2026-04-10T00:15:00.000Z",
+      summary: {
+        eventCount: 2,
+        lastEventSummary: "Run completed",
+        lastEventAt: "2026-04-10T00:15:00.000Z",
+      },
+    },
+    events,
+    syncState: {
+      id: "track-30",
+      trackId: "track-30",
+      updatedAt: "2026-04-10T00:15:00.000Z",
+      comments: [
+        {
+          target: { kind: "issue", number: 30, url: "https://github.com/yoophi-a/specrail/issues/30" },
+          commentId: 9999,
+          lastRunId: "run-0",
+          lastRunStatus: "running",
+          lastPublishedAt: "2026-04-10T00:05:00.000Z",
+          lastCommentBody: "body",
+          lastSyncStatus: "success",
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(results.map((result) => result.action), ["updated"]);
+  assert.equal(client.calls.some((args) => args[0] === "repos/yoophi-a/specrail/issues/30/comments" && args.includes("--paginate")), true);
+});

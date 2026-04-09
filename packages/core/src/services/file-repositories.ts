@@ -5,15 +5,18 @@ import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.
 import type {
   EventStore,
   ExecutionRepository,
+  GitHubRunCommentSyncStore,
   ProjectRepository,
   TrackRepository,
 } from "./ports.js";
+import type { GitHubRunCommentSyncState } from "../domain/types.js";
 
 interface FileStatePaths {
   projectsDir: string;
   tracksDir: string;
   executionsDir: string;
   eventsDir: string;
+  githubRunCommentSyncDir: string;
 }
 
 export function getStatePaths(rootDir: string): FileStatePaths {
@@ -22,6 +25,7 @@ export function getStatePaths(rootDir: string): FileStatePaths {
     tracksDir: path.join(rootDir, "tracks"),
     executionsDir: path.join(rootDir, "executions"),
     eventsDir: path.join(rootDir, "events"),
+    githubRunCommentSyncDir: path.join(rootDir, "github-run-comment-sync"),
   };
 }
 
@@ -182,5 +186,21 @@ export class JsonlEventStore implements EventStore {
 
       throw error;
     }
+  }
+}
+
+export class FileGitHubRunCommentSyncStore implements GitHubRunCommentSyncStore {
+  private readonly repository: JsonFileRepository<GitHubRunCommentSyncState>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<GitHubRunCommentSyncState>(getStatePaths(rootDir).githubRunCommentSyncDir);
+  }
+
+  getByTrackId(trackId: string): Promise<GitHubRunCommentSyncState | null> {
+    return this.repository.getById(trackId);
+  }
+
+  upsert(state: GitHubRunCommentSyncState): Promise<void> {
+    return this.repository.update(state);
   }
 }

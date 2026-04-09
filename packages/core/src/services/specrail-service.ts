@@ -17,6 +17,7 @@ import type {
   ExecutionStatus,
   GitHubIssueReference,
   GitHubPullRequestReference,
+  GitHubRunCommentSyncState,
   Project,
   Track,
   TrackStatus,
@@ -27,6 +28,7 @@ import type {
   ExecutionRepository,
   GitHubRunCommentPublishResult,
   GitHubRunCommentPublisher,
+  GitHubRunCommentSyncStore,
   ProjectRepository,
   TrackRepository,
 } from "./ports.js";
@@ -88,6 +90,7 @@ export interface SpecRailServiceDependencies {
   };
   workspaceRoot: string;
   githubRunCommentPublisher?: GitHubRunCommentPublisher;
+  githubRunCommentSyncStore?: GitHubRunCommentSyncStore;
   now?: () => string;
   idGenerator?: () => string;
 }
@@ -272,6 +275,22 @@ function normalizeGitHubReference<T extends GitHubIssueReference | GitHubPullReq
     ...value,
     url: value.url.trim(),
   };
+}
+
+function listGitHubRunCommentTargets(track: Pick<Track, "githubIssue" | "githubPullRequest">): GitHubRunCommentSyncState["comments"][number]["target"][] {
+  const targets = [] as GitHubRunCommentSyncState["comments"][number]["target"][];
+
+  if (track.githubIssue) {
+    targets.push({ kind: "issue", number: track.githubIssue.number, url: track.githubIssue.url });
+  }
+
+  if (track.githubPullRequest) {
+    targets.push({ kind: "pull_request", number: track.githubPullRequest.number, url: track.githubPullRequest.url });
+  }
+
+  return targets.filter(
+    (target, index, all) => all.findIndex((candidate) => candidate.kind === target.kind && candidate.url === target.url) === index,
+  );
 }
 
 export class SpecRailService {
@@ -599,11 +618,63 @@ export class SpecRailService {
       return [];
     }
 
-    return this.dependencies.githubRunCommentPublisher.publishRunSummary({
-      track,
-      run: execution,
-      events: await this.dependencies.eventStore.listByExecution(execution.id),
-    });
+    const syncState = await this.dependencies.githubRunCommentSyncStore?.getByTrackId(track.id);
+    const events = await this.dependencies.eventStore.listByExecution(execution.id);
+    let results: GitHubRunCommentPublishResult[];
+
+    try {
+      results = await this.dependencies.githubRunCommentPublisher.publishRunSummary({
+        track,
+        run: execution,
+        events,
+        syncState: syncState ?? undefined,
+      });
+    } catch (error) {
+      if (this.dependencies.githubRunCommentSyncStore) {
+        const timestamp = this.now();
+        const previousComments = syncState?.comments ?? [];
+        await this.dependencies.githubRunCommentSyncStore.upsert({
+          id: track.id,
+          trackId: track.id,
+          updatedAt: timestamp,
+          comments: listGitHubRunCommentTargets(track).map((target) => {
+            const previous = previousComments.find((comment) => comment.target.kind === target.kind && comment.target.url === target.url);
+            return {
+              target,
+              commentId: previous?.commentId,
+              lastRunId: execution.id,
+              lastRunStatus: execution.status,
+              lastPublishedAt: previous?.lastPublishedAt ?? timestamp,
+              lastCommentBody: previous?.lastCommentBody,
+              lastSyncStatus: "failed" as const,
+              lastSyncError: error instanceof Error ? error.message : String(error),
+            };
+          }),
+        });
+      }
+
+      throw error;
+    }
+
+    if (this.dependencies.githubRunCommentSyncStore) {
+      const timestamp = this.now();
+      await this.dependencies.githubRunCommentSyncStore.upsert({
+        id: track.id,
+        trackId: track.id,
+        updatedAt: timestamp,
+        comments: results.map((result) => ({
+          target: result.target,
+          commentId: result.commentId,
+          lastRunId: execution.id,
+          lastRunStatus: execution.status,
+          lastPublishedAt: timestamp,
+          lastCommentBody: result.body,
+          lastSyncStatus: "success",
+        })),
+      } satisfies GitHubRunCommentSyncState);
+    }
+
+    return results;
   }
 
   private async requireRun(runId: string): Promise<Execution> {

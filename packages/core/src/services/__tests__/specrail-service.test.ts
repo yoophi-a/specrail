@@ -6,6 +6,7 @@ import test from "node:test";
 
 import type { ExecutionEvent } from "../../domain/types.js";
 import {
+  FileGitHubRunCommentSyncStore,
   FileExecutionRepository,
   FileProjectRepository,
   FileTrackRepository,
@@ -1038,4 +1039,178 @@ test("SpecRailService skips GitHub publishing when a track has no linked targets
 
   await service.startRun({ trackId: track.id, prompt: "Do the work" });
   assert.equal(publishCount, 0);
+});
+
+test("SpecRailService persists GitHub run comment sync metadata and passes it back on republish", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-publish-sync-"));
+  const syncStore = new FileGitHubRunCommentSyncStore(path.join(rootDir, "state"));
+  const syncStates: Array<number | undefined> = [];
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    githubRunCommentSyncStore: syncStore,
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    githubRunCommentPublisher: {
+      async publishRunSummary(input) {
+        syncStates.push(input.syncState?.comments[0]?.commentId);
+        return [
+          {
+            action: input.syncState ? "updated" : "created",
+            target: { kind: "issue", number: 31, url: "https://github.com/yoophi-a/specrail/issues/31" },
+            body: `summary:${input.run.status}`,
+            commentId: 3101,
+          },
+        ];
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = [
+        "2026-04-10T00:00:00.000Z",
+        "2026-04-10T00:00:01.000Z",
+        "2026-04-10T00:00:02.000Z",
+        "2026-04-10T00:00:03.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-10T00:00:03.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-sync", "run-sync"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Persist summary sync",
+    description: "Remember published comment ids.",
+    githubIssue: { number: 31, url: "https://github.com/yoophi-a/specrail/issues/31" },
+  });
+
+  const run = await service.startRun({ trackId: track.id, prompt: "publish" });
+  await service.publishRunSummary(run.id);
+
+  assert.deepEqual(syncStates, [undefined, 3101]);
+  assert.deepEqual(await syncStore.getByTrackId(track.id), {
+    id: track.id,
+    trackId: track.id,
+    updatedAt: "2026-04-10T00:00:03.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 31, url: "https://github.com/yoophi-a/specrail/issues/31" },
+        commentId: 3101,
+        lastRunId: run.id,
+        lastRunStatus: "running",
+        lastPublishedAt: "2026-04-10T00:00:03.000Z",
+        lastCommentBody: "summary:running",
+        lastSyncStatus: "success",
+      },
+    ],
+  });
+});
+
+test("SpecRailService records failed GitHub run summary sync attempts", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-publish-failure-"));
+  const syncStore = new FileGitHubRunCommentSyncStore(path.join(rootDir, "state"));
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    githubRunCommentSyncStore: syncStore,
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    githubRunCommentPublisher: {
+      async publishRunSummary() {
+        throw new Error("GitHub temporarily unavailable");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = ["2026-04-10T01:00:00.000Z", "2026-04-10T01:00:01.000Z"];
+      return () => values.shift() ?? "2026-04-10T01:00:01.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-failure", "run-failure"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Handle sync failures",
+    description: "Persist failure metadata for retry visibility.",
+    githubIssue: { number: 31, url: "https://github.com/yoophi-a/specrail/issues/31" },
+  });
+
+  await assert.rejects(
+    () => service.startRun({ trackId: track.id, prompt: "publish" }),
+    /GitHub temporarily unavailable/,
+  );
+
+  assert.deepEqual(await syncStore.getByTrackId(track.id), {
+    id: track.id,
+    trackId: track.id,
+    updatedAt: "2026-04-10T01:00:01.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 31, url: "https://github.com/yoophi-a/specrail/issues/31" },
+        lastRunId: "run-run-failure",
+        lastRunStatus: "running",
+        lastPublishedAt: "2026-04-10T01:00:01.000Z",
+        lastSyncStatus: "failed",
+        lastSyncError: "GitHub temporarily unavailable",
+      },
+    ],
+  });
 });
