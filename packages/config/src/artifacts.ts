@@ -18,8 +18,23 @@ export interface TrackArtifactPaths {
   eventsPath: string;
 }
 
+export interface RepoArtifactPaths {
+  rootDir: string;
+  projectPath: string;
+  tracksDir: string;
+}
+
+export interface RepoTrackArtifactPaths {
+  trackDir: string;
+  specPath: string;
+  planPath: string;
+  tasksPath: string;
+  syncPath: string;
+}
+
 export interface MaterializeTrackArtifactsInput {
   rootDir: string;
+  repoVisibleRootDir?: string;
   trackId: string;
   projectName: string;
   trackTitle: string;
@@ -53,6 +68,26 @@ export function getTrackArtifactPaths(rootDir: string, trackId: string): TrackAr
   };
 }
 
+export function getRepoArtifactPaths(rootDir: string): RepoArtifactPaths {
+  return {
+    rootDir,
+    projectPath: path.join(rootDir, "project.yaml"),
+    tracksDir: path.join(rootDir, "tracks"),
+  };
+}
+
+export function getRepoTrackArtifactPaths(rootDir: string, trackId: string): RepoTrackArtifactPaths {
+  const trackDir = path.join(rootDir, "tracks", trackId);
+
+  return {
+    trackDir,
+    specPath: path.join(trackDir, "spec.md"),
+    planPath: path.join(trackDir, "plan.md"),
+    tasksPath: path.join(trackDir, "tasks.md"),
+    syncPath: path.join(trackDir, "sync.json"),
+  };
+}
+
 async function readTemplate(templateDir: string, fileName: string): Promise<string> {
   return readFile(path.join(templateDir, fileName), "utf8");
 }
@@ -71,6 +106,17 @@ async function ensureProjectArtifacts(rootDir: string, templateDir: string, proj
     writeFile(projectPaths.workflowPath, workflowTemplate, "utf8"),
     writeFile(projectPaths.tracksIndexPath, tracksTemplate, "utf8"),
   ]);
+}
+
+async function ensureRepoArtifacts(rootDir: string, projectName: string): Promise<void> {
+  const repoPaths = getRepoArtifactPaths(rootDir);
+
+  await mkdir(repoPaths.tracksDir, { recursive: true });
+  await writeFile(
+    repoPaths.projectPath,
+    [`version: 1`, `project: ${JSON.stringify(projectName)}`, `managedBy: specrail`, ``].join("\n"),
+    "utf8",
+  );
 }
 
 export async function materializeTrackArtifacts(input: MaterializeTrackArtifactsInput): Promise<TrackArtifactPaths> {
@@ -94,6 +140,36 @@ export async function materializeTrackArtifacts(input: MaterializeTrackArtifacts
     writeFile(trackPaths.tasksPath, input.tasksContent, "utf8"),
     writeFile(trackPaths.eventsPath, "", "utf8"),
   ]);
+
+  if (input.repoVisibleRootDir) {
+    const repoTrackPaths = getRepoTrackArtifactPaths(input.repoVisibleRootDir, input.trackId);
+    const repoPaths = getRepoArtifactPaths(input.repoVisibleRootDir);
+
+    await ensureRepoArtifacts(input.repoVisibleRootDir, input.projectName);
+    await mkdir(repoTrackPaths.trackDir, { recursive: true });
+
+    const syncMetadata = {
+      version: 1,
+      trackId: input.trackId,
+      syncedAt: new Date().toISOString(),
+      source: {
+        runtimeArtifactRoot: path.relative(input.repoVisibleRootDir, trackPaths.trackDir),
+        runtimeDataRoot: path.relative(input.repoVisibleRootDir, input.rootDir),
+      },
+      files: {
+        spec: path.relative(repoPaths.rootDir, repoTrackPaths.specPath),
+        plan: path.relative(repoPaths.rootDir, repoTrackPaths.planPath),
+        tasks: path.relative(repoPaths.rootDir, repoTrackPaths.tasksPath),
+      },
+    };
+
+    await Promise.all([
+      writeFile(repoTrackPaths.specPath, input.specContent, "utf8"),
+      writeFile(repoTrackPaths.planPath, input.planContent, "utf8"),
+      writeFile(repoTrackPaths.tasksPath, input.tasksContent, "utf8"),
+      writeFile(repoTrackPaths.syncPath, `${JSON.stringify(syncMetadata, null, 2)}\n`, "utf8"),
+    ]);
+  }
 
   return trackPaths;
 }

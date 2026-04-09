@@ -1,20 +1,25 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { createDefaultServer } from "../index.js";
 
-async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void> {
+async function withServer(
+  run: (baseUrl: string, paths: { dataDir: string; repoArtifactDir: string }) => Promise<void>,
+): Promise<void> {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "specrail-api-"));
+  const repoArtifactDir = path.join(dataDir, "repo-visible");
   const previousNodeEnv = process.env.NODE_ENV;
   const previousDataDir = process.env.SPECRAIL_DATA_DIR;
   const previousPort = process.env.SPECRAIL_PORT;
+  const previousRepoArtifactDir = process.env.SPECRAIL_REPO_ARTIFACT_DIR;
 
   process.env.NODE_ENV = "test";
   process.env.SPECRAIL_DATA_DIR = dataDir;
+  process.env.SPECRAIL_REPO_ARTIFACT_DIR = repoArtifactDir;
   process.env.SPECRAIL_PORT = "0";
 
   const server = createDefaultServer();
@@ -30,7 +35,7 @@ async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void
   }
 
   try {
-    await run(`http://127.0.0.1:${address.port}`);
+    await run(`http://127.0.0.1:${address.port}`, { dataDir, repoArtifactDir });
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -38,6 +43,7 @@ async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void
     process.env.NODE_ENV = previousNodeEnv;
     process.env.SPECRAIL_DATA_DIR = previousDataDir;
     process.env.SPECRAIL_PORT = previousPort;
+    process.env.SPECRAIL_REPO_ARTIFACT_DIR = previousRepoArtifactDir;
   }
 }
 
@@ -115,7 +121,7 @@ async function openSseStream(url: string): Promise<{
 }
 
 test("API supports creating tracks, starting runs, and listing run events", async () => {
-  await withServer(async (baseUrl) => {
+  await withServer(async (baseUrl, paths) => {
     const trackResponse = await fetch(`${baseUrl}/tracks`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -140,6 +146,12 @@ test("API supports creating tracks, starting runs, and listing run events", asyn
     assert.match(getTrackPayload.artifacts.spec, /# Spec — Executor MVP/);
     assert.match(getTrackPayload.artifacts.plan, /# Plan/);
     assert.match(getTrackPayload.artifacts.tasks, /# Tasks — Executor MVP/);
+
+    const repoVisibleSync = JSON.parse(
+      await readFile(path.join(paths.repoArtifactDir, "tracks", trackPayload.track.id, "sync.json"), "utf8"),
+    ) as { trackId: string; source: { runtimeDataRoot: string } };
+    assert.equal(repoVisibleSync.trackId, trackPayload.track.id);
+    assert.equal(repoVisibleSync.source.runtimeDataRoot, "../artifacts");
 
     const runResponse = await fetch(`${baseUrl}/runs`, {
       method: "POST",
@@ -281,12 +293,12 @@ test("API supports resuming and cancelling a run", async () => {
     };
     assert.equal(cancelledPayload.run.status, "cancelled");
     assert.ok(cancelledPayload.run.finishedAt);
-    assert.equal(cancelledPayload.run.summary?.eventCount, 4);
+    assert.equal(cancelledPayload.run.summary?.eventCount, 5);
     assert.equal(cancelledPayload.run.summary?.lastEventSummary, `Cancelled Codex session ${runPayload.run.id}-codex`);
 
     const eventsResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
     const eventsPayload = (await eventsResponse.json()) as { events: Array<{ type: string; summary: string }> };
-    assert.equal(eventsPayload.events.length, 4);
+    assert.equal(eventsPayload.events.length, 5);
     assert.equal(eventsPayload.events[0]?.summary, "Run started");
     assert.match(eventsPayload.events[1]?.summary ?? "", /Spawned Codex session/);
     assert.match(eventsPayload.events[2]?.summary ?? "", /Resumed Codex session/);

@@ -108,7 +108,7 @@ class RequestValidationError extends Error {
   }
 }
 
-function createDependencies(dataDir: string): DefaultDependencies {
+function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultDependencies {
   const stateDir = path.join(dataDir, "state");
   const artifactRoot = path.join(dataDir, "artifacts");
   const workspaceRoot = path.join(dataDir, "workspaces");
@@ -130,6 +130,7 @@ function createDependencies(dataDir: string): DefaultDependencies {
       async write(input) {
         await materializeTrackArtifacts({
           rootDir: artifactRoot,
+          repoVisibleRootDir: repoArtifactRoot,
           templateDir,
           trackId: input.track.id,
           projectName: input.project.name,
@@ -697,7 +698,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
 export function createDefaultServer(): http.Server {
   const config = loadConfig();
-  const dependencies = createDependencies(config.dataDir);
+  const dependencies = createDependencies(config.dataDir, config.repoArtifactDir);
 
   return createSpecRailHttpServer({
     artifactRoot: dependencies.artifactRoot,
