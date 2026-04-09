@@ -50,6 +50,16 @@ interface ResumeRunRequestBody {
   prompt: string;
 }
 
+interface TrackListQuery {
+  status?: TrackStatus;
+  priority?: TrackRequestBody["priority"];
+}
+
+interface RunListQuery {
+  trackId?: string;
+  status?: "created" | "queued" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
+}
+
 interface DefaultDependencies {
   artifactRoot: string;
   eventLogDir: string;
@@ -186,6 +196,10 @@ function getPathSegments(request: IncomingMessage): string[] {
     .filter(Boolean);
 }
 
+function getSearchParams(request: IncomingMessage): URLSearchParams {
+  return new URL(request.url ?? "/", "http://localhost").searchParams;
+}
+
 function writeSseEvent(response: ServerResponse, event: ExecutionEvent): void {
   response.write(`event: execution-event\n`);
   response.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -291,6 +305,41 @@ function assertValidResumeRunBody(body: ResumeRunRequestBody): void {
 
   if (promptDetail) {
     throw new RequestValidationError("request validation failed", [promptDetail]);
+  }
+}
+
+function assertValidTrackListQuery(query: TrackListQuery): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (query.status !== undefined && !isTrackStatus(query.status)) {
+    details.push({ field: "status", message: "must be a valid track status" });
+  }
+
+  if (query.priority !== undefined && !["low", "medium", "high"].includes(query.priority)) {
+    details.push({ field: "priority", message: "must be one of low, medium, high" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidRunListQuery(query: RunListQuery): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (query.trackId !== undefined && !query.trackId.trim()) {
+    details.push({ field: "trackId", message: "must not be empty" });
+  }
+
+  if (
+    query.status !== undefined &&
+    !["created", "queued", "running", "waiting_approval", "completed", "failed", "cancelled"].includes(query.status)
+  ) {
+    details.push({ field: "status", message: "must be a valid run status" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
   }
 }
 
@@ -415,6 +464,19 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "GET" && segments.length === 1 && segments[0] === "tracks") {
+        const searchParams = getSearchParams(request);
+        const query: TrackListQuery = {
+          status: (searchParams.get("status") ?? undefined) as TrackStatus | undefined,
+          priority: (searchParams.get("priority") ?? undefined) as TrackRequestBody["priority"] | undefined,
+        };
+        assertValidTrackListQuery(query);
+
+        const tracks = await deps.service.listTracks(query);
+        sendJson(response, 200, { tracks });
+        return;
+      }
+
       if (method === "GET" && segments.length === 2 && segments[0] === "tracks") {
         const track = await deps.service.getTrack(segments[1] ?? "");
 
@@ -448,6 +510,19 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
         const run = await deps.service.startRun(body);
         sendJson(response, 201, { run });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 1 && segments[0] === "runs") {
+        const searchParams = getSearchParams(request);
+        const query: RunListQuery = {
+          trackId: searchParams.get("trackId") ?? undefined,
+          status: (searchParams.get("status") ?? undefined) as RunListQuery["status"],
+        };
+        assertValidRunListQuery(query);
+
+        const runs = await deps.service.listRuns(query);
+        sendJson(response, 200, { runs });
         return;
       }
 

@@ -338,6 +338,81 @@ test("API supports updating track workflow and approval state", async () => {
   });
 });
 
+test("API lists tracks and runs with basic filters", async () => {
+  await withServer(async (baseUrl) => {
+    const trackOneResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "First track",
+        description: "Used for run listing",
+        priority: "high",
+      }),
+    });
+    const trackOne = (await trackOneResponse.json()) as { track: { id: string } };
+
+    const trackTwoResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Second track",
+        description: "Used for completed run listing",
+        priority: "low",
+      }),
+    });
+    const trackTwo = (await trackTwoResponse.json()) as { track: { id: string } };
+
+    await fetch(`${baseUrl}/tracks/${trackOne.track.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "ready" }),
+    });
+
+    const trackListResponse = await fetch(`${baseUrl}/tracks?priority=low`);
+    assert.equal(trackListResponse.status, 200);
+    const trackListPayload = (await trackListResponse.json()) as { tracks: Array<{ id: string; priority: string }> };
+    assert.deepEqual(trackListPayload.tracks.map((track) => track.id), [trackTwo.track.id]);
+
+    const trackStatusResponse = await fetch(`${baseUrl}/tracks?status=ready`);
+    const trackStatusPayload = (await trackStatusResponse.json()) as { tracks: Array<{ id: string }> };
+    assert.deepEqual(trackStatusPayload.tracks.map((track) => track.id), [trackOne.track.id]);
+
+    const runOneResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackOne.track.id,
+        prompt: "Start first run",
+      }),
+    });
+    const runOne = (await runOneResponse.json()) as { run: { id: string } };
+
+    const runTwoResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackTwo.track.id,
+        prompt: "Start second run",
+      }),
+    });
+    const runTwo = (await runTwoResponse.json()) as { run: { id: string } };
+
+    const cancelRunTwoResponse = await fetch(`${baseUrl}/runs/${runTwo.run.id}/cancel`, {
+      method: "POST",
+    });
+    assert.equal(cancelRunTwoResponse.status, 200);
+
+    const runListResponse = await fetch(`${baseUrl}/runs?trackId=${trackOne.track.id}`);
+    assert.equal(runListResponse.status, 200);
+    const runListPayload = (await runListResponse.json()) as { runs: Array<{ id: string; trackId: string }> };
+    assert.deepEqual(runListPayload.runs.map((run) => run.id), [runOne.run.id]);
+
+    const cancelledRunListResponse = await fetch(`${baseUrl}/runs?status=cancelled`);
+    const cancelledRunListPayload = (await cancelledRunListResponse.json()) as { runs: Array<{ id: string; status: string }> };
+    assert.deepEqual(cancelledRunListPayload.runs.map((run) => run.id), [runTwo.run.id]);
+  });
+});
+
 test("API validates track updates and returns 404 for missing tracks", async () => {
   await withServer(async (baseUrl) => {
     const missingTrackResponse = await fetch(`${baseUrl}/tracks/missing`, {
@@ -419,6 +494,12 @@ test("API returns structured validation and bad-request errors", async () => {
       body: JSON.stringify({ prompt: "" }),
     });
     assert.equal(invalidResumeResponse.status, 422);
+
+    const invalidTrackListResponse = await fetch(`${baseUrl}/tracks?priority=urgent&status=wat`);
+    assert.equal(invalidTrackListResponse.status, 422);
+
+    const invalidRunListResponse = await fetch(`${baseUrl}/runs?trackId=&status=wat`);
+    assert.equal(invalidRunListResponse.status, 422);
 
     const malformedJsonResponse = await fetch(`${baseUrl}/tracks`, {
       method: "POST",

@@ -8,12 +8,14 @@ export interface ProjectRepository {
 export interface TrackRepository {
   create(track: Track): Promise<void>;
   getById(trackId: string): Promise<Track | null>;
+  list(): Promise<Track[]>;
   update(track: Track): Promise<void>;
 }
 
 export interface ExecutionRepository {
   create(execution: Execution): Promise<void>;
   getById(executionId: string): Promise<Execution | null>;
+  list(): Promise<Execution[]>;
   update(execution: Execution): Promise<void>;
 }
 

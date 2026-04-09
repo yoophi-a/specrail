@@ -72,6 +72,21 @@ test("file repositories persist and reload project/track/execution state", async
     status: "running",
     startedAt: "2026-04-09T00:11:00.000Z",
   });
+
+  assert.deepEqual(await trackRepository.list(), [
+    {
+      ...track,
+      status: "in_progress",
+      updatedAt: "2026-04-09T00:10:00.000Z",
+    },
+  ]);
+  assert.deepEqual(await executionRepository.list(), [
+    {
+      ...execution,
+      status: "running",
+      startedAt: "2026-04-09T00:11:00.000Z",
+    },
+  ]);
 });
 
 test("jsonl event store appends and lists events in order", async () => {

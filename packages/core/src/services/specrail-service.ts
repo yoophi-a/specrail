@@ -110,6 +110,16 @@ export interface CancelRunInput {
   runId: string;
 }
 
+export interface ListTracksInput {
+  status?: TrackStatus;
+  priority?: Track["priority"];
+}
+
+export interface ListRunsInput {
+  trackId?: string;
+  status?: ExecutionStatus;
+}
+
 function buildExecutionSummary(events: ExecutionEvent[]): Execution["summary"] {
   const lastEvent = events.at(-1);
 
@@ -214,6 +224,15 @@ export class SpecRailService {
 
   getTrack(trackId: string): Promise<Track | null> {
     return this.dependencies.trackRepository.getById(trackId);
+  }
+
+  async listTracks(input: ListTracksInput = {}): Promise<Track[]> {
+    const tracks = await this.dependencies.trackRepository.list();
+
+    return tracks
+      .filter((track) => (input.status ? track.status === input.status : true))
+      .filter((track) => (input.priority ? track.priority === input.priority : true))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt));
   }
 
   async updateTrack(input: UpdateTrackInput): Promise<Track> {
@@ -352,6 +371,20 @@ export class SpecRailService {
 
   getRun(runId: string): Promise<Execution | null> {
     return this.dependencies.executionRepository.getById(runId);
+  }
+
+  async listRuns(input: ListRunsInput = {}): Promise<Execution[]> {
+    const executions = await this.dependencies.executionRepository.list();
+
+    return executions
+      .filter((execution) => (input.trackId ? execution.trackId === input.trackId : true))
+      .filter((execution) => (input.status ? execution.status === input.status : true))
+      .sort(
+        (left, right) =>
+          right.createdAt.localeCompare(left.createdAt) ||
+          (right.startedAt ?? "").localeCompare(left.startedAt ?? "") ||
+          right.id.localeCompare(left.id),
+      );
   }
 
   listRunEvents(runId: string): Promise<ExecutionEvent[]> {

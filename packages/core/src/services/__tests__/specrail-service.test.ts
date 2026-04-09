@@ -396,3 +396,120 @@ test("SpecRailService updates track workflow and approval state", async () => {
     /Track not found/,
   );
 });
+
+test("SpecRailService lists tracks and runs with basic filters", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-listing-"));
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [
+            {
+              id: `${input.executionId}:started`,
+              executionId: input.executionId,
+              type: "task_status_changed",
+              timestamp: "2026-04-09T05:10:00.000Z",
+              source: "codex",
+              summary: "Run started",
+              payload: { status: "running" },
+            },
+          ],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = [
+        "2026-04-09T05:00:00.000Z",
+        "2026-04-09T05:00:00.000Z",
+        "2026-04-09T05:05:00.000Z",
+        "2026-04-09T05:05:00.000Z",
+        "2026-04-09T05:10:00.000Z",
+        "2026-04-09T05:15:00.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-09T05:15:00.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-one", "track-two", "run-one", "run-two"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const trackOne = await service.createTrack({
+    title: "High priority track",
+    description: "Track one",
+    priority: "high",
+  });
+  const trackTwo = await service.createTrack({
+    title: "Low priority track",
+    description: "Track two",
+    priority: "low",
+  });
+
+  await service.updateTrack({ trackId: trackOne.id, status: "review" });
+
+  const runOne = await service.startRun({ trackId: trackOne.id, prompt: "Run one" });
+  const runTwo = await service.startRun({ trackId: trackTwo.id, prompt: "Run two" });
+
+  await service.recordExecutionEvent({
+    id: `${runTwo.id}:completed`,
+    executionId: runTwo.id,
+    type: "task_status_changed",
+    timestamp: "2026-04-09T05:20:00.000Z",
+    source: "codex",
+    summary: "Run completed",
+    payload: { status: "completed" },
+  });
+
+  const tracks = await service.listTracks();
+  assert.deepEqual(
+    tracks.map((track) => track.id),
+    [trackTwo.id, trackOne.id],
+  );
+  assert.deepEqual(
+    (await service.listTracks({ priority: "low" })).map((track) => track.id),
+    [trackTwo.id],
+  );
+  assert.deepEqual(
+    (await service.listTracks({ status: "review" })).map((track) => track.id),
+    [trackTwo.id, trackOne.id],
+  );
+
+  const runs = await service.listRuns();
+  assert.deepEqual(
+    runs.map((run) => run.id),
+    [runTwo.id, runOne.id],
+  );
+  assert.deepEqual(
+    (await service.listRuns({ trackId: trackOne.id })).map((run) => run.id),
+    [runOne.id],
+  );
+  assert.deepEqual(
+    (await service.listRuns({ status: "completed" })).map((run) => run.id),
+    [runTwo.id],
+  );
+});

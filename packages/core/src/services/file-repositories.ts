@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.js";
@@ -61,6 +61,32 @@ class JsonFileRepository<T extends { id: string }> {
   async update(value: T): Promise<void> {
     await writeJsonFile(path.join(this.dirPath, `${value.id}.json`), value);
   }
+
+  async list(): Promise<T[]> {
+    try {
+      const entries = await readdir(this.dirPath, { withFileTypes: true });
+      const values = await Promise.all(
+        entries
+          .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+          .map((entry) => readJsonFile<T>(path.join(this.dirPath, entry.name))),
+      );
+
+      const result: T[] = [];
+      for (const value of values) {
+        if (value) {
+          result.push(value);
+        }
+      }
+
+      return result;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return [];
+      }
+
+      throw error;
+    }
+  }
 }
 
 export class FileProjectRepository implements ProjectRepository {
@@ -94,6 +120,10 @@ export class FileTrackRepository implements TrackRepository {
     return this.repository.getById(trackId);
   }
 
+  list(): Promise<Track[]> {
+    return this.repository.list();
+  }
+
   update(track: Track): Promise<void> {
     return this.repository.update(track);
   }
@@ -112,6 +142,10 @@ export class FileExecutionRepository implements ExecutionRepository {
 
   getById(executionId: string): Promise<Execution | null> {
     return this.repository.getById(executionId);
+  }
+
+  list(): Promise<Execution[]> {
+    return this.repository.list();
   }
 
   update(execution: Execution): Promise<void> {

@@ -40,6 +40,9 @@ Current endpoints in `apps/api/src/index.ts`:
 - `POST /tracks`
   - create a track
   - body: `{ title, description, priority? }`
+- `GET /tracks`
+  - list tracks ordered by most recently updated first
+  - query: `status?`, `priority?`
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
 - `PATCH /tracks/:trackId`
@@ -50,6 +53,9 @@ Current endpoints in `apps/api/src/index.ts`:
 - `POST /runs`
   - start a run for a track
   - body: `{ trackId, prompt, profile? }`
+- `GET /runs`
+  - list runs ordered by newest first
+  - query: `trackId?`, `status?`
 - `GET /runs/:runId`
   - return persisted run metadata
 - `POST /runs/:runId/resume`
