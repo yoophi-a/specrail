@@ -216,6 +216,112 @@ test("SpecRailService throws when starting a run for a missing track", async () 
   await assert.rejects(() => service.cancelRun({ runId: "missing-run" }), /Run not found/);
 });
 
+test("SpecRailService reconciles execution records from adapter terminal events", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-runtime-event-"));
+
+  const createService = (idSuffix: string) =>
+    new SpecRailService({
+      projectRepository: new FileProjectRepository(path.join(rootDir, `state-${idSuffix}`)),
+      trackRepository: new FileTrackRepository(path.join(rootDir, `state-${idSuffix}`)),
+      executionRepository: new FileExecutionRepository(path.join(rootDir, `state-${idSuffix}`)),
+      eventStore: new JsonlEventStore(path.join(rootDir, `state-${idSuffix}`)),
+      artifactWriter: { async write() {} },
+      executor: {
+        name: "codex",
+        async spawn(input) {
+          return {
+            sessionRef: `session:${input.executionId}`,
+            command: {
+              command: "codex",
+              args: ["exec", input.prompt],
+              cwd: input.workspacePath,
+              prompt: input.prompt,
+            },
+            events: [
+              {
+                id: `${input.executionId}:started`,
+                executionId: input.executionId,
+                type: "task_status_changed",
+                timestamp: "2026-04-09T04:00:00.000Z",
+                source: "codex",
+                summary: "Run started",
+                payload: { status: "running" },
+              },
+            ],
+          };
+        },
+        async resume() {
+          throw new Error("should not be called");
+        },
+        async cancel() {
+          throw new Error("should not be called");
+        },
+      },
+      defaultProject: {
+        id: "project-default",
+        name: "SpecRail",
+      },
+      workspaceRoot: path.join(rootDir, `workspaces-${idSuffix}`),
+      now: () => "2026-04-09T04:00:00.000Z",
+      idGenerator: (() => {
+        const values = [`track-runtime-${idSuffix}`, `run-runtime-${idSuffix}`];
+        return () => values.shift() ?? `extra-${idSuffix}`;
+      })(),
+    });
+
+  await Promise.all(
+    [
+      {
+        terminalStatus: "completed",
+        timestamp: "2026-04-09T04:03:00.000Z",
+        summary: "Completed Codex session session:run-run-runtime-completed",
+      },
+      {
+        terminalStatus: "failed",
+        timestamp: "2026-04-09T04:05:00.000Z",
+        summary: "Failed Codex session session:run-run-runtime-failed",
+      },
+    ].map(async ({ terminalStatus, timestamp, summary }) => {
+      const service = createService(terminalStatus);
+      const track = await service.createTrack({
+        title: `Runtime reconciliation ${terminalStatus}`,
+        description: "Keep execution records aligned with adapter events.",
+      });
+
+      const run = await service.startRun({
+        trackId: track.id,
+        prompt: "Start the work",
+      });
+
+      await service.recordExecutionEvent({
+        id: `${run.id}:${terminalStatus}`,
+        executionId: run.id,
+        type: "task_status_changed",
+        timestamp,
+        source: "codex",
+        summary,
+        payload: {
+          status: terminalStatus,
+          ...(terminalStatus === "failed" ? { exitCode: 1 } : { exitCode: 0 }),
+        },
+      });
+
+      const persistedRun = await service.getRun(run.id);
+      assert.equal(persistedRun?.status, terminalStatus);
+      assert.equal(persistedRun?.finishedAt, timestamp);
+      assert.deepEqual(persistedRun?.summary, {
+        eventCount: 2,
+        lastEventSummary: summary,
+        lastEventAt: timestamp,
+      });
+
+      const events = await service.listRunEvents(run.id);
+      assert.equal(events.length, 2);
+      assert.equal(events[1]?.summary, summary);
+    }),
+  );
+});
+
 test("SpecRailService updates track workflow and approval state", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-update-track-"));
 

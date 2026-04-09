@@ -87,43 +87,58 @@ function createDependencies(dataDir: string): DefaultDependencies {
   const templateDir = path.resolve(process.cwd(), ".specrail-template");
 
   const eventStore = new JsonlEventStore(stateDir);
+  const projectRepository = new FileProjectRepository(stateDir);
+  const trackRepository = new FileTrackRepository(stateDir);
+  const executionRepository = new FileExecutionRepository(stateDir);
+  let service: SpecRailService | null = null;
+
+  const serviceDependencies: SpecRailServiceDependencies = {
+    projectRepository,
+    trackRepository,
+    executionRepository,
+    eventStore,
+    artifactWriter: {
+      async write(input) {
+        await materializeTrackArtifacts({
+          rootDir: artifactRoot,
+          templateDir,
+          trackId: input.track.id,
+          projectName: input.project.name,
+          trackTitle: input.track.title,
+          trackDescription: input.track.description,
+          specContent: input.specContent,
+          planContent: input.planContent,
+          tasksContent: input.tasksContent,
+        });
+      },
+    },
+    executor: new CodexAdapter({
+      sessionsDir,
+      onEvent: async (event) => {
+        if (service) {
+          await service.recordExecutionEvent(event);
+          return;
+        }
+
+        await eventStore.append(event);
+      },
+    }),
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+      repoUrl: "https://github.com/yoophi-a/specrail",
+      localRepoPath: process.cwd(),
+      defaultWorkflowPolicy: "artifact-first-mvp",
+    },
+    workspaceRoot,
+  };
+
+  service = new SpecRailService(serviceDependencies);
 
   return {
     artifactRoot,
     eventLogDir: getStatePaths(stateDir).eventsDir,
-    serviceDependencies: {
-      projectRepository: new FileProjectRepository(stateDir),
-      trackRepository: new FileTrackRepository(stateDir),
-      executionRepository: new FileExecutionRepository(stateDir),
-      eventStore,
-      artifactWriter: {
-        async write(input) {
-          await materializeTrackArtifacts({
-            rootDir: artifactRoot,
-            templateDir,
-            trackId: input.track.id,
-            projectName: input.project.name,
-            trackTitle: input.track.title,
-            trackDescription: input.track.description,
-            specContent: input.specContent,
-            planContent: input.planContent,
-            tasksContent: input.tasksContent,
-          });
-        },
-      },
-      executor: new CodexAdapter({
-        sessionsDir,
-        onEvent: (event) => eventStore.append(event),
-      }),
-      defaultProject: {
-        id: "project-default",
-        name: "SpecRail",
-        repoUrl: "https://github.com/yoophi-a/specrail",
-        localRepoPath: process.cwd(),
-        defaultWorkflowPolicy: "artifact-first-mvp",
-      },
-      workspaceRoot,
-    },
+    serviceDependencies,
   };
 }
 

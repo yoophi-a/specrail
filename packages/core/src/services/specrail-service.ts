@@ -10,7 +10,15 @@ import {
   type SpecDocument,
   type TaskDocument,
 } from "../domain/artifacts.js";
-import type { ApprovalStatus, Execution, ExecutionEvent, Project, Track, TrackStatus } from "../domain/types.js";
+import type {
+  ApprovalStatus,
+  Execution,
+  ExecutionEvent,
+  ExecutionStatus,
+  Project,
+  Track,
+  TrackStatus,
+} from "../domain/types.js";
 import { NotFoundError } from "../errors.js";
 import type { EventStore, ExecutionRepository, ProjectRepository, TrackRepository } from "./ports.js";
 
@@ -112,6 +120,48 @@ function buildExecutionSummary(events: ExecutionEvent[]): Execution["summary"] {
   };
 }
 
+function readExecutionStatus(event: ExecutionEvent): ExecutionStatus | null {
+  if (event.type !== "task_status_changed") {
+    return null;
+  }
+
+  const status = event.payload?.status;
+  if (
+    status === "created" ||
+    status === "queued" ||
+    status === "running" ||
+    status === "waiting_approval" ||
+    status === "completed" ||
+    status === "failed" ||
+    status === "cancelled"
+  ) {
+    return status;
+  }
+
+  return null;
+}
+
+function buildExecutionSnapshot(execution: Execution, events: ExecutionEvent[]): Execution {
+  const derivedStatus = events.reduce<ExecutionStatus>(
+    (status, event) => readExecutionStatus(event) ?? status,
+    execution.status,
+  );
+  const lastStatusEvent = [...events].reverse().find((event) => readExecutionStatus(event) !== null);
+  const isTerminal = derivedStatus === "completed" || derivedStatus === "failed" || derivedStatus === "cancelled";
+
+  return {
+    ...execution,
+    status: derivedStatus,
+    summary: buildExecutionSummary(events),
+    startedAt:
+      execution.startedAt ??
+      (derivedStatus === "running" || derivedStatus === "waiting_approval" || isTerminal
+        ? execution.createdAt
+        : undefined),
+    finishedAt: isTerminal ? (lastStatusEvent?.timestamp ?? execution.finishedAt ?? execution.createdAt) : undefined,
+  };
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -192,7 +242,7 @@ export class SpecRailService {
       profile: input.profile ?? "default",
     });
 
-    const execution: Execution = {
+    const initialExecution: Execution = {
       id: executionId,
       trackId: track.id,
       backend: this.dependencies.executor.name,
@@ -201,17 +251,22 @@ export class SpecRailService {
       branchName: `specrail/${executionId}`,
       sessionRef: launch.sessionRef,
       command: launch.command,
-      summary: buildExecutionSummary(launch.events),
       status: "running",
       createdAt,
       startedAt: createdAt,
     };
 
-    await this.dependencies.executionRepository.create(execution);
+    await this.dependencies.executionRepository.create(initialExecution);
 
     for (const event of launch.events) {
       await this.dependencies.eventStore.append(event);
     }
+
+    const execution = buildExecutionSnapshot(
+      initialExecution,
+      await this.dependencies.eventStore.listByExecution(executionId),
+    );
+    await this.dependencies.executionRepository.update(execution);
 
     return execution;
   }
@@ -231,13 +286,12 @@ export class SpecRailService {
       profile: execution.profile,
     });
 
-    const nextEvents = [...(await this.dependencies.eventStore.listByExecution(execution.id)), ...launch.events];
     const resumedExecution: Execution = {
       ...execution,
       command: launch.command,
-      summary: buildExecutionSummary(nextEvents),
       status: "running",
       startedAt: execution.startedAt ?? this.now(),
+      finishedAt: undefined,
     };
 
     await this.dependencies.executionRepository.update(resumedExecution);
@@ -246,7 +300,13 @@ export class SpecRailService {
       await this.dependencies.eventStore.append(event);
     }
 
-    return resumedExecution;
+    const reconciledExecution = buildExecutionSnapshot(
+      resumedExecution,
+      await this.dependencies.eventStore.listByExecution(execution.id),
+    );
+    await this.dependencies.executionRepository.update(reconciledExecution);
+
+    return reconciledExecution;
   }
 
   async cancelRun(input: CancelRunInput): Promise<Execution> {
@@ -263,16 +323,13 @@ export class SpecRailService {
       profile: execution.profile,
     });
 
-    const nextEvents = [...(await this.dependencies.eventStore.listByExecution(execution.id)), cancellationEvent];
-    const cancelledExecution: Execution = {
-      ...execution,
-      summary: buildExecutionSummary(nextEvents),
-      status: "cancelled",
-      finishedAt: this.now(),
-    };
-
-    await this.dependencies.executionRepository.update(cancelledExecution);
     await this.dependencies.eventStore.append(cancellationEvent);
+
+    const cancelledExecution = buildExecutionSnapshot(
+      execution,
+      await this.dependencies.eventStore.listByExecution(execution.id),
+    );
+    await this.dependencies.executionRepository.update(cancelledExecution);
 
     return cancelledExecution;
   }
@@ -283,6 +340,21 @@ export class SpecRailService {
 
   listRunEvents(runId: string): Promise<ExecutionEvent[]> {
     return this.dependencies.eventStore.listByExecution(runId);
+  }
+
+  async recordExecutionEvent(event: ExecutionEvent): Promise<void> {
+    await this.dependencies.eventStore.append(event);
+
+    const execution = await this.dependencies.executionRepository.getById(event.executionId);
+    if (!execution) {
+      return;
+    }
+
+    const reconciledExecution = buildExecutionSnapshot(
+      execution,
+      await this.dependencies.eventStore.listByExecution(event.executionId),
+    );
+    await this.dependencies.executionRepository.update(reconciledExecution);
   }
 
   private async requireRun(runId: string): Promise<Execution> {
