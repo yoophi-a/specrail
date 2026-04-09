@@ -15,6 +15,7 @@ import {
   FileTrackRepository,
   JsonlEventStore,
   NotFoundError,
+  OPENSPEC_RESOLUTION_PRESETS,
   getStatePaths,
   SpecRailService,
   TRACK_STATUSES,
@@ -22,6 +23,7 @@ import {
   type ApprovalStatus,
   type GitHubIssueReference,
   type GitHubPullRequestReference,
+  type OpenSpecImportResolutionPresetName,
   type SpecRailServiceDependencies,
   type TrackStatus,
 } from "@specrail/core";
@@ -68,6 +70,7 @@ interface OpenSpecImportRequestBody {
   path: string;
   dryRun?: boolean;
   conflictPolicy?: "reject" | "overwrite" | "resolve";
+  resolutionPreset?: OpenSpecImportResolutionPresetName;
   resolution?: {
     track?: Partial<Record<"title" | "description" | "status" | "specStatus" | "planStatus" | "priority" | "githubIssue" | "githubPullRequest", "incoming" | "existing">>;
     artifacts?: Partial<Record<"spec" | "plan" | "tasks", "incoming" | "existing">>;
@@ -483,6 +486,10 @@ function assertValidOpenSpecImportBody(body: OpenSpecImportRequestBody): void {
     details.push({ field: "conflictPolicy", message: "must be one of reject, overwrite, resolve" });
   }
 
+  if (body.resolutionPreset !== undefined && !OPENSPEC_RESOLUTION_PRESETS.some((preset) => preset.name === body.resolutionPreset)) {
+    details.push({ field: "resolutionPreset", message: `must be one of ${OPENSPEC_RESOLUTION_PRESETS.map((preset) => preset.name).join(", ")}` });
+  }
+
   for (const [groupKey, group] of Object.entries(body.resolution ?? {})) {
     if (!group || typeof group !== "object" || Array.isArray(group)) {
       details.push({ field: `resolution.${groupKey}`, message: "must be an object" });
@@ -824,6 +831,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           },
           dryRun: body.dryRun,
           conflictPolicy: body.conflictPolicy,
+          resolutionPreset: body.resolutionPreset,
           resolution: body.resolution,
         });
         sendJson(response, 200, result);

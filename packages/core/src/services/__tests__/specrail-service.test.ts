@@ -1991,6 +1991,7 @@ test("SpecRailService resolves OpenSpec conflicts with field-level keep-existing
   const result = await service.importTrackFromOpenSpec({
     source: { kind: "file", path: path.join(rootDir, "bundle") },
     conflictPolicy: "resolve",
+    resolutionPreset: "policyDefaults",
     resolution: {
       track: { title: "existing" },
       artifacts: { spec: "existing", plan: "incoming", tasks: "existing" },
@@ -1999,15 +2000,31 @@ test("SpecRailService resolves OpenSpec conflicts with field-level keep-existing
 
   assert.equal(result.track.title, "Existing title");
   assert.equal(result.track.description, "Incoming description");
-  assert.equal(result.track.status, "ready");
+  assert.equal(result.track.status, "planned");
   assert.equal(result.resolvedArtifacts.spec, "# Existing spec\n");
   assert.equal(result.resolvedArtifacts.plan, "# Incoming plan\n");
   assert.equal(result.resolvedArtifacts.tasks, "# Existing tasks\n");
   assert.equal(result.provenance.conflictPolicy, "resolve");
+  assert.equal(result.provenance.resolutionPreset, "policyDefaults");
   assert.deepEqual(result.provenance.resolution, {
-    track: { title: "existing" },
+    track: {
+      title: "existing",
+      description: "incoming",
+      status: "existing",
+      specStatus: "existing",
+      planStatus: "existing",
+      priority: "existing",
+      githubIssue: "existing",
+      githubPullRequest: "existing",
+    },
     artifacts: { spec: "existing", plan: "incoming", tasks: "existing" },
   });
+  assert.equal(result.resolutionGuide.presetApplied, "policyDefaults");
+  assert.equal(result.resolutionGuide.effectiveResolution.track?.status, "existing");
+  assert.equal(result.resolutionGuide.effectiveResolution.track?.title, "existing");
+  assert.equal(result.resolutionGuide.effectiveResolution.artifacts?.plan, "incoming");
+  assert.ok(result.resolutionGuide.policies.some((policy) => policy.field === "status" && policy.defaultChoice === "existing"));
+  assert.ok(result.resolutionGuide.presets.some((preset) => preset.name === "preferIncomingArtifacts"));
 
   const importInspection = await service.getTrackOpenSpecImports(created.id);
   assert.ok(importInspection);

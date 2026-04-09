@@ -94,10 +94,12 @@ Current endpoints in `apps/api/src/index.ts`:
   - body: `{ trackId, path, overwrite? }`
 - `POST /admin/openspec/import`
   - preview or import an OpenSpec bundle and create/update the referenced track plus artifacts
-  - body: `{ path, dryRun?, conflictPolicy?, resolution? }`
+  - body: `{ path, dryRun?, conflictPolicy?, resolutionPreset?, resolution? }`
   - `dryRun: true` previews the normalized track and collision status without writing files or track state
   - `conflictPolicy` supports `reject` (default, safe preview-first flow), `overwrite` (replace the whole imported payload), and `resolve` (apply a field/artifact-level `resolution` map where `existing` keeps the current value and `incoming` applies the bundle value)
-  - response now includes `provenance`, `importHistory`, `resolvedArtifacts`, and `conflict.details[]` so callers can inspect source path, bundle metadata, selected resolution choices, and which fields would be replaced
+  - `resolutionPreset` supports `policyDefaults`, `preferIncomingArtifacts`, `preserveWorkflowState`, and `preferIncomingAll`; explicit `resolution` entries override preset defaults field-by-field
+  - source-of-truth defaults treat OpenSpec as authoritative for `title`, `description`, `spec`, `plan`, and `tasks`, while SpecRail remains authoritative for workflow state and local GitHub linkage (`status`, `specStatus`, `planStatus`, `priority`, `githubIssue`, `githubPullRequest`)
+  - response now includes `provenance`, `importHistory`, `resolvedArtifacts`, `resolutionGuide`, and `conflict.details[]` so callers can inspect source path, bundle metadata, available presets, effective choices, policies, and which fields would be replaced
   - applied imports persist `track.openSpecImport` as the latest provenance plus `track.openSpecImportHistory[]` in state and artifact metadata (`track.json`) for auditability
 - `GET /admin/openspec/imports`
   - list persisted OpenSpec import history across tracks

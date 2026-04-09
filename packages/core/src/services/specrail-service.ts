@@ -15,10 +15,16 @@ import type {
   Execution,
   ExecutionEvent,
   ExecutionStatus,
+  OpenSpecImportArtifactResolutionField,
   OpenSpecImportConflictPolicy,
   OpenSpecImportRecord,
   OpenSpecImportResolution,
   OpenSpecImportResolutionChoice,
+  OpenSpecImportResolutionGuide,
+  OpenSpecImportResolutionPreset,
+  OpenSpecImportResolutionPresetName,
+  OpenSpecImportTrackResolutionField,
+  OpenSpecSourceOfTruthPolicy,
   GitHubIssueReference,
   GitHubPullRequestReference,
   GitHubRunCommentSyncState,
@@ -39,6 +45,120 @@ import type {
   ProjectRepository,
   TrackRepository,
 } from "./ports.js";
+
+const OPENSPEC_TRACK_RESOLUTION_FIELDS = [
+  "title",
+  "description",
+  "status",
+  "specStatus",
+  "planStatus",
+  "priority",
+  "githubIssue",
+  "githubPullRequest",
+] as const satisfies readonly OpenSpecImportTrackResolutionField[];
+
+const OPENSPEC_ARTIFACT_RESOLUTION_FIELDS = ["spec", "plan", "tasks"] as const satisfies readonly OpenSpecImportArtifactResolutionField[];
+
+export const OPENSPEC_SOURCE_OF_TRUTH_POLICIES: OpenSpecSourceOfTruthPolicy[] = [
+  { group: "track", field: "title", sourceOfTruth: "openspec", defaultChoice: "incoming", rationale: "Imported bundle titles should describe the portable spec as authored." },
+  { group: "track", field: "description", sourceOfTruth: "openspec", defaultChoice: "incoming", rationale: "Bundle descriptions should travel with the imported spec context." },
+  { group: "track", field: "status", sourceOfTruth: "specrail", defaultChoice: "existing", rationale: "Execution workflow state belongs to the current SpecRail track lifecycle." },
+  { group: "track", field: "specStatus", sourceOfTruth: "specrail", defaultChoice: "existing", rationale: "Spec approval state reflects local review progress inside SpecRail." },
+  { group: "track", field: "planStatus", sourceOfTruth: "specrail", defaultChoice: "existing", rationale: "Plan approval state is managed by local operators during execution." },
+  { group: "track", field: "priority", sourceOfTruth: "specrail", defaultChoice: "existing", rationale: "Priority is treated as local operational triage in SpecRail." },
+  { group: "track", field: "githubIssue", sourceOfTruth: "specrail", defaultChoice: "existing", rationale: "GitHub linkage is tied to the active SpecRail workspace and should not shift silently." },
+  { group: "track", field: "githubPullRequest", sourceOfTruth: "specrail", defaultChoice: "existing", rationale: "Pull request linkage is local execution metadata, not portable bundle data." },
+  { group: "artifacts", field: "spec", sourceOfTruth: "openspec", defaultChoice: "incoming", rationale: "The imported bundle spec artifact is the portable source document." },
+  { group: "artifacts", field: "plan", sourceOfTruth: "openspec", defaultChoice: "incoming", rationale: "The imported bundle plan should normally replace the exported plan artifact." },
+  { group: "artifacts", field: "tasks", sourceOfTruth: "openspec", defaultChoice: "incoming", rationale: "Task breakdown in the imported bundle is treated as the portable source artifact." },
+];
+
+function buildPolicyDefaultResolution(): OpenSpecImportResolution {
+  return {
+    track: Object.fromEntries(
+      OPENSPEC_TRACK_RESOLUTION_FIELDS.map((field) => [field, OPENSPEC_SOURCE_OF_TRUTH_POLICIES.find((policy) => policy.group === "track" && policy.field === field)?.defaultChoice ?? "incoming"]),
+    ) as OpenSpecImportResolution["track"],
+    artifacts: Object.fromEntries(
+      OPENSPEC_ARTIFACT_RESOLUTION_FIELDS.map((field) => [field, OPENSPEC_SOURCE_OF_TRUTH_POLICIES.find((policy) => policy.group === "artifacts" && policy.field === field)?.defaultChoice ?? "incoming"]),
+    ) as OpenSpecImportResolution["artifacts"],
+  };
+}
+
+export const OPENSPEC_RESOLUTION_PRESETS: OpenSpecImportResolutionPreset[] = [
+  {
+    name: "policyDefaults",
+    label: "Policy defaults",
+    description: "Apply the built-in source-of-truth defaults: keep SpecRail workflow metadata, adopt incoming OpenSpec descriptive fields and artifacts.",
+    resolution: buildPolicyDefaultResolution(),
+  },
+  {
+    name: "preferIncomingArtifacts",
+    label: "Prefer incoming artifacts",
+    description: "Only force incoming spec/plan/tasks content. Other fields follow explicit overrides when supplied.",
+    resolution: { artifacts: { spec: "incoming", plan: "incoming", tasks: "incoming" } },
+  },
+  {
+    name: "preserveWorkflowState",
+    label: "Preserve workflow state",
+    description: "Keep SpecRail operational metadata such as workflow statuses, priority, and GitHub links.",
+    resolution: {
+      track: { status: "existing", specStatus: "existing", planStatus: "existing", priority: "existing", githubIssue: "existing", githubPullRequest: "existing" },
+    },
+  },
+  {
+    name: "preferIncomingAll",
+    label: "Prefer incoming everywhere",
+    description: "Resolve all track fields and artifacts in favor of the imported bundle.",
+    resolution: {
+      track: { title: "incoming", description: "incoming", status: "incoming", specStatus: "incoming", planStatus: "incoming", priority: "incoming", githubIssue: "incoming", githubPullRequest: "incoming" },
+      artifacts: { spec: "incoming", plan: "incoming", tasks: "incoming" },
+    },
+  },
+];
+
+function cloneResolution(resolution?: OpenSpecImportResolution): OpenSpecImportResolution {
+  return {
+    ...(resolution?.track ? { track: { ...resolution.track } } : {}),
+    ...(resolution?.artifacts ? { artifacts: { ...resolution.artifacts } } : {}),
+  };
+}
+
+function getResolutionPreset(name?: OpenSpecImportResolutionPresetName): OpenSpecImportResolutionPreset | null {
+  if (!name) {
+    return null;
+  }
+
+  return OPENSPEC_RESOLUTION_PRESETS.find((preset) => preset.name === name) ?? null;
+}
+
+function mergeOpenSpecResolution(
+  base: OpenSpecImportResolution | undefined,
+  override: OpenSpecImportResolution | undefined,
+): OpenSpecImportResolution {
+  return {
+    ...(base?.track || override?.track ? { track: { ...(base?.track ?? {}), ...(override?.track ?? {}) } } : {}),
+    ...(base?.artifacts || override?.artifacts ? { artifacts: { ...(base?.artifacts ?? {}), ...(override?.artifacts ?? {}) } } : {}),
+  };
+}
+
+function normalizeOpenSpecResolution(resolution?: OpenSpecImportResolution): OpenSpecImportResolution {
+  return mergeOpenSpecResolution(undefined, resolution);
+}
+
+function buildOpenSpecResolutionGuide(
+  resolutionPreset?: OpenSpecImportResolutionPresetName,
+  resolution?: OpenSpecImportResolution,
+): OpenSpecImportResolutionGuide {
+  const preset = getResolutionPreset(resolutionPreset);
+  const effectiveResolution = normalizeOpenSpecResolution(mergeOpenSpecResolution(preset?.resolution, resolution));
+
+  return {
+    presetApplied: preset?.name ?? null,
+    effectiveResolution,
+    policies: OPENSPEC_SOURCE_OF_TRUTH_POLICIES.map((policy) => ({ ...policy })),
+    presets: OPENSPEC_RESOLUTION_PRESETS.map((candidate) => ({ ...candidate, resolution: cloneResolution(candidate.resolution) })),
+  };
+}
 
 export interface TrackArtifactWriterInput {
   track: Track;
@@ -191,6 +311,7 @@ export interface ImportTrackFromOpenSpecInput {
   source: OpenSpecImportSource;
   dryRun?: boolean;
   conflictPolicy?: OpenSpecImportConflictPolicy;
+  resolutionPreset?: OpenSpecImportResolutionPresetName;
   resolution?: OpenSpecImportResolution;
 }
 
@@ -202,6 +323,7 @@ export interface ImportTrackFromOpenSpecResult {
   provenance: OpenSpecImportRecord;
   importHistory: OpenSpecImportRecord[];
   resolvedArtifacts: OpenSpecTrackArtifacts;
+  resolutionGuide: OpenSpecImportResolutionGuide;
   conflict: {
     hasConflict: boolean;
     reason: "track_id_exists" | null;
@@ -759,12 +881,14 @@ export class SpecRailService {
     const existingArtifacts = existingTrack ? await artifactReader.read(existingTrack.id) : null;
     const conflictPolicy = input.conflictPolicy ?? "reject";
     const action = existingTrack ? "updated" : "created";
+    const resolutionGuide = buildOpenSpecResolutionGuide(input.resolutionPreset, input.resolution);
     const provenance: OpenSpecImportRecord = {
       id: `openspec-import-${this.idGenerator()}`,
       source: input.source,
       importedAt: timestamp,
       conflictPolicy,
-      ...(input.resolution ? { resolution: input.resolution } : {}),
+      ...(resolutionGuide.presetApplied ? { resolutionPreset: resolutionGuide.presetApplied } : {}),
+      ...(Object.keys(resolutionGuide.effectiveResolution).length > 0 ? { resolution: resolutionGuide.effectiveResolution } : {}),
       bundle: imported.package.metadata,
     };
     const conflict = {
@@ -773,8 +897,8 @@ export class SpecRailService {
       details: buildOpenSpecConflictDetails(existingTrack, importedTrack, imported.package.artifacts, existingArtifacts),
     };
 
-    const resolvedArtifacts = buildResolvedOpenSpecArtifacts(imported.package.artifacts, existingArtifacts, input.resolution);
-    const track = buildResolvedOpenSpecTrack(existingTrack, importedTrack, project.id, timestamp, provenance, input.resolution);
+    const resolvedArtifacts = buildResolvedOpenSpecArtifacts(imported.package.artifacts, existingArtifacts, resolutionGuide.effectiveResolution);
+    const track = buildResolvedOpenSpecTrack(existingTrack, importedTrack, project.id, timestamp, provenance, resolutionGuide.effectiveResolution);
 
     if (existingTrack && conflictPolicy === "reject") {
       if (input.dryRun) {
@@ -786,6 +910,7 @@ export class SpecRailService {
           provenance,
           importHistory: track.openSpecImportHistory ?? [],
           resolvedArtifacts,
+          resolutionGuide,
           conflict,
         };
       }
@@ -805,6 +930,7 @@ export class SpecRailService {
         provenance,
         importHistory: track.openSpecImportHistory ?? [],
         resolvedArtifacts,
+        resolutionGuide,
         conflict,
       };
     }
@@ -831,6 +957,7 @@ export class SpecRailService {
       provenance,
       importHistory: track.openSpecImportHistory ?? [],
       resolvedArtifacts,
+      resolutionGuide,
       conflict,
     };
   }

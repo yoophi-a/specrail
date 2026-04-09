@@ -66,9 +66,51 @@ export type OpenSpecImportConflictPolicy = "reject" | "overwrite" | "resolve";
 
 export type OpenSpecImportResolutionChoice = "incoming" | "existing";
 
+export type OpenSpecImportResolutionFieldGroup = "track" | "artifacts";
+
+export type OpenSpecImportTrackResolutionField =
+  | "title"
+  | "description"
+  | "status"
+  | "specStatus"
+  | "planStatus"
+  | "priority"
+  | "githubIssue"
+  | "githubPullRequest";
+
+export type OpenSpecImportArtifactResolutionField = "spec" | "plan" | "tasks";
+
+export type OpenSpecImportResolutionPresetName =
+  | "policyDefaults"
+  | "preferIncomingArtifacts"
+  | "preserveWorkflowState"
+  | "preferIncomingAll";
+
 export interface OpenSpecImportResolution {
-  track?: Partial<Record<"title" | "description" | "status" | "specStatus" | "planStatus" | "priority" | "githubIssue" | "githubPullRequest", OpenSpecImportResolutionChoice>>;
-  artifacts?: Partial<Record<"spec" | "plan" | "tasks", OpenSpecImportResolutionChoice>>;
+  track?: Partial<Record<OpenSpecImportTrackResolutionField, OpenSpecImportResolutionChoice>>;
+  artifacts?: Partial<Record<OpenSpecImportArtifactResolutionField, OpenSpecImportResolutionChoice>>;
+}
+
+export interface OpenSpecSourceOfTruthPolicy {
+  group: OpenSpecImportResolutionFieldGroup;
+  field: OpenSpecImportTrackResolutionField | OpenSpecImportArtifactResolutionField;
+  sourceOfTruth: "openspec" | "specrail";
+  defaultChoice: OpenSpecImportResolutionChoice;
+  rationale: string;
+}
+
+export interface OpenSpecImportResolutionPreset {
+  name: OpenSpecImportResolutionPresetName;
+  label: string;
+  description: string;
+  resolution: OpenSpecImportResolution;
+}
+
+export interface OpenSpecImportResolutionGuide {
+  presetApplied: OpenSpecImportResolutionPresetName | null;
+  effectiveResolution: OpenSpecImportResolution;
+  policies: OpenSpecSourceOfTruthPolicy[];
+  presets: OpenSpecImportResolutionPreset[];
 }
 
 export interface OpenSpecImportRecord {
@@ -79,6 +121,7 @@ export interface OpenSpecImportRecord {
   };
   importedAt: string;
   conflictPolicy: OpenSpecImportConflictPolicy;
+  resolutionPreset?: OpenSpecImportResolutionPresetName;
   resolution?: OpenSpecImportResolution;
   bundle: {
     version: 1;

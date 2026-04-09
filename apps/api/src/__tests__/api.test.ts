@@ -715,6 +715,7 @@ test("API resolves OpenSpec conflicts with selective keep-existing choices", asy
       body: JSON.stringify({
         path: bundleDir,
         conflictPolicy: "resolve",
+        resolutionPreset: "policyDefaults",
         resolution: {
           track: { title: "existing" },
           artifacts: { spec: "existing", plan: "incoming" },
@@ -723,13 +724,24 @@ test("API resolves OpenSpec conflicts with selective keep-existing choices", asy
     });
     assert.equal(resolveResponse.status, 200);
     const resolved = (await resolveResponse.json()) as {
-      track: { title: string; description: string; openSpecImport: { conflictPolicy: string; resolution: { track: { title: string } } } };
+      track: {
+        title: string;
+        description: string;
+        openSpecImport: { conflictPolicy: string; resolutionPreset: string; resolution: { track: { title: string; status: string } } };
+      };
       resolvedArtifacts: { spec: string; plan: string };
+      resolutionGuide: { presetApplied: string; effectiveResolution: { track: { status: string } }; policies: Array<{ field: string }>; presets: Array<{ name: string }> };
     };
     assert.equal(resolved.track.title, "Existing resolve track");
     assert.equal(resolved.track.description, "Incoming description");
     assert.equal(resolved.track.openSpecImport.conflictPolicy, "resolve");
+    assert.equal(resolved.track.openSpecImport.resolutionPreset, "policyDefaults");
     assert.equal(resolved.track.openSpecImport.resolution.track.title, "existing");
+    assert.equal(resolved.track.openSpecImport.resolution.track.status, "existing");
+    assert.equal(resolved.resolutionGuide.presetApplied, "policyDefaults");
+    assert.equal(resolved.resolutionGuide.effectiveResolution.track.status, "existing");
+    assert.ok(resolved.resolutionGuide.policies.some((policy) => policy.field === "status"));
+    assert.ok(resolved.resolutionGuide.presets.some((preset) => preset.name === "preserveWorkflowState"));
     assert.notEqual(resolved.resolvedArtifacts.spec, "# Keep existing spec\n");
     assert.equal(resolved.resolvedArtifacts.plan, "# Incoming plan\n");
 
@@ -1263,7 +1275,7 @@ test("API returns structured validation and bad-request errors", async () => {
     const invalidOpenSpecImportResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "", dryRun: "yes", conflictPolicy: "merge", resolution: { artifacts: { spec: "later" } } }),
+      body: JSON.stringify({ path: "", dryRun: "yes", conflictPolicy: "merge", resolutionPreset: "unknownPreset", resolution: { artifacts: { spec: "later" } } }),
     });
     assert.equal(invalidOpenSpecImportResponse.status, 422);
   });
