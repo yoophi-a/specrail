@@ -2,7 +2,9 @@
 import { loadConfig } from "@specrail/config";
 import {
   OPENSPEC_RESOLUTION_PRESETS,
+  type Execution,
   type RunInspection,
+  type Track,
   type TrackOpenSpecInspection,
   type TrackInspection,
   type TrackIntegrationsInspection,
@@ -35,8 +37,10 @@ interface ParsedArgs {
     | "openspec-inspect"
     | "openspec-inspect-imports"
     | "openspec-inspect-exports"
+    | "track-list"
     | "track-inspect"
     | "track-inspect-integrations"
+    | "run-list"
     | "run-inspect"
     | null;
   path?: string;
@@ -52,6 +56,10 @@ interface ParsedArgs {
   importPageSize?: number;
   exportPage?: number;
   exportPageSize?: number;
+  status?: string;
+  priority?: string;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
   sourcePath?: string;
   targetPath?: string;
   after?: string;
@@ -90,8 +98,10 @@ Usage:
   specrail-admin openspec inspect --track-id <track-id> [--page <n>] [--page-size <count>] [--import-page <n>] [--import-page-size <count>] [--export-page <n>] [--export-page-size <count>] [--json]
   specrail-admin openspec inspect imports --track-id <track-id> [--page <n>] [--page-size <count>] [--json]
   specrail-admin openspec inspect exports --track-id <track-id> [--page <n>] [--page-size <count>] [--json]
+  specrail-admin tracks list [--status <status>] [--priority <priority>] [--page <n>] [--page-size <count>] [--sort-by <updatedAt|createdAt|title|priority|status>] [--sort-order <asc|desc>] [--json]
   specrail-admin tracks inspect --track-id <track-id> [--json]
   specrail-admin tracks inspect integrations --track-id <track-id> [--page <n>] [--page-size <count>] [--import-page <n>] [--import-page-size <count>] [--export-page <n>] [--export-page-size <count>] [--json]
+  specrail-admin runs list [--track-id <track-id>] [--status <status>] [--page <n>] [--page-size <count>] [--sort-by <createdAt|startedAt|finishedAt|status>] [--sort-order <asc|desc>] [--json]
   specrail-admin runs inspect --run-id <run-id> [--json]
 
 Examples:
@@ -104,8 +114,10 @@ Examples:
   specrail-admin openspec exports --track-id track_123 --page-size 5 --overwrite-only
   specrail-admin openspec inspect --track-id track_123 --page-size 1 --export-page 2
   specrail-admin openspec inspect imports --track-id track_123 --page 2 --page-size 5
+  specrail-admin tracks list --status ready --sort-by title --sort-order asc
   specrail-admin tracks inspect --track-id track_123
   specrail-admin tracks inspect integrations --track-id track_123 --page-size 5
+  specrail-admin runs list --track-id track_123 --status running --page-size 10
   specrail-admin runs inspect --run-id run_123
 `);
 }
@@ -197,10 +209,16 @@ function parseArgs(argv: string[]): ParsedArgs {
   } else if (group === "openspec" && action === "inspect") {
     args.command = "openspec-inspect";
     rest.unshift(subaction);
+  } else if (group === "tracks" && action === "list") {
+    args.command = "track-list";
+    rest.unshift(subaction);
   } else if (group === "tracks" && action === "inspect" && subaction === "integrations") {
     args.command = "track-inspect-integrations";
   } else if (group === "tracks" && action === "inspect") {
     args.command = "track-inspect";
+    rest.unshift(subaction);
+  } else if (group === "runs" && action === "list") {
+    args.command = "run-list";
     rest.unshift(subaction);
   } else if (group === "runs" && action === "inspect") {
     args.command = "run-inspect";
@@ -277,6 +295,23 @@ function parseArgs(argv: string[]): ParsedArgs {
         args.pageSize = value;
         break;
       }
+      case "--status":
+        args.status = rest[++index];
+        break;
+      case "--priority":
+        args.priority = rest[++index];
+        break;
+      case "--sort-by":
+        args.sortBy = rest[++index];
+        break;
+      case "--sort-order": {
+        const value = rest[++index];
+        if (value !== "asc" && value !== "desc") {
+          throw new Error(`Invalid sort order: ${value ?? ""}`);
+        }
+        args.sortOrder = value;
+        break;
+      }
       case "--import-page": {
         const value = Number.parseInt(rest[++index] ?? "", 10);
         if (!Number.isInteger(value) || value < 1) {
@@ -349,6 +384,44 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   return args;
+}
+
+function printTrackList(result: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listTracksPage"]>>, args: ParsedArgs): void {
+  if (result.items.length === 0) {
+    console.log("No tracks found");
+    return;
+  }
+
+  console.log(`Tracks (page ${args.page ?? 1}/${result.meta.totalPages || 1}, total ${result.meta.total})`);
+  for (const track of result.items) {
+    console.log(`- ${track.id} [${track.status}] ${track.title}`);
+    console.log(`  - priority: ${track.priority}`);
+    console.log(`  - spec/plan: ${track.specStatus}/${track.planStatus}`);
+    console.log(`  - updatedAt: ${track.updatedAt}`);
+  }
+}
+
+function printRunList(result: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listRunsPage"]>>, args: ParsedArgs): void {
+  if (result.items.length === 0) {
+    console.log("No runs found");
+    return;
+  }
+
+  console.log(`Runs (page ${args.page ?? 1}/${result.meta.totalPages || 1}, total ${result.meta.total})`);
+  for (const run of result.items) {
+    console.log(`- ${run.id} [${run.status}] track=${run.trackId}`);
+    console.log(`  - backend/profile: ${run.backend}/${run.profile}`);
+    console.log(`  - createdAt: ${run.createdAt}`);
+    if (run.startedAt) {
+      console.log(`  - startedAt: ${run.startedAt}`);
+    }
+    if (run.finishedAt) {
+      console.log(`  - finishedAt: ${run.finishedAt}`);
+    }
+    if (run.summary) {
+      console.log(`  - summary: events=${run.summary.eventCount}, lastEvent=${run.summary.lastEventSummary ?? "none"}`);
+    }
+  }
 }
 
 function printExportHistory(result: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listOpenSpecExportHistoryPage"]>>, args: ParsedArgs): void {
@@ -710,6 +783,26 @@ async function run(): Promise<void> {
     return;
   }
 
+  if (args.command === "track-list") {
+    const result = await service.listTracksPage({
+      status: args.status as Track["status"] | undefined,
+      priority: args.priority as Track["priority"] | undefined,
+      page: args.page,
+      pageSize: args.pageSize,
+      sortBy: args.sortBy as "updatedAt" | "createdAt" | "title" | "priority" | "status" | undefined,
+      sortOrder: args.sortOrder,
+    });
+
+    const payload = { ...result, meta: { page: args.page ?? 1, pageSize: args.pageSize ?? 20, ...result.meta } };
+    if (args.json) {
+      console.log(JSON.stringify({ config: loadConfig(), result: { tracks: result.items, meta: payload.meta } }, null, 2));
+      return;
+    }
+
+    printTrackList(result, args);
+    return;
+  }
+
   if (args.command === "track-inspect") {
     if (!args.trackId) {
       throw new Error("Missing required option: --track-id");
@@ -726,6 +819,26 @@ async function run(): Promise<void> {
     }
 
     printTrackStateInspection(result);
+    return;
+  }
+
+  if (args.command === "run-list") {
+    const result = await service.listRunsPage({
+      trackId: args.trackId,
+      status: args.status as Execution["status"] | undefined,
+      page: args.page,
+      pageSize: args.pageSize,
+      sortBy: args.sortBy as "createdAt" | "startedAt" | "finishedAt" | "status" | undefined,
+      sortOrder: args.sortOrder,
+    });
+
+    const payload = { ...result, meta: { page: args.page ?? 1, pageSize: args.pageSize ?? 20, ...result.meta } };
+    if (args.json) {
+      console.log(JSON.stringify({ config: loadConfig(), result: { runs: result.items, meta: payload.meta } }, null, 2));
+      return;
+    }
+
+    printRunList(result, args);
     return;
   }
 

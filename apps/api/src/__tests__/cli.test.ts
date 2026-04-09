@@ -354,3 +354,87 @@ test("CLI inspects track and run payloads", async () => {
   assert.match(runInspectResult.stdout, /status: waiting_approval/);
   assert.match(runInspectResult.stdout, /githubRunCommentSyncForRun: 1 matching target/);
 });
+
+test("CLI lists tracks and runs with filters, pagination, sorting, and json output", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-listing-"));
+  const service = await createService(rootDir);
+
+  const trackAlpha = await service.createTrack({
+    title: "Alpha track",
+    description: "First track",
+    priority: "high",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const trackBravo = await service.createTrack({
+    title: "Bravo track",
+    description: "Second track",
+    priority: "low",
+  });
+  await service.updateTrack({ trackId: trackBravo.id, status: "ready" });
+
+  const runAlpha = await service.startRun({ trackId: trackAlpha.id, prompt: "Run alpha", profile: "default" });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const runBravo = await service.startRun({ trackId: trackBravo.id, prompt: "Run bravo", profile: "default" });
+  await service.cancelRun({ runId: runBravo.id });
+
+  const env = {
+    ...process.env,
+    SPECRAIL_DATA_DIR: path.join(rootDir, "data"),
+    SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "repo-visible"),
+  };
+  const cwd = path.resolve(import.meta.dirname, "../..");
+
+  const trackListResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "tracks", "list", "--status", "blocked", "--sort-by", "title", "--sort-order", "asc"],
+    { cwd, env },
+  );
+  assert.match(trackListResult.stdout, /Tracks \(page 1\/1, total 1\)/);
+  assert.match(trackListResult.stdout, new RegExp(trackBravo.id));
+  assert.doesNotMatch(trackListResult.stdout, new RegExp(trackAlpha.id));
+
+  const trackListJsonResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "tracks", "list", "--page-size", "1", "--sort-by", "title", "--sort-order", "asc", "--json"],
+    { cwd, env },
+  );
+  const trackListJsonPayload = JSON.parse(trackListJsonResult.stdout) as {
+    result: { tracks: Array<{ id: string; title: string }>; meta: { total: number; totalPages: number; page: number; pageSize: number } };
+  };
+  assert.deepEqual(trackListJsonPayload.result.tracks.map((track) => track.title), ["Alpha track"]);
+  assert.deepEqual(trackListJsonPayload.result.meta, {
+    page: 1,
+    pageSize: 1,
+    total: 2,
+    totalPages: 2,
+    hasNextPage: true,
+    hasPrevPage: false,
+  });
+
+  const runListResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "runs", "list", "--status", "cancelled", "--track-id", trackBravo.id],
+    { cwd, env },
+  );
+  assert.match(runListResult.stdout, /Runs \(page 1\/1, total 1\)/);
+  assert.match(runListResult.stdout, new RegExp(runBravo.id));
+  assert.doesNotMatch(runListResult.stdout, new RegExp(runAlpha.id));
+
+  const runListJsonResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "runs", "list", "--page-size", "1", "--sort-by", "createdAt", "--sort-order", "asc", "--json"],
+    { cwd, env },
+  );
+  const runListJsonPayload = JSON.parse(runListJsonResult.stdout) as {
+    result: { runs: Array<{ id: string }>; meta: { total: number; totalPages: number; page: number; pageSize: number } };
+  };
+  assert.deepEqual(runListJsonPayload.result.runs.map((run) => run.id), [runAlpha.id]);
+  assert.deepEqual(runListJsonPayload.result.meta, {
+    page: 1,
+    pageSize: 1,
+    total: 2,
+    totalPages: 2,
+    hasNextPage: true,
+    hasPrevPage: false,
+  });
+});
