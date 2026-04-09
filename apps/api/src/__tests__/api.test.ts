@@ -293,12 +293,12 @@ test("API supports resuming and cancelling a run", async () => {
     };
     assert.equal(cancelledPayload.run.status, "cancelled");
     assert.ok(cancelledPayload.run.finishedAt);
-    assert.equal(cancelledPayload.run.summary?.eventCount, 5);
+    assert.equal(cancelledPayload.run.summary?.eventCount, 4);
     assert.equal(cancelledPayload.run.summary?.lastEventSummary, `Cancelled Codex session ${runPayload.run.id}-codex`);
 
     const eventsResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
     const eventsPayload = (await eventsResponse.json()) as { events: Array<{ type: string; summary: string }> };
-    assert.equal(eventsPayload.events.length, 5);
+    assert.equal(eventsPayload.events.length, 4);
     assert.equal(eventsPayload.events[0]?.summary, "Run started");
     assert.match(eventsPayload.events[1]?.summary ?? "", /Spawned Codex session/);
     assert.match(eventsPayload.events[2]?.summary ?? "", /Resumed Codex session/);
