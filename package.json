@@ -1,0 +1,17 @@
+{
+  "name": "specrail",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Spec-driven orchestration service for coding-agent workflows",
+  "packageManager": "pnpm@10.18.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "check": "pnpm -r check",
+    "dev:api": "pnpm --filter @specrail/api dev",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "typescript": "^5.9.3"
+  }
+}
