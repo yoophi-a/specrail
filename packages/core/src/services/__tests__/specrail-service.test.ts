@@ -175,6 +175,10 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   const persistedRun = await service.getRun(run.id);
   assert.deepEqual(persistedRun, cancelledRun);
 
+  const blockedTrack = await service.getTrack(track.id);
+  assert.equal(blockedTrack?.status, "blocked");
+  assert.equal(blockedTrack?.updatedAt, "2026-04-09T03:10:00.000Z");
+
   const events = await service.listRunEvents(run.id);
   assert.equal(events.length, 4);
   assert.deepEqual(
@@ -216,7 +220,7 @@ test("SpecRailService throws when starting a run for a missing track", async () 
   await assert.rejects(() => service.cancelRun({ runId: "missing-run" }), /Run not found/);
 });
 
-test("SpecRailService reconciles execution records from adapter terminal events", async () => {
+test("SpecRailService reconciles execution records from adapter terminal events and track status", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-runtime-event-"));
 
   const createService = (idSuffix: string) =>
@@ -273,15 +277,23 @@ test("SpecRailService reconciles execution records from adapter terminal events"
     [
       {
         terminalStatus: "completed",
+        expectedTrackStatus: "review",
         timestamp: "2026-04-09T04:03:00.000Z",
         summary: "Completed Codex session session:run-run-runtime-completed",
       },
       {
         terminalStatus: "failed",
+        expectedTrackStatus: "failed",
         timestamp: "2026-04-09T04:05:00.000Z",
         summary: "Failed Codex session session:run-run-runtime-failed",
       },
-    ].map(async ({ terminalStatus, timestamp, summary }) => {
+      {
+        terminalStatus: "cancelled",
+        expectedTrackStatus: "blocked",
+        timestamp: "2026-04-09T04:07:00.000Z",
+        summary: "Cancelled Codex session session:run-run-runtime-cancelled",
+      },
+    ].map(async ({ terminalStatus, expectedTrackStatus, timestamp, summary }) => {
       const service = createService(terminalStatus);
       const track = await service.createTrack({
         title: `Runtime reconciliation ${terminalStatus}`,
@@ -318,6 +330,10 @@ test("SpecRailService reconciles execution records from adapter terminal events"
       const events = await service.listRunEvents(run.id);
       assert.equal(events.length, 2);
       assert.equal(events[1]?.summary, summary);
+
+      const persistedTrack = await service.getTrack(track.id);
+      assert.equal(persistedTrack?.status, expectedTrackStatus);
+      assert.equal(persistedTrack?.updatedAt, timestamp);
     }),
   );
 });

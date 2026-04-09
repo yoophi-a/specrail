@@ -30,7 +30,7 @@ The current MVP is already executable. It can:
 - non-Codex executor adapters
 - web UI, GitHub app/webhooks, or chat integrations
 - artifact editing endpoints
-- run completion/failure reconciliation back into track status
+- automatic track reconciliation from terminal run outcomes beyond the current first-pass policy
 
 ## HTTP API
 
@@ -116,7 +116,8 @@ Notes:
 
 ### Run
 - status values include `created`, `queued`, `running`, `waiting_approval`, `completed`, `failed`, `cancelled`
-- current API actively exercises `running` and `cancelled`
+- current API actively exercises `running`, `completed`, `failed`, and `cancelled`
+- terminal run states reconcile back into track status with a first-pass policy: `completed -> review`, `failed -> failed`, `cancelled -> blocked`
 - run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, and event summary
 
 ### Event types

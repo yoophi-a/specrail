@@ -162,6 +162,19 @@ function buildExecutionSnapshot(execution: Execution, events: ExecutionEvent[]):
   };
 }
 
+function mapTrackStatusFromExecution(status: ExecutionStatus): TrackStatus | null {
+  switch (status) {
+    case "completed":
+      return "review";
+    case "failed":
+      return "failed";
+    case "cancelled":
+      return "blocked";
+    default:
+      return null;
+  }
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -267,6 +280,7 @@ export class SpecRailService {
       await this.dependencies.eventStore.listByExecution(executionId),
     );
     await this.dependencies.executionRepository.update(execution);
+    await this.reconcileTrackStatusFromRun(track.id, execution);
 
     return execution;
   }
@@ -305,6 +319,7 @@ export class SpecRailService {
       await this.dependencies.eventStore.listByExecution(execution.id),
     );
     await this.dependencies.executionRepository.update(reconciledExecution);
+    await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
 
     return reconciledExecution;
   }
@@ -330,6 +345,7 @@ export class SpecRailService {
       await this.dependencies.eventStore.listByExecution(execution.id),
     );
     await this.dependencies.executionRepository.update(cancelledExecution);
+    await this.reconcileTrackStatusFromRun(cancelledExecution.trackId, cancelledExecution);
 
     return cancelledExecution;
   }
@@ -355,6 +371,25 @@ export class SpecRailService {
       await this.dependencies.eventStore.listByExecution(event.executionId),
     );
     await this.dependencies.executionRepository.update(reconciledExecution);
+    await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
+  }
+
+  private async reconcileTrackStatusFromRun(trackId: string, execution: Execution): Promise<void> {
+    const nextStatus = mapTrackStatusFromExecution(execution.status);
+    if (!nextStatus) {
+      return;
+    }
+
+    const track = await this.dependencies.trackRepository.getById(trackId);
+    if (!track || track.status === nextStatus) {
+      return;
+    }
+
+    await this.dependencies.trackRepository.update({
+      ...track,
+      status: nextStatus,
+      updatedAt: execution.finishedAt ?? this.now(),
+    });
   }
 
   private async requireRun(runId: string): Promise<Execution> {
