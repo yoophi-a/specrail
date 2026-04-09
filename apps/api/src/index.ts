@@ -1,9 +1,10 @@
+import { readFile } from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { CodexAdapterStub } from "@specrail/adapters";
-import { loadConfig, materializeTrackArtifacts } from "@specrail/config";
+import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
 import {
   FileExecutionRepository,
   FileProjectRepository,
@@ -14,6 +15,7 @@ import {
 } from "@specrail/core";
 
 interface ApiDeps {
+  artifactRoot: string;
   service: SpecRailService;
 }
 
@@ -33,7 +35,12 @@ interface ResumeRunRequestBody {
   prompt: string;
 }
 
-function createDependencies(dataDir: string): SpecRailServiceDependencies {
+interface DefaultDependencies {
+  artifactRoot: string;
+  serviceDependencies: SpecRailServiceDependencies;
+}
+
+function createDependencies(dataDir: string): DefaultDependencies {
   const stateDir = path.join(dataDir, "state");
   const artifactRoot = path.join(dataDir, "artifacts");
   const workspaceRoot = path.join(dataDir, "workspaces");
@@ -41,34 +48,37 @@ function createDependencies(dataDir: string): SpecRailServiceDependencies {
   const templateDir = path.resolve(process.cwd(), ".specrail-template");
 
   return {
-    projectRepository: new FileProjectRepository(stateDir),
-    trackRepository: new FileTrackRepository(stateDir),
-    executionRepository: new FileExecutionRepository(stateDir),
-    eventStore: new JsonlEventStore(stateDir),
-    artifactWriter: {
-      async write(input) {
-        await materializeTrackArtifacts({
-          rootDir: artifactRoot,
-          templateDir,
-          trackId: input.track.id,
-          projectName: input.project.name,
-          trackTitle: input.track.title,
-          trackDescription: input.track.description,
-          specContent: input.specContent,
-          planContent: input.planContent,
-          tasksContent: input.tasksContent,
-        });
+    artifactRoot,
+    serviceDependencies: {
+      projectRepository: new FileProjectRepository(stateDir),
+      trackRepository: new FileTrackRepository(stateDir),
+      executionRepository: new FileExecutionRepository(stateDir),
+      eventStore: new JsonlEventStore(stateDir),
+      artifactWriter: {
+        async write(input) {
+          await materializeTrackArtifacts({
+            rootDir: artifactRoot,
+            templateDir,
+            trackId: input.track.id,
+            projectName: input.project.name,
+            trackTitle: input.track.title,
+            trackDescription: input.track.description,
+            specContent: input.specContent,
+            planContent: input.planContent,
+            tasksContent: input.tasksContent,
+          });
+        },
       },
+      executor: new CodexAdapterStub({ sessionsDir }),
+      defaultProject: {
+        id: "project-default",
+        name: "SpecRail",
+        repoUrl: "https://github.com/yoophi-a/specrail",
+        localRepoPath: process.cwd(),
+        defaultWorkflowPolicy: "artifact-first-mvp",
+      },
+      workspaceRoot,
     },
-    executor: new CodexAdapterStub({ sessionsDir }),
-    defaultProject: {
-      id: "project-default",
-      name: "SpecRail",
-      repoUrl: "https://github.com/yoophi-a/specrail",
-      localRepoPath: process.cwd(),
-      defaultWorkflowPolicy: "artifact-first-mvp",
-    },
-    workspaceRoot,
   };
 }
 
@@ -93,6 +103,21 @@ function getPathSegments(request: IncomingMessage): string[] {
     .split("?")[0]
     .split("/")
     .filter(Boolean);
+}
+
+async function readTrackArtifacts(artifactRoot: string, trackId: string): Promise<{
+  spec: string;
+  plan: string;
+  tasks: string;
+}> {
+  const artifactPaths = getTrackArtifactPaths(artifactRoot, trackId);
+  const [spec, plan, tasks] = await Promise.all([
+    readFile(artifactPaths.specPath, "utf8"),
+    readFile(artifactPaths.planPath, "utf8"),
+    readFile(artifactPaths.tasksPath, "utf8"),
+  ]);
+
+  return { spec, plan, tasks };
 }
 
 export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
@@ -122,7 +147,8 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           return;
         }
 
-        sendJson(response, 200, { track });
+        const artifacts = await readTrackArtifacts(deps.artifactRoot, track.id);
+        sendJson(response, 200, { track, artifacts });
         return;
       }
 
@@ -207,7 +233,12 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
 export function createDefaultServer(): http.Server {
   const config = loadConfig();
-  return createSpecRailHttpServer({ service: new SpecRailService(createDependencies(config.dataDir)) });
+  const dependencies = createDependencies(config.dataDir);
+
+  return createSpecRailHttpServer({
+    artifactRoot: dependencies.artifactRoot,
+    service: new SpecRailService(dependencies.serviceDependencies),
+  });
 }
 
 const isMainModule = process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;

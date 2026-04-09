@@ -56,6 +56,17 @@ test("API supports creating tracks, starting runs, and listing run events", asyn
     const trackPayload = (await trackResponse.json()) as { track: { id: string; title: string } };
     assert.equal(trackPayload.track.title, "Executor MVP");
 
+    const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
+    assert.equal(getTrackResponse.status, 200);
+    const getTrackPayload = (await getTrackResponse.json()) as {
+      track: { id: string };
+      artifacts: { spec: string; plan: string; tasks: string };
+    };
+    assert.equal(getTrackPayload.track.id, trackPayload.track.id);
+    assert.match(getTrackPayload.artifacts.spec, /# Spec — Executor MVP/);
+    assert.match(getTrackPayload.artifacts.plan, /# Plan/);
+    assert.match(getTrackPayload.artifacts.tasks, /# Tasks — Executor MVP/);
+
     const runResponse = await fetch(`${baseUrl}/runs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
