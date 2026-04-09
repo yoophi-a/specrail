@@ -164,6 +164,12 @@ pnpm --filter @specrail/api track:inspect:integrations -- --track-id track_123 -
 # list runs for a track
 pnpm --filter @specrail/api runs:list -- --track-id track_123 --status running --page-size 10
 
+# inspect persisted run event history
+pnpm --filter @specrail/api runs:events -- --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20
+
+# tail the latest persisted run events
+pnpm --filter @specrail/api runs:tail -- --run-id run_123 --limit 10 --json
+
 # inspect a persisted run payload
 pnpm --filter @specrail/api run:inspect -- --run-id run_123
 ```
@@ -178,6 +184,8 @@ Notes:
 - `tracks:list` mirrors `GET /tracks` with `--status`, `--priority`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, and `--json`
 - track inspection supports `--page`/`--page-size` for both import and export history together, plus `--import-page`, `--import-page-size`, `--export-page`, and `--export-page-size` when operators want to page each side independently
 - `runs:list` mirrors `GET /runs` with `--track-id`, `--status`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, and `--json`
+- `runs:events` mirrors `GET /runs/:runId/events` with shell-friendly filtering via `--after`, `--before`, `--type`, `--limit`, and `--json`
+- `runs:tail` focuses on the latest persisted events for a run and reuses the same `--type`, `--limit`, and `--json` switches
 - `track:inspect` mirrors `GET /tracks/:trackId`, `track:inspect:integrations` mirrors `GET /tracks/:trackId/integrations`, and `run:inspect` mirrors `GET /runs/:runId`
 - JSON output is available with `--json` for scripting or operator tooling
 

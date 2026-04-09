@@ -3,6 +3,7 @@ import { loadConfig } from "@specrail/config";
 import {
   OPENSPEC_RESOLUTION_PRESETS,
   type Execution,
+  type ExecutionEvent,
   type RunInspection,
   type Track,
   type TrackOpenSpecInspection,
@@ -42,6 +43,8 @@ interface ParsedArgs {
     | "track-inspect-integrations"
     | "run-list"
     | "run-inspect"
+    | "run-events"
+    | "run-tail"
     | null;
   path?: string;
   trackId?: string;
@@ -67,6 +70,7 @@ interface ParsedArgs {
   conflictPolicy?: "reject" | "overwrite" | "resolve";
   filterConflictPolicy?: "reject" | "overwrite" | "resolve";
   overwriteFilter?: boolean;
+  eventType?: string;
   preset?: OpenSpecImportResolutionPresetName;
   incoming: OpenSpecImportField[];
   existing: OpenSpecImportField[];
@@ -103,6 +107,8 @@ Usage:
   specrail-admin tracks inspect integrations --track-id <track-id> [--page <n>] [--page-size <count>] [--import-page <n>] [--import-page-size <count>] [--export-page <n>] [--export-page-size <count>] [--json]
   specrail-admin runs list [--track-id <track-id>] [--status <status>] [--page <n>] [--page-size <count>] [--sort-by <createdAt|startedAt|finishedAt|status>] [--sort-order <asc|desc>] [--json]
   specrail-admin runs inspect --run-id <run-id> [--json]
+  specrail-admin runs events --run-id <run-id> [--after <iso>] [--before <iso>] [--type <event-type>] [--limit <count>] [--json]
+  specrail-admin runs tail --run-id <run-id> [--type <event-type>] [--limit <count>] [--json]
 
 Examples:
   specrail-admin openspec export --track-id track_123 --path ./bundle
@@ -119,6 +125,8 @@ Examples:
   specrail-admin tracks inspect integrations --track-id track_123 --page-size 5
   specrail-admin runs list --track-id track_123 --status running --page-size 10
   specrail-admin runs inspect --run-id run_123
+  specrail-admin runs events --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20
+  specrail-admin runs tail --run-id run_123 --limit 10 --json
 `);
 }
 
@@ -222,6 +230,12 @@ function parseArgs(argv: string[]): ParsedArgs {
     rest.unshift(subaction);
   } else if (group === "runs" && action === "inspect") {
     args.command = "run-inspect";
+    rest.unshift(subaction);
+  } else if (group === "runs" && action === "events") {
+    args.command = "run-events";
+    rest.unshift(subaction);
+  } else if (group === "runs" && action === "tail") {
+    args.command = "run-tail";
     rest.unshift(subaction);
   } else {
     throw new Error(`Unknown command: ${argv.join(" ")}`);
@@ -355,6 +369,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--before":
         args.before = parseIsoDateOption("before", rest[++index]);
+        break;
+      case "--type":
+        args.eventType = rest[++index];
         break;
       case "--filter-conflict-policy": {
         const value = rest[++index];
@@ -564,6 +581,35 @@ function printRunInspection(result: RunInspection): void {
   }
   console.log(`- githubRunCommentSync: ${result.githubRunCommentSync?.comments.length ?? 0} track target(s)`);
   console.log(`- githubRunCommentSyncForRun: ${result.githubRunCommentSyncForRun.length} matching target(s)`);
+}
+
+function selectRunEvents(events: ExecutionEvent[], args: ParsedArgs, tailMode = false): ExecutionEvent[] {
+  const filtered = events
+    .filter((event) => (args.after ? event.timestamp >= args.after : true))
+    .filter((event) => (args.before ? event.timestamp <= args.before : true))
+    .filter((event) => (args.eventType ? event.type === args.eventType : true));
+
+  if (!args.pageSize) {
+    return filtered;
+  }
+
+  return tailMode ? filtered.slice(-args.pageSize) : filtered.slice(0, args.pageSize);
+}
+
+function printRunEvents(events: ExecutionEvent[], args: ParsedArgs, label: string): void {
+  if (events.length === 0) {
+    console.log(`No ${label} found`);
+    return;
+  }
+
+  console.log(`${label} (${events.length})`);
+  for (const event of events) {
+    console.log(`- ${event.timestamp} [${event.type}] ${event.summary}`);
+    console.log(`  - source: ${event.source}`);
+    if (event.payload && Object.keys(event.payload).length > 0) {
+      console.log(`  - payload: ${JSON.stringify(event.payload)}`);
+    }
+  }
 }
 
 function inferConflictPolicy(args: ParsedArgs): "reject" | "overwrite" | "resolve" | undefined {
@@ -780,6 +826,42 @@ async function run(): Promise<void> {
     }
 
     printTrackInspection(result, args);
+    return;
+  }
+
+  if (args.command === "run-events" || args.command === "run-tail") {
+    if (!args.runId) {
+      throw new Error("Missing required option: --run-id");
+    }
+
+    const run = await service.getRun(args.runId);
+    if (!run) {
+      throw new Error(`Run not found: ${args.runId}`);
+    }
+
+    const events = selectRunEvents(await service.listRunEvents(run.id), args, args.command === "run-tail");
+    const label = args.command === "run-tail" ? `Run event tail for ${run.id}` : `Run event history for ${run.id}`;
+
+    if (args.json) {
+      console.log(JSON.stringify({
+        config: loadConfig(),
+        result: {
+          run,
+          events,
+          meta: {
+            mode: args.command === "run-tail" ? "tail" : "history",
+            total: events.length,
+            limit: args.pageSize ?? null,
+            after: args.after ?? null,
+            before: args.before ?? null,
+            type: args.eventType ?? null,
+          },
+        },
+      }, null, 2));
+      return;
+    }
+
+    printRunEvents(events, args, label);
     return;
   }
 

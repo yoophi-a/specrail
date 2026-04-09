@@ -438,3 +438,86 @@ test("CLI lists tracks and runs with filters, pagination, sorting, and json outp
     hasPrevPage: false,
   });
 });
+
+test("CLI lists run event history and tail output", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-run-events-"));
+  const dependencies = createDependencies(path.join(rootDir, "data"), path.join(rootDir, "repo-visible"));
+  const service = new SpecRailService(dependencies.serviceDependencies);
+
+  const track = await service.createTrack({
+    title: "CLI run events",
+    description: "Inspect run event history from the shell",
+  });
+  const run = {
+    id: "run_cli_events",
+    trackId: track.id,
+    backend: "codex",
+    profile: "default",
+    workspacePath: path.join(rootDir, "data", "workspaces", "run_cli_events"),
+    branchName: "specrail/run_cli_events",
+    status: "running" as const,
+    createdAt: "2026-04-10T00:00:00.000Z",
+    startedAt: "2026-04-10T00:00:00.500Z",
+  };
+  await dependencies.serviceDependencies.executionRepository.create(run);
+
+  await service.recordExecutionEvent({
+    id: `${run.id}_event_1`,
+    executionId: run.id,
+    type: "message",
+    timestamp: "2026-04-10T00:00:01.000Z",
+    source: "agent",
+    summary: "Started planning",
+    payload: { step: 1 },
+  });
+  await service.recordExecutionEvent({
+    id: `${run.id}_event_2`,
+    executionId: run.id,
+    type: "tool_call",
+    timestamp: "2026-04-10T00:00:02.000Z",
+    source: "agent",
+    summary: "Called listRuns",
+  });
+  await service.recordExecutionEvent({
+    id: `${run.id}_event_3`,
+    executionId: run.id,
+    type: "summary",
+    timestamp: "2026-04-10T00:00:03.000Z",
+    source: "system",
+    summary: "Run completed",
+  });
+
+  const env = {
+    ...process.env,
+    SPECRAIL_DATA_DIR: path.join(rootDir, "data"),
+    SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "repo-visible"),
+  };
+  const cwd = path.resolve(import.meta.dirname, "../..");
+
+  const historyResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "runs", "events", "--run-id", run.id, "--after", "2026-04-10T00:00:02.000Z", "--type", "summary"],
+    { cwd, env },
+  );
+  assert.match(historyResult.stdout, new RegExp(`Run event history for ${run.id}`));
+  assert.match(historyResult.stdout, /Run completed/);
+  assert.doesNotMatch(historyResult.stdout, /Started planning/);
+
+  const tailJsonResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "runs", "tail", "--run-id", run.id, "--limit", "2", "--json"],
+    { cwd, env },
+  );
+  const tailJsonPayload = JSON.parse(tailJsonResult.stdout) as {
+    result: {
+      run: { id: string };
+      events: Array<{ summary: string; type: string }>;
+      meta: { mode: string; total: number; limit: number | null };
+    };
+  };
+  assert.equal(tailJsonPayload.result.run.id, run.id);
+  assert.deepEqual(tailJsonPayload.result.events.map((event) => event.summary), ["Called listRuns", "Run completed"]);
+  assert.equal(tailJsonPayload.result.meta.mode, "tail");
+  assert.equal(tailJsonPayload.result.meta.total, 2);
+  assert.equal(tailJsonPayload.result.meta.limit, 2);
+});

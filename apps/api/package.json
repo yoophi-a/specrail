@@ -28,6 +28,8 @@
     "track:inspect": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts tracks inspect",
     "track:inspect:integrations": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts tracks inspect integrations",
     "runs:list": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts runs list",
+    "runs:events": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts runs events",
+    "runs:tail": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts runs tail",
     "run:inspect": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts runs inspect",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
