@@ -3,98 +3,120 @@
 ## Goal
 
 Build a practical v1 service that combines:
-- Conductor-style durable planning artifacts
-- Vibe-Kanban-style execution/session abstractions
-- optional fallback adapters for weaker agent interfaces
+- durable planning artifacts
+- file-backed run state
+- one working local executor path
+- simple machine-readable interfaces for callers
 
-The MVP should let one caller:
-1. create a project context
-2. create a track with spec + plan
-3. approve the plan
-4. start one execution in an isolated workspace
+The current MVP already supports one caller flow:
+1. create a track
+2. materialize `spec.md`, `plan.md`, and `tasks.md`
+3. inspect and update track workflow state
+4. start one Codex-backed run in an isolated workspace directory
 5. persist normalized events
-6. resume with follow-up instructions
-7. end with a structured summary
+6. resume or cancel that run
+7. read events via JSON or SSE
 
-## System slices
+## Current system slices
 
 ### 1. Control plane
-Owns product/process state.
+Owns product and workflow state.
 
-Primary responsibilities:
-- maintain project metadata
-- create and update tracks
-- store spec and plan artifacts
-- track approval state
-- expose machine-readable metadata for execution
+Currently implemented:
+- default project bootstrap
+- track creation
+- track workflow/approval status updates
+- artifact materialization for each track
+- file-backed repositories for projects, tracks, and executions
+- JSONL-backed event store
 
-Durable artifacts:
-- Markdown: human-readable specs/plans
-- JSON: metadata and workflow state
-- JSONL: event logs and execution summaries
+Primary artifacts:
+- Markdown: `spec.md`, `plan.md`, `tasks.md`
+- JSON: project/track/execution metadata
+- JSONL: run events and session-local adapter events
 
 ### 2. Execution plane
 Owns runtime orchestration.
 
-Primary responsibilities:
-- allocate isolated workspace
-- choose executor backend/profile
-- materialize prompt from approved artifacts
-- run initial or follow-up execution
-- normalize backend-specific output into shared events
-- persist session references
+Currently implemented:
+- workspace directory allocation per run
+- local Codex adapter spawn/resume/cancel lifecycle
+- persisted session metadata and last-message files
+- normalized lifecycle and stream events
+- run summary derivation from persisted events
+
+Currently not implemented:
+- worktree/git orchestration
+- approval pause/resume broker
+- multiple executor backends
+- scheduler/queue management
 
 ### 3. Interface plane
 Owns how external callers interact with the service.
 
-MVP interface:
-- HTTP API
+Currently implemented:
+- Node HTTP API
+- JSON responses
 - SSE event stream
+- basic request validation and structured error responses
 
 Deferred:
 - web UI
 - GitHub app/webhooks
 - chat integrations
+- auth/authz
 
-## Bounded modules
+## Concrete module ownership
 
 ### `packages/core`
-The most important package in the repo.
-
 Owns:
-- domain types
-- status enums
-- state transition rules
-- service ports/interfaces
-- event schema contracts
-
-This package should stay free of vendor-specific executor logic.
+- domain types and enums
+- artifact document rendering
+- file-backed repositories
+- event store contract and JSONL implementation
+- `SpecRailService` orchestration logic
 
 ### `packages/adapters`
-Owns executor and infrastructure adapter boundaries.
-
-Initial subareas:
-- adapter interface definitions
-- provider capability descriptors
-- provider-specific event normalization
-
-Longer term this may split into multiple packages if adapters become large.
+Owns:
+- executor adapter contracts
+- Codex MVP adapter
+- command/session metadata persistence shape
+- runtime event normalization from adapter lifecycle to core event schema
 
 ### `packages/config`
 Owns:
-- env parsing
-- path conventions
-- workflow/config defaults
-- reusable config schemas
+- config loading
+- path conventions for artifacts/state
+- track artifact materialization helpers
 
 ### `apps/api`
 Owns:
-- HTTP routes
+- HTTP routing
 - request validation
-- SSE streaming layer
-- composition root that wires ports to concrete implementations
+- JSON and SSE response handling
+- service composition with file-backed dependencies
 
-## Initial data model
+## API coverage in the MVP
+
+Implemented routes:
+- `POST /tracks`
+- `GET /tracks/:trackId`
+- `PATCH /tracks/:trackId`
+- `POST /runs`
+- `GET /runs/:runId`
+- `POST /runs/:runId/resume`
+- `POST /runs/:runId/cancel`
+- `GET /runs/:runId/events`
+- `GET /runs/:runId/events/stream`
+
+Not implemented yet:
+- project CRUD endpoints
+- artifact edit/update endpoints
+- run listing/filtering endpoints
+- approval action endpoints beyond track status mutation
+- webhook or callback endpoints
+
+## Data model snapshot
 
 ### Project
 - `id`
@@ -125,6 +147,8 @@ Owns:
 - `workspacePath`
 - `branchName`
 - `sessionRef`
+- `command`
+- `summary`
 - `status`
 - `createdAt`
 - `startedAt`
@@ -139,52 +163,94 @@ Owns:
 - `summary`
 - `payload`
 
-## Persistence strategy for v1
+## Persistence layout
 
-MVP should be artifact-first.
+The runtime uses file-backed persistence under the configured data directory.
 
-Recommended starting mix:
-- repo-local files for specs/plans/event logs
-- optional lightweight DB integration added once API queries become awkward
+### Artifact tree
+```text
+artifacts/
+  index.md
+  workflow.md
+  tracks.md
+  tracks/
+    <trackId>/
+      track.json
+      spec.md
+      plan.md
+      tasks.md
+      events.jsonl
+```
 
-Reasoning:
-- artifact transparency is a core product feature
-- early development benefits from easy inspection and git diffability
-- the initial service can move faster if it does not require DB migrations on day 1
+### State tree
+```text
+state/
+  projects/
+    <projectId>.json
+  tracks/
+    <trackId>.json
+  executions/
+    <runId>.json
+  events/
+    <runId>.jsonl
+```
+
+### Session tree
+```text
+sessions/
+  <sessionRef>.json
+  <sessionRef>.events.jsonl
+  <sessionRef>.last-message.txt
+```
+
+### Workspace tree
+```text
+workspaces/
+  <runId>/
+```
 
 ## Request flow
 
 ### Create track
-1. caller submits title/description
-2. control plane creates track id
-3. service writes spec and plan placeholders
-4. metadata is persisted
-5. caller reviews and edits artifacts
+1. caller submits title/description/priority
+2. service ensures a default project exists
+3. service creates a track record
+4. service writes `track.json`, `spec.md`, `plan.md`, `tasks.md`, and a placeholder artifact-local `events.jsonl`
+5. caller can fetch the track plus artifact contents
 
-### Approve plan
-1. caller marks spec/plan approved
-2. approval event is written
-3. track becomes execution-ready
+### Update track workflow state
+1. caller patches any of `status`, `specStatus`, `planStatus`
+2. service validates enum values
+3. track metadata is updated in file-backed state
 
-### Start execution
-1. service allocates workspace
-2. service selects adapter/profile
-3. service materializes prompt bundle
-4. adapter spawns session
-5. normalized events are appended to JSONL
-6. execution summary endpoint reflects live state
+### Start run
+1. caller submits `trackId` and prompt
+2. service allocates `workspaces/<runId>/`
+3. Codex adapter builds and spawns the command
+4. execution metadata is persisted
+5. normalized initial events are appended to `state/events/<runId>.jsonl`
 
-### Follow-up execution
-1. caller submits follow-up instruction
-2. execution plane loads session ref
-3. adapter resumes or forks session
-4. event stream continues under same execution lineage
+### Resume run
+1. caller submits follow-up prompt
+2. service loads execution + persisted session reference
+3. adapter resumes the Codex session
+4. resumed event is appended and run summary is recomputed
+
+### Cancel run
+1. caller requests cancellation
+2. adapter best-effort terminates the persisted PID
+3. cancellation event is persisted
+4. execution status becomes `cancelled`
+
+### Stream run events
+1. caller opens SSE stream for a run
+2. API replays existing persisted events first
+3. file watcher tails appended JSONL lines
+4. keep-alive comments preserve long-lived connection health
 
 ## Event normalization constraints
 
-The event model should be small and stable.
-
-MVP event categories:
+The shared event model stays intentionally small:
 - `message`
 - `tool_call`
 - `tool_result`
@@ -196,29 +262,19 @@ MVP event categories:
 - `test_result`
 - `summary`
 
-Anything adapter-specific should live inside `payload` rather than exploding the top-level schema.
+Current Codex MVP coverage:
+- spawn -> `shell_command`
+- run started/resumed/cancelled/completed/failed -> `task_status_changed`
+- stdout/stderr capture -> `message`
 
-## Directory rationale
+Approval and tool/file/test-specific events are schema-defined but not yet emitted by the current adapter.
 
-### `.specrail-template/`
-A starter template for the control-plane artifacts written into managed repos.
+## Out of scope for the current MVP
 
-Reason to keep it here:
-- version the default artifact contract with the service
-- make template evolution explicit in git history
-
-### `docs/architecture/`
-Architecture decisions should live in repo docs rather than in issues only.
-
-Reason to keep these separate from code:
-- they explain why the module split exists
-- they help future implementation avoid cargo-culting the research plan
-
-## Out-of-scope for this scaffold
-
-- real database layer
-- auth system
+- database layer
+- production auth system
 - production deployment manifests
-- fully working adapters
-- worktree manager implementation
-- PR automation
+- real approval workflows
+- rich artifact editing/versioning API
+- multi-project tenant management
+- PR automation and GitHub sync
