@@ -1,5 +1,26 @@
 import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.js";
 
+export interface GitHubRunCommentTarget {
+  kind: "issue" | "pull_request";
+  number: number;
+  url: string;
+}
+
+export interface GitHubRunCommentPublishResult {
+  action: "created" | "updated" | "noop";
+  target: GitHubRunCommentTarget;
+  body: string;
+  commentId?: number;
+}
+
+export interface GitHubRunCommentPublisher {
+  publishRunSummary(input: {
+    track: Track;
+    run: Execution;
+    events: ExecutionEvent[];
+  }): Promise<GitHubRunCommentPublishResult[]>;
+}
+
 export interface ProjectRepository {
   create(project: Project): Promise<void>;
   getById(projectId: string): Promise<Project | null>;

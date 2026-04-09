@@ -4,7 +4,7 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { CodexAdapter } from "@specrail/adapters";
+import { CodexAdapter, GitHubRunCommentGhPublisher } from "@specrail/adapters";
 import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
 import {
   APPROVAL_STATUSES,
@@ -114,7 +114,7 @@ class RequestValidationError extends Error {
   }
 }
 
-function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultDependencies {
+function createDependencies(dataDir: string, repoArtifactRoot: string, githubPublishEnabled = false): DefaultDependencies {
   const stateDir = path.join(dataDir, "state");
   const artifactRoot = path.join(dataDir, "artifacts");
   const workspaceRoot = path.join(dataDir, "workspaces");
@@ -167,6 +167,7 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
       defaultWorkflowPolicy: "artifact-first-mvp",
     },
     workspaceRoot,
+    githubRunCommentPublisher: githubPublishEnabled ? new GitHubRunCommentGhPublisher() : undefined,
   };
 
   service = new SpecRailService(serviceDependencies);
@@ -759,7 +760,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
 export function createDefaultServer(): http.Server {
   const config = loadConfig();
-  const dependencies = createDependencies(config.dataDir, config.repoArtifactDir);
+  const dependencies = createDependencies(config.dataDir, config.repoArtifactDir, config.githubPublishEnabled);
 
   return createSpecRailHttpServer({
     artifactRoot: dependencies.artifactRoot,

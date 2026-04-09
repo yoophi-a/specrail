@@ -857,3 +857,185 @@ test("SpecRailService lists tracks and runs with basic filters", async () => {
     [runTwo.id],
   );
 });
+
+test("SpecRailService publishes GitHub run summaries for linked issue and pull request targets", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-publish-"));
+  const publishCalls: Array<{ trackStatus: string; runStatus: string; eventCount: number }> = [];
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [
+            {
+              id: `${input.executionId}:started`,
+              executionId: input.executionId,
+              type: "task_status_changed",
+              timestamp: "2026-04-09T07:00:00.000Z",
+              source: "codex",
+              summary: "Run started",
+              payload: { status: "running" },
+            },
+          ],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    githubRunCommentPublisher: {
+      async publishRunSummary(input) {
+        publishCalls.push({
+          trackStatus: input.track.status,
+          runStatus: input.run.status,
+          eventCount: input.events.length,
+        });
+        return [
+          {
+            action: "updated",
+            target: { kind: "issue", number: 30, url: "https://github.com/yoophi-a/specrail/issues/30" },
+            body: "summary",
+            commentId: 3001,
+          },
+          {
+            action: "updated",
+            target: { kind: "pull_request", number: 31, url: "https://github.com/yoophi-a/specrail/pull/31" },
+            body: "summary",
+            commentId: 3101,
+          },
+        ];
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = ["2026-04-09T07:00:00.000Z", "2026-04-09T07:00:01.000Z"];
+      return () => values.shift() ?? "2026-04-09T07:00:01.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-publish", "run-publish"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Publish linked summaries",
+    description: "Push run state to linked GitHub discussions.",
+    githubIssue: { number: 30, url: "https://github.com/yoophi-a/specrail/issues/30" },
+    githubPullRequest: { number: 31, url: "https://github.com/yoophi-a/specrail/pull/31" },
+  });
+
+  const run = await service.startRun({
+    trackId: track.id,
+    prompt: "Ship the publish flow",
+  });
+
+  assert.deepEqual(publishCalls, [{ trackStatus: "new", runStatus: "running", eventCount: 1 }]);
+
+  await service.recordExecutionEvent({
+    id: `${run.id}:completed`,
+    executionId: run.id,
+    type: "task_status_changed",
+    timestamp: "2026-04-09T07:00:01.000Z",
+    source: "codex",
+    summary: "Run completed",
+    payload: { status: "completed" },
+  });
+
+  assert.deepEqual(publishCalls, [
+    { trackStatus: "new", runStatus: "running", eventCount: 1 },
+    { trackStatus: "review", runStatus: "completed", eventCount: 2 },
+  ]);
+
+  assert.equal((await service.getTrack(track.id))?.status, "review");
+  assert.deepEqual(await service.publishRunSummary(run.id), [
+    {
+      action: "updated",
+      target: { kind: "issue", number: 30, url: "https://github.com/yoophi-a/specrail/issues/30" },
+      body: "summary",
+      commentId: 3001,
+    },
+    {
+      action: "updated",
+      target: { kind: "pull_request", number: 31, url: "https://github.com/yoophi-a/specrail/pull/31" },
+      body: "summary",
+      commentId: 3101,
+    },
+  ]);
+});
+
+test("SpecRailService skips GitHub publishing when a track has no linked targets", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-publish-none-"));
+  let publishCount = 0;
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    githubRunCommentPublisher: {
+      async publishRunSummary() {
+        publishCount += 1;
+        return [];
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    idGenerator: (() => {
+      const values = ["track-unlinked", "run-unlinked"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "No external links",
+    description: "This should not publish anywhere.",
+  });
+
+  await service.startRun({ trackId: track.id, prompt: "Do the work" });
+  assert.equal(publishCount, 0);
+});

@@ -22,7 +22,14 @@ import type {
   TrackStatus,
 } from "../domain/types.js";
 import { NotFoundError } from "../errors.js";
-import type { EventStore, ExecutionRepository, ProjectRepository, TrackRepository } from "./ports.js";
+import type {
+  EventStore,
+  ExecutionRepository,
+  GitHubRunCommentPublishResult,
+  GitHubRunCommentPublisher,
+  ProjectRepository,
+  TrackRepository,
+} from "./ports.js";
 
 export interface TrackArtifactWriterInput {
   track: Track;
@@ -80,6 +87,7 @@ export interface SpecRailServiceDependencies {
     defaultWorkflowPolicy?: string;
   };
   workspaceRoot: string;
+  githubRunCommentPublisher?: GitHubRunCommentPublisher;
   now?: () => string;
   idGenerator?: () => string;
 }
@@ -416,7 +424,8 @@ export class SpecRailService {
       await this.dependencies.eventStore.listByExecution(executionId),
     );
     await this.dependencies.executionRepository.update(execution);
-    await this.reconcileTrackStatusFromRun(track.id, execution);
+    const nextTrack = await this.reconcileTrackStatusFromRun(track.id, execution);
+    await this.publishRunSummaryForExecution(nextTrack ?? track, execution);
 
     return execution;
   }
@@ -455,7 +464,8 @@ export class SpecRailService {
       await this.dependencies.eventStore.listByExecution(execution.id),
     );
     await this.dependencies.executionRepository.update(reconciledExecution);
-    await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
+    const track = await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
+    await this.publishRunSummaryForExecution(track, reconciledExecution);
 
     return reconciledExecution;
   }
@@ -481,7 +491,8 @@ export class SpecRailService {
       await this.dependencies.eventStore.listByExecution(execution.id),
     );
     await this.dependencies.executionRepository.update(cancelledExecution);
-    await this.reconcileTrackStatusFromRun(cancelledExecution.trackId, cancelledExecution);
+    const track = await this.reconcileTrackStatusFromRun(cancelledExecution.trackId, cancelledExecution);
+    await this.publishRunSummaryForExecution(track, cancelledExecution);
 
     return cancelledExecution;
   }
@@ -543,24 +554,55 @@ export class SpecRailService {
       await this.dependencies.eventStore.listByExecution(event.executionId),
     );
     await this.dependencies.executionRepository.update(reconciledExecution);
-    await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
+    const track = await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
+    await this.publishRunSummaryForExecution(track, reconciledExecution);
   }
 
-  private async reconcileTrackStatusFromRun(trackId: string, execution: Execution): Promise<void> {
-    const nextStatus = mapTrackStatusFromExecution(execution.status);
-    if (!nextStatus) {
-      return;
+  async publishRunSummary(runId: string): Promise<GitHubRunCommentPublishResult[]> {
+    const execution = await this.requireRun(runId);
+    const track = await this.dependencies.trackRepository.getById(execution.trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${execution.trackId}`);
     }
 
+    return this.publishRunSummaryForExecution(track, execution);
+  }
+
+  private async reconcileTrackStatusFromRun(trackId: string, execution: Execution): Promise<Track | undefined> {
     const track = await this.dependencies.trackRepository.getById(trackId);
-    if (!track || track.status === nextStatus) {
-      return;
+    if (!track) {
+      return undefined;
     }
 
-    await this.dependencies.trackRepository.update({
+    const nextStatus = mapTrackStatusFromExecution(execution.status);
+    if (!nextStatus || track.status === nextStatus) {
+      return track;
+    }
+
+    const updatedTrack = {
       ...track,
       status: nextStatus,
       updatedAt: execution.finishedAt ?? this.now(),
+    };
+
+    await this.dependencies.trackRepository.update(updatedTrack);
+    return updatedTrack;
+  }
+
+  private async publishRunSummaryForExecution(track: Track | undefined, execution: Execution): Promise<GitHubRunCommentPublishResult[]> {
+    if (!track || !this.dependencies.githubRunCommentPublisher) {
+      return [];
+    }
+
+    if (!track.githubIssue && !track.githubPullRequest) {
+      return [];
+    }
+
+    return this.dependencies.githubRunCommentPublisher.publishRunSummary({
+      track,
+      run: execution,
+      events: await this.dependencies.eventStore.listByExecution(execution.id),
     });
   }
 
