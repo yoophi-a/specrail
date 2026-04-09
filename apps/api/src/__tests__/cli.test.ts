@@ -259,3 +259,98 @@ test("CLI inspects paginated track-scoped OpenSpec history", async () => {
   assert.match(exportInspectResult.stdout, /page 2\/3/);
   assert.match(exportInspectResult.stdout, /export-a/);
 });
+
+test("CLI inspects track and run payloads", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-inspection-"));
+  const dependencies = createDependencies(path.join(rootDir, "data"), path.join(rootDir, "repo-visible"));
+  const service = new SpecRailService(dependencies.serviceDependencies);
+
+  const track = await service.createTrack({
+    title: "CLI full inspection",
+    description: "Track and run inspection payloads",
+    githubIssue: { number: 48, url: "https://github.com/yoophi-a/specrail/issues/48" },
+  });
+
+  const run = {
+    id: "run_cli_inspect",
+    trackId: track.id,
+    backend: "codex",
+    profile: "default",
+    workspacePath: path.join(rootDir, "data", "workspaces", "run_cli_inspect"),
+    branchName: "specrail/run_cli_inspect",
+    sessionRef: "session:run_cli_inspect",
+    command: {
+      command: "codex",
+      args: ["exec", "inspect"],
+      cwd: path.join(rootDir, "repo-visible"),
+      prompt: "Inspect CLI payloads",
+    },
+    summary: {
+      eventCount: 2,
+      lastEventSummary: "Waiting for approval",
+      lastEventAt: "2026-04-10T00:20:00.000Z",
+    },
+    status: "waiting_approval" as const,
+    createdAt: "2026-04-10T00:10:00.000Z",
+    startedAt: "2026-04-10T00:12:00.000Z",
+  };
+  await dependencies.serviceDependencies.executionRepository.create(run);
+  await dependencies.serviceDependencies.githubRunCommentSyncStore?.upsert({
+    id: track.id,
+    trackId: track.id,
+    updatedAt: "2026-04-10T00:25:00.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 48, url: "https://github.com/yoophi-a/specrail/issues/48" },
+        commentId: 4801,
+        lastRunId: run.id,
+        lastRunStatus: "waiting_approval",
+        lastPublishedAt: "2026-04-10T00:20:00.000Z",
+        lastSyncStatus: "success",
+      },
+    ],
+  });
+
+  const env = {
+    ...process.env,
+    SPECRAIL_DATA_DIR: path.join(rootDir, "data"),
+    SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "repo-visible"),
+  };
+  const cwd = path.resolve(import.meta.dirname, "../..");
+
+  const trackInspectResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "tracks", "inspect", "--track-id", track.id],
+    { cwd, env },
+  );
+  assert.match(trackInspectResult.stdout, /Track inspection for/);
+  assert.match(trackInspectResult.stdout, /CLI full inspection/);
+  assert.match(trackInspectResult.stdout, /githubRunCommentSync: 1 comment target/);
+
+  const integrationsInspectResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "tracks", "inspect", "integrations", "--track-id", track.id, "--json"],
+    { cwd, env },
+  );
+  const integrationsPayload = JSON.parse(integrationsInspectResult.stdout) as {
+    result: {
+      trackId: string;
+      github: { issue?: { number: number }; summary: { linkedTargetCount: number; syncedTargetCount: number } };
+      openSpec: { imports: { meta: { total: number } } };
+    };
+  };
+  assert.equal(integrationsPayload.result.trackId, track.id);
+  assert.equal(integrationsPayload.result.github.issue?.number, 48);
+  assert.equal(integrationsPayload.result.github.summary.linkedTargetCount, 1);
+  assert.equal(integrationsPayload.result.github.summary.syncedTargetCount, 1);
+  assert.equal(integrationsPayload.result.openSpec.imports.meta.total, 0);
+
+  const runInspectResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "runs", "inspect", "--run-id", run.id],
+    { cwd, env },
+  );
+  assert.match(runInspectResult.stdout, /Run inspection for run_cli_inspect/);
+  assert.match(runInspectResult.stdout, /status: waiting_approval/);
+  assert.match(runInspectResult.stdout, /githubRunCommentSyncForRun: 1 matching target/);
+});

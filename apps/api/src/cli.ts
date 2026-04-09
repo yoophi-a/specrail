@@ -2,7 +2,10 @@
 import { loadConfig } from "@specrail/config";
 import {
   OPENSPEC_RESOLUTION_PRESETS,
+  type RunInspection,
   type TrackOpenSpecInspection,
+  type TrackInspection,
+  type TrackIntegrationsInspection,
   type OpenSpecImportResolution,
   type OpenSpecImportResolutionChoice,
   type OpenSpecImportResolutionPresetName,
@@ -32,9 +35,13 @@ interface ParsedArgs {
     | "openspec-inspect"
     | "openspec-inspect-imports"
     | "openspec-inspect-exports"
+    | "track-inspect"
+    | "track-inspect-integrations"
+    | "run-inspect"
     | null;
   path?: string;
   trackId?: string;
+  runId?: string;
   overwrite: boolean;
   preview: boolean;
   apply: boolean;
@@ -83,6 +90,9 @@ Usage:
   specrail-admin openspec inspect --track-id <track-id> [--page <n>] [--page-size <count>] [--import-page <n>] [--import-page-size <count>] [--export-page <n>] [--export-page-size <count>] [--json]
   specrail-admin openspec inspect imports --track-id <track-id> [--page <n>] [--page-size <count>] [--json]
   specrail-admin openspec inspect exports --track-id <track-id> [--page <n>] [--page-size <count>] [--json]
+  specrail-admin tracks inspect --track-id <track-id> [--json]
+  specrail-admin tracks inspect integrations --track-id <track-id> [--page <n>] [--page-size <count>] [--import-page <n>] [--import-page-size <count>] [--export-page <n>] [--export-page-size <count>] [--json]
+  specrail-admin runs inspect --run-id <run-id> [--json]
 
 Examples:
   specrail-admin openspec export --track-id track_123 --path ./bundle
@@ -94,6 +104,9 @@ Examples:
   specrail-admin openspec exports --track-id track_123 --page-size 5 --overwrite-only
   specrail-admin openspec inspect --track-id track_123 --page-size 1 --export-page 2
   specrail-admin openspec inspect imports --track-id track_123 --page 2 --page-size 5
+  specrail-admin tracks inspect --track-id track_123
+  specrail-admin tracks inspect integrations --track-id track_123 --page-size 5
+  specrail-admin runs inspect --run-id run_123
 `);
 }
 
@@ -184,6 +197,14 @@ function parseArgs(argv: string[]): ParsedArgs {
   } else if (group === "openspec" && action === "inspect") {
     args.command = "openspec-inspect";
     rest.unshift(subaction);
+  } else if (group === "tracks" && action === "inspect" && subaction === "integrations") {
+    args.command = "track-inspect-integrations";
+  } else if (group === "tracks" && action === "inspect") {
+    args.command = "track-inspect";
+    rest.unshift(subaction);
+  } else if (group === "runs" && action === "inspect") {
+    args.command = "run-inspect";
+    rest.unshift(subaction);
   } else {
     throw new Error(`Unknown command: ${argv.join(" ")}`);
   }
@@ -200,6 +221,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--track-id":
         args.trackId = rest[++index];
+        break;
+      case "--run-id":
+        args.runId = rest[++index];
         break;
       case "--overwrite":
         args.overwrite = true;
@@ -405,6 +429,68 @@ function printTrackInspection(result: TrackOpenSpecInspection, args: ParsedArgs)
   console.log(`OpenSpec track inspection for ${result.trackId}`);
   printTrackImportInspection(result.imports, pagination.importPage ?? 1);
   printTrackExportInspection(result.exports, pagination.exportPage ?? 1);
+}
+
+function printTrackStateInspection(result: TrackInspection): void {
+  console.log(`Track inspection for ${result.track.id}`);
+  console.log(`- title: ${result.track.title}`);
+  console.log(`- status: ${result.track.status}`);
+  console.log(`- specStatus: ${result.track.specStatus}`);
+  console.log(`- planStatus: ${result.track.planStatus}`);
+  console.log(`- priority: ${result.track.priority}`);
+  console.log(`- projectId: ${result.track.projectId}`);
+  if (result.track.githubIssue) {
+    console.log(`- githubIssue: #${result.track.githubIssue.number} ${result.track.githubIssue.url}`);
+  }
+  if (result.track.githubPullRequest) {
+    console.log(`- githubPullRequest: #${result.track.githubPullRequest.number} ${result.track.githubPullRequest.url}`);
+  }
+  console.log(`- artifacts:`);
+  console.log(`  - openSpecImport: ${result.track.openSpecImport?.id ?? "none"}`);
+  console.log(`  - openSpecExport: ${result.track.openSpecExport?.id ?? "none"}`);
+  console.log(`  - importHistory: ${result.track.openSpecImportHistory?.length ?? 0}`);
+  console.log(`  - exportHistory: ${result.track.openSpecExportHistory?.length ?? 0}`);
+  console.log(`- githubRunCommentSync: ${result.githubRunCommentSync?.comments.length ?? 0} comment target(s)`);
+}
+
+function printTrackIntegrationsInspection(result: TrackIntegrationsInspection, args: ParsedArgs): void {
+  console.log(`Track integrations inspection for ${result.trackId}`);
+  console.log(`- github:`);
+  console.log(`  - issue: ${result.github.issue ? `#${result.github.issue.number} ${result.github.issue.url}` : "none"}`);
+  console.log(`  - pullRequest: ${result.github.pullRequest ? `#${result.github.pullRequest.number} ${result.github.pullRequest.url}` : "none"}`);
+  console.log(`  - runCommentSyncTargets: ${result.github.runCommentSync?.comments.length ?? 0}`);
+  console.log(`  - summary: linked=${result.github.summary.linkedTargetCount}, synced=${result.github.summary.syncedTargetCount}, status=${result.github.summary.lastSyncStatus ?? "none"}`);
+  if (result.github.summary.lastPublishedAt) {
+    console.log(`  - lastPublishedAt: ${result.github.summary.lastPublishedAt}`);
+  }
+  if (result.github.summary.lastSyncError) {
+    console.log(`  - lastSyncError: ${result.github.summary.lastSyncError}`);
+  }
+  printTrackInspection(result.openSpec, args);
+}
+
+function printRunInspection(result: RunInspection): void {
+  console.log(`Run inspection for ${result.run.id}`);
+  console.log(`- trackId: ${result.run.trackId}`);
+  console.log(`- status: ${result.run.status}`);
+  console.log(`- backend: ${result.run.backend}`);
+  console.log(`- profile: ${result.run.profile}`);
+  console.log(`- workspacePath: ${result.run.workspacePath}`);
+  console.log(`- branchName: ${result.run.branchName}`);
+  console.log(`- sessionRef: ${result.run.sessionRef ?? "none"}`);
+  if (result.run.command) {
+    console.log(`- command: ${result.run.command.command} ${result.run.command.args.join(" ")}`.trim());
+    console.log(`  - cwd: ${result.run.command.cwd}`);
+    console.log(`  - prompt: ${JSON.stringify(result.run.command.prompt)}`);
+    if (result.run.command.resumeSessionRef) {
+      console.log(`  - resumeSessionRef: ${result.run.command.resumeSessionRef}`);
+    }
+  }
+  if (result.run.summary) {
+    console.log(`- summary: events=${result.run.summary.eventCount}, lastEvent=${result.run.summary.lastEventSummary ?? "none"}, lastEventAt=${result.run.summary.lastEventAt ?? "none"}`);
+  }
+  console.log(`- githubRunCommentSync: ${result.githubRunCommentSync?.comments.length ?? 0} track target(s)`);
+  console.log(`- githubRunCommentSyncForRun: ${result.githubRunCommentSyncForRun.length} matching target(s)`);
 }
 
 function inferConflictPolicy(args: ParsedArgs): "reject" | "overwrite" | "resolve" | undefined {
@@ -621,6 +707,63 @@ async function run(): Promise<void> {
     }
 
     printTrackInspection(result, args);
+    return;
+  }
+
+  if (args.command === "track-inspect") {
+    if (!args.trackId) {
+      throw new Error("Missing required option: --track-id");
+    }
+
+    const result = await service.getTrackInspection(args.trackId);
+    if (!result) {
+      throw new Error(`Track not found: ${args.trackId}`);
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+      return;
+    }
+
+    printTrackStateInspection(result);
+    return;
+  }
+
+  if (args.command === "track-inspect-integrations") {
+    if (!args.trackId) {
+      throw new Error("Missing required option: --track-id");
+    }
+
+    const result = await service.getTrackIntegrationsInspection(args.trackId, resolveTrackInspectionPagination(args));
+    if (!result) {
+      throw new Error(`Track not found: ${args.trackId}`);
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+      return;
+    }
+
+    printTrackIntegrationsInspection(result, args);
+    return;
+  }
+
+  if (args.command === "run-inspect") {
+    if (!args.runId) {
+      throw new Error("Missing required option: --run-id");
+    }
+
+    const result = await service.getRunInspection(args.runId);
+    if (!result) {
+      throw new Error(`Run not found: ${args.runId}`);
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+      return;
+    }
+
+    printRunInspection(result);
     return;
   }
 

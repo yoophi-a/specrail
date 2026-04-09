@@ -24,6 +24,9 @@
     "openspec:inspect": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec inspect",
     "openspec:inspect:imports": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec inspect imports",
     "openspec:inspect:exports": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec inspect exports",
+    "track:inspect": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts tracks inspect",
+    "track:inspect:integrations": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts tracks inspect integrations",
+    "run:inspect": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts runs inspect",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

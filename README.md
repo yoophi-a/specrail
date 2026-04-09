@@ -151,6 +151,15 @@ pnpm --filter @specrail/api openspec:inspect:imports -- --track-id track_123 --p
 
 # inspect only track-scoped export history with separate paging
 pnpm --filter @specrail/api openspec:inspect:exports -- --track-id track_123 --page-size 5 --page 3
+
+# inspect the full persisted track payload
+pnpm --filter @specrail/api track:inspect -- --track-id track_123
+
+# inspect track integrations plus embedded OpenSpec history
+pnpm --filter @specrail/api track:inspect:integrations -- --track-id track_123 --page-size 5
+
+# inspect a persisted run payload
+pnpm --filter @specrail/api run:inspect -- --run-id run_123
 ```
 
 Notes:
@@ -161,6 +170,7 @@ Notes:
 - import history supports `--page`/`--page-size` plus `--track-id`, `--source-path`, `--filter-conflict-policy`, `--after`, and `--before`
 - export history supports `--page`/`--page-size` plus `--track-id`, `--target-path`, `--overwrite-only`/`--no-overwrite-only`, `--after`, and `--before`
 - track inspection supports `--page`/`--page-size` for both import and export history together, plus `--import-page`, `--import-page-size`, `--export-page`, and `--export-page-size` when operators want to page each side independently
+- `track:inspect` mirrors `GET /tracks/:trackId`, `track:inspect:integrations` mirrors `GET /tracks/:trackId/integrations`, and `run:inspect` mirrors `GET /runs/:runId`
 - JSON output is available with `--json` for scripting or operator tooling
 
 ### Runs
