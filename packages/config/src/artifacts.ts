@@ -39,6 +39,20 @@ export interface MaterializeTrackArtifactsInput {
   projectName: string;
   trackTitle: string;
   trackDescription: string;
+  openSpecImport?: {
+    source: {
+      kind: "file";
+      path: string;
+    };
+    importedAt: string;
+    conflictPolicy: "reject" | "overwrite";
+    bundle: {
+      version: 1;
+      format: "specrail.openspec.bundle";
+      exportedAt: string;
+      generatedBy: "specrail";
+    };
+  };
   templateDir: string;
   specContent: string;
   planContent: string;
@@ -131,6 +145,7 @@ export async function materializeTrackArtifacts(input: MaterializeTrackArtifacts
     title: input.trackTitle,
     description: input.trackDescription,
     artifactRoot: path.relative(projectPaths.rootDir, trackPaths.trackDir),
+    ...(input.openSpecImport ? { openSpecImport: input.openSpecImport } : {}),
   };
 
   await Promise.all([

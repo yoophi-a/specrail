@@ -196,9 +196,16 @@ export interface ImportTrackFromOpenSpecResult {
   action: "created" | "updated";
   applied: boolean;
   conflictPolicy: OpenSpecImportConflictPolicy;
+  provenance: NonNullable<Track["openSpecImport"]>;
   conflict: {
     hasConflict: boolean;
     reason: "track_id_exists" | null;
+    details: Array<{
+      field: string;
+      message: string;
+      existingValue: unknown;
+      incomingValue: unknown;
+    }>;
   };
 }
 
@@ -350,6 +357,79 @@ function normalizeGitHubReference<T extends GitHubIssueReference | GitHubPullReq
     ...value,
     url: value.url.trim(),
   };
+}
+
+function summarizeComparableValue(value: unknown): unknown {
+  if (value === undefined) {
+    return null;
+  }
+
+  return value;
+}
+
+function normalizeTrackForConflictComparison(track: Track): Record<string, unknown> {
+  return {
+    title: track.title,
+    description: track.description,
+    status: track.status,
+    specStatus: track.specStatus,
+    planStatus: track.planStatus,
+    priority: track.priority,
+    githubIssue: summarizeComparableValue(track.githubIssue),
+    githubPullRequest: summarizeComparableValue(track.githubPullRequest),
+  };
+}
+
+function buildOpenSpecConflictDetails(
+  existingTrack: Track | null,
+  incomingTrack: Track,
+  importedArtifacts: OpenSpecTrackArtifacts,
+  existingArtifacts: OpenSpecTrackArtifacts | null,
+): ImportTrackFromOpenSpecResult["conflict"]["details"] {
+  if (!existingTrack) {
+    return [];
+  }
+
+  const details: ImportTrackFromOpenSpecResult["conflict"]["details"] = [
+    {
+      field: "track.id",
+      message: "An existing track with the same id would be updated.",
+      existingValue: existingTrack.id,
+      incomingValue: incomingTrack.id,
+    },
+  ];
+
+  const existingComparable = normalizeTrackForConflictComparison(existingTrack);
+  const incomingComparable = normalizeTrackForConflictComparison(incomingTrack);
+
+  for (const field of Object.keys(incomingComparable)) {
+    const existingValue = existingComparable[field];
+    const incomingValue = incomingComparable[field];
+
+    if (JSON.stringify(existingValue) !== JSON.stringify(incomingValue)) {
+      details.push({
+        field: `track.${field}`,
+        message: `Import would replace track ${field}.`,
+        existingValue,
+        incomingValue,
+      });
+    }
+  }
+
+  if (existingArtifacts) {
+    for (const field of ["spec", "plan", "tasks"] as const) {
+      if (existingArtifacts[field] !== importedArtifacts[field]) {
+        details.push({
+          field: `artifacts.${field}`,
+          message: `Import would replace ${field}.md content.`,
+          existingValue: { length: existingArtifacts[field].length },
+          incomingValue: { length: importedArtifacts[field].length },
+        });
+      }
+    }
+  }
+
+  return details;
 }
 
 function listGitHubRunCommentTargets(track: Pick<Track, "githubIssue" | "githubPullRequest">): GitHubRunCommentSyncState["comments"][number]["target"][] {
@@ -562,15 +642,24 @@ export class SpecRailService {
   async importTrackFromOpenSpec(input: ImportTrackFromOpenSpecInput): Promise<ImportTrackFromOpenSpecResult> {
     const adapter = this.requireOpenSpecAdapter();
     const project = await this.ensureDefaultProject();
+    const artifactReader = this.requireTrackArtifactReader();
     const imported = await adapter.importPackage({ source: input.source });
     const timestamp = this.now();
     const importedTrack = imported.package.track;
     const existingTrack = await this.dependencies.trackRepository.getById(importedTrack.id);
+    const existingArtifacts = existingTrack ? await artifactReader.read(existingTrack.id) : null;
     const conflictPolicy = input.conflictPolicy ?? "reject";
     const action = existingTrack ? "updated" : "created";
+    const provenance: NonNullable<Track["openSpecImport"]> = {
+      source: input.source,
+      importedAt: timestamp,
+      conflictPolicy,
+      bundle: imported.package.metadata,
+    };
     const conflict = {
       hasConflict: existingTrack !== null,
       reason: existingTrack ? ("track_id_exists" as const) : null,
+      details: buildOpenSpecConflictDetails(existingTrack, importedTrack, imported.package.artifacts, existingArtifacts),
     };
 
     const track: Track = {
@@ -580,6 +669,7 @@ export class SpecRailService {
       description: normalizeRequiredString(importedTrack.description),
       githubIssue: normalizeGitHubReference(importedTrack.githubIssue),
       githubPullRequest: normalizeGitHubReference(importedTrack.githubPullRequest),
+      openSpecImport: provenance,
       updatedAt: timestamp,
       createdAt: existingTrack?.createdAt ?? importedTrack.createdAt ?? timestamp,
     };
@@ -591,11 +681,15 @@ export class SpecRailService {
           action,
           applied: false,
           conflictPolicy,
+          provenance,
           conflict,
         };
       }
 
-      throw new ConflictError(`OpenSpec import would overwrite existing track: ${track.id}. Retry with conflictPolicy=overwrite or dryRun=true.`);
+      throw new ConflictError(
+        `OpenSpec import would overwrite existing track: ${track.id}. Retry with conflictPolicy=overwrite or dryRun=true.`,
+        conflict.details,
+      );
     }
 
     if (input.dryRun) {
@@ -604,6 +698,7 @@ export class SpecRailService {
         action,
         applied: false,
         conflictPolicy,
+        provenance,
         conflict,
       };
     }
@@ -627,6 +722,7 @@ export class SpecRailService {
       action,
       applied: true,
       conflictPolicy,
+      provenance,
       conflict,
     };
   }

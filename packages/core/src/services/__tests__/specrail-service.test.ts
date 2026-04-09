@@ -1608,6 +1608,7 @@ test("SpecRailService exports a track through the OpenSpec adapter", async () =>
 test("SpecRailService imports OpenSpec bundles into created and existing tracks", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-openspec-import-"));
   const writes: Array<{ trackId: string; spec: string; plan: string; tasks: string }> = [];
+  const existingArtifacts = new Map<string, { spec: string; plan: string; tasks: string }>();
   const importedTrack = {
     id: "track-openspec-import",
     projectId: "project-foreign",
@@ -1629,12 +1630,27 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: {
       async write(input) {
+        existingArtifacts.set(input.track.id, {
+          spec: input.specContent,
+          plan: input.planContent,
+          tasks: input.tasksContent,
+        });
         writes.push({
           trackId: input.track.id,
           spec: input.specContent,
           plan: input.planContent,
           tasks: input.tasksContent,
         });
+      },
+    },
+    artifactReader: {
+      async read(trackId) {
+        const artifacts = existingArtifacts.get(trackId);
+        if (!artifacts) {
+          throw new Error(`missing artifacts for ${trackId}`);
+        }
+
+        return artifacts;
       },
     },
     executor: {
@@ -1700,6 +1716,17 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
   assert.equal(created.track.title, "Imported track");
   assert.equal(created.track.description, "Imported description");
   assert.equal(created.track.updatedAt, "2026-04-10T04:05:00.000Z");
+  assert.deepEqual(created.provenance, {
+    source: { kind: "file", path: path.join(rootDir, "bundle") },
+    importedAt: "2026-04-10T04:05:00.000Z",
+    conflictPolicy: "overwrite",
+    bundle: {
+      version: 1,
+      format: "specrail.openspec.bundle",
+      exportedAt: "2026-04-10T04:00:00.000Z",
+      generatedBy: "specrail",
+    },
+  });
 
   const updated = await service.importTrackFromOpenSpec({
     source: { kind: "file", path: path.join(rootDir, "bundle") },
@@ -1709,6 +1736,8 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
   assert.equal(updated.applied, true);
   assert.equal(updated.track.createdAt, "2026-04-09T00:00:00.000Z");
   assert.equal(updated.track.updatedAt, "2026-04-10T04:10:00.000Z");
+  assert.equal(updated.conflict.details[0]?.field, "track.id");
+  assert.equal(updated.track.openSpecImport?.source.path, path.join(rootDir, "bundle"));
 
   assert.deepEqual(writes, [
     {
@@ -1729,6 +1758,12 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
 test("SpecRailService previews OpenSpec imports and rejects collisions unless overwrite is explicit", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-openspec-import-preview-"));
   const writes: Array<{ trackId: string; spec: string; plan: string; tasks: string }> = [];
+  const existingArtifacts = new Map<string, { spec: string; plan: string; tasks: string }>();
+  const importedArtifacts = {
+    spec: "# Preview spec",
+    plan: "# Preview plan",
+    tasks: "# Preview tasks",
+  };
   const importedTrack = {
     id: "track-openspec-preview",
     projectId: "project-foreign",
@@ -1751,12 +1786,27 @@ test("SpecRailService previews OpenSpec imports and rejects collisions unless ov
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: {
       async write(input) {
+        existingArtifacts.set(input.track.id, {
+          spec: input.specContent,
+          plan: input.planContent,
+          tasks: input.tasksContent,
+        });
         writes.push({
           trackId: input.track.id,
           spec: input.specContent,
           plan: input.planContent,
           tasks: input.tasksContent,
         });
+      },
+    },
+    artifactReader: {
+      async read(trackId) {
+        const artifacts = existingArtifacts.get(trackId);
+        if (!artifacts) {
+          throw new Error(`missing artifacts for ${trackId}`);
+        }
+
+        return artifacts;
       },
     },
     executor: {
@@ -1777,11 +1827,7 @@ test("SpecRailService previews OpenSpec imports and rejects collisions unless ov
               generatedBy: "specrail",
             },
             track: importedTrack,
-            artifacts: {
-              spec: "# Preview spec",
-              plan: "# Preview plan",
-              tasks: "# Preview tasks",
-            },
+            artifacts: importedArtifacts,
             files: {
               spec: "spec.md",
               plan: "plan.md",
@@ -1823,6 +1869,8 @@ test("SpecRailService previews OpenSpec imports and rejects collisions unless ov
     /Retry with conflictPolicy=overwrite or dryRun=true/,
   );
 
+  importedArtifacts.spec = "# Preview spec updated\n";
+
   const collisionPreview = await service.importTrackFromOpenSpec({
     source: { kind: "file", path: path.join(rootDir, "bundle") },
     dryRun: true,
@@ -1831,5 +1879,7 @@ test("SpecRailService previews OpenSpec imports and rejects collisions unless ov
   assert.equal(collisionPreview.applied, false);
   assert.equal(collisionPreview.conflict.hasConflict, true);
   assert.equal(collisionPreview.conflict.reason, "track_id_exists");
+  assert.ok(collisionPreview.conflict.details.some((detail) => detail.field === "artifacts.spec"));
+  assert.equal(collisionPreview.provenance.source.path, path.join(rootDir, "bundle"));
   assert.equal(writes.length, 1);
 });

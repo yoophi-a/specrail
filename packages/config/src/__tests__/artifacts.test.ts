@@ -31,6 +31,17 @@ test("materializeTrackArtifacts creates runtime and repo-visible .specrail files
     trackId: "track-api-bootstrap",
     trackTitle: "Track API bootstrap",
     trackDescription: "Create the first deterministic control-plane artifacts.",
+    openSpecImport: {
+      source: { kind: "file", path: "/tmp/specrail/bundles/bootstrap" },
+      importedAt: "2026-04-10T05:00:00.000Z",
+      conflictPolicy: "overwrite",
+      bundle: {
+        version: 1,
+        format: "specrail.openspec.bundle",
+        exportedAt: "2026-04-10T04:50:00.000Z",
+        generatedBy: "specrail",
+      },
+    },
     specContent: renderSpecDocument({
       title: "Track API bootstrap",
       problem: "The project needs deterministic track artifacts.",
@@ -73,6 +84,17 @@ test("materializeTrackArtifacts creates runtime and repo-visible .specrail files
     title: "Track API bootstrap",
     description: "Create the first deterministic control-plane artifacts.",
     artifactRoot: path.join("tracks", "track-api-bootstrap"),
+    openSpecImport: {
+      source: { kind: "file", path: "/tmp/specrail/bundles/bootstrap" },
+      importedAt: "2026-04-10T05:00:00.000Z",
+      conflictPolicy: "overwrite",
+      bundle: {
+        version: 1,
+        format: "specrail.openspec.bundle",
+        exportedAt: "2026-04-10T04:50:00.000Z",
+        generatedBy: "specrail",
+      },
+    },
   });
   assert.equal(eventsContent, "");
 

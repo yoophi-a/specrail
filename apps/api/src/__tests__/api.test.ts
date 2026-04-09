@@ -571,10 +571,17 @@ test("API exports and imports OpenSpec bundles through admin routes", async () =
     });
     assert.equal(importResponse.status, 200);
 
-    const imported = (await importResponse.json()) as { action: string; applied: boolean; track: { id: string } };
+    const imported = (await importResponse.json()) as {
+      action: string;
+      applied: boolean;
+      provenance: { source: { path: string } };
+      track: { id: string; openSpecImport: { source: { path: string } } };
+    };
     assert.equal(imported.action, "updated");
     assert.equal(imported.applied, true);
     assert.equal(imported.track.id, trackPayload.track.id);
+    assert.equal(imported.provenance.source.path, bundleDir);
+    assert.equal(imported.track.openSpecImport.source.path, bundleDir);
 
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     const getTrackPayload = (await getTrackResponse.json()) as { artifacts: { spec: string } };
@@ -618,13 +625,16 @@ test("API previews OpenSpec imports and reports collisions before overwrite", as
       action: string;
       applied: boolean;
       conflictPolicy: string;
-      conflict: { hasConflict: boolean; reason: string | null };
+      provenance: { source: { path: string } };
+      conflict: { hasConflict: boolean; reason: string | null; details: Array<{ field: string }> };
     };
     assert.equal(preview.action, "updated");
     assert.equal(preview.applied, false);
     assert.equal(preview.conflictPolicy, "reject");
+    assert.equal(preview.provenance.source.path, bundleDir);
     assert.equal(preview.conflict.hasConflict, true);
     assert.equal(preview.conflict.reason, "track_id_exists");
+    assert.ok(preview.conflict.details.some((detail) => detail.field === "artifacts.spec"));
 
     const conflictResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
       method: "POST",
@@ -632,6 +642,8 @@ test("API previews OpenSpec imports and reports collisions before overwrite", as
       body: JSON.stringify({ path: bundleDir }),
     });
     assert.equal(conflictResponse.status, 409);
+    const conflictPayload = (await conflictResponse.json()) as { error: { details: Array<{ field: string }> } };
+    assert.ok(conflictPayload.error.details.some((detail) => detail.field === "artifacts.spec"));
 
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     const getTrackPayload = (await getTrackResponse.json()) as { artifacts: { spec: string } };

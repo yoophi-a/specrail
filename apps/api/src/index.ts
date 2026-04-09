@@ -157,6 +157,7 @@ function createDependencies(dataDir: string, repoArtifactRoot: string, githubPub
           projectName: input.project.name,
           trackTitle: input.track.title,
           trackDescription: input.track.description,
+          openSpecImport: input.track.openSpecImport,
           specContent: input.specContent,
           planContent: input.planContent,
           tasksContent: input.tasksContent,
@@ -891,7 +892,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (error instanceof ConflictError) {
-        sendError(response, 409, "conflict", error.message);
+        sendError(response, 409, "conflict", error.message, error.details as ApiErrorDetail[] | undefined);
         return;
       }
 

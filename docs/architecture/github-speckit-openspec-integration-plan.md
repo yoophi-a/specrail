@@ -314,7 +314,7 @@ That avoids hard-to-debug bidirectional sync too early.
 - [x] import OpenSpec package -> create/update track
 - [x] export track artifacts -> OpenSpec package via API/service wiring
 - [x] add preview/dry-run import flow and first explicit conflict policy (`reject` default, `overwrite` explicit)
-- conflict reporting and provenance metadata
+- [x] conflict reporting and provenance metadata
 
 ### Phase 5. Round-trip and policy hardening
 - repeated sync safety

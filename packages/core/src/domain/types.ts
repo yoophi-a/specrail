@@ -116,6 +116,20 @@ export interface Track {
   specStatus: ApprovalStatus;
   planStatus: ApprovalStatus;
   priority: "low" | "medium" | "high";
+  openSpecImport?: {
+    source: {
+      kind: "file";
+      path: string;
+    };
+    importedAt: string;
+    conflictPolicy: "reject" | "overwrite";
+    bundle: {
+      version: 1;
+      format: "specrail.openspec.bundle";
+      exportedAt: string;
+      generatedBy: "specrail";
+    };
+  };
   createdAt: string;
   updatedAt: string;
 }

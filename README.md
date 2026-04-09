@@ -97,6 +97,8 @@ Current endpoints in `apps/api/src/index.ts`:
   - body: `{ path, dryRun?, conflictPolicy? }`
   - `dryRun: true` previews the normalized track and collision status without writing files or track state
   - `conflictPolicy` supports `reject` (default, safe preview-first flow) and `overwrite` (explicitly update an existing track id)
+  - response now includes `provenance` plus `conflict.details[]` so callers can see source path, bundle metadata, and which track/artifact fields would be replaced
+  - applied imports persist `track.openSpecImport` into state and artifact metadata (`track.json`) for auditability
 
 ### Runs
 - `POST /runs`
