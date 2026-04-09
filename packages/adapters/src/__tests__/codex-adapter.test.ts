@@ -1,102 +1,160 @@
 import assert from "node:assert/strict";
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
-import { CodexAdapterStub } from "../providers/codex-adapter.stub.js";
+import {
+  buildCodexSpawnCommand,
+  CodexAdapterStub,
+  readCodexSessionMetadata,
+} from "../index.js";
 
-test("CodexAdapterStub spawn returns inspectable command metadata and events", async () => {
+test("buildCodexSpawnCommand creates a deterministic codex exec invocation", () => {
+  assert.deepEqual(
+    buildCodexSpawnCommand({
+      executionId: "run-1",
+      prompt: "Implement the endpoint",
+      workspacePath: "/tmp/specrail/run-1",
+      profile: "default",
+    }),
+    {
+      command: "codex",
+      args: ["exec", "--profile", "default", "Implement the endpoint"],
+      cwd: "/tmp/specrail/run-1",
+    },
+  );
+});
+
+test("CodexAdapterStub persists spawn metadata and supports resume/cancel lifecycle", async () => {
+  const sessionsDir = await mkdtemp(path.join(os.tmpdir(), "specrail-codex-sessions-"));
+  const spawnedCalls: Array<{ command: string; args: string[]; cwd: string }> = [];
+  const timestamps = [
+    "2026-04-09T00:00:00.000Z",
+    "2026-04-09T00:05:00.000Z",
+    "2026-04-09T00:10:00.000Z",
+  ];
+
   const adapter = new CodexAdapterStub({
-    now: () => "2026-04-09T04:00:00.000Z",
-    environment: { OPENAI_API_KEY: "redacted" },
+    sessionsDir,
+    now: () => timestamps.shift() ?? "2026-04-09T00:10:00.000Z",
+    spawnProcess: (command, args, cwd) => {
+      spawnedCalls.push({ command, args, cwd });
+      return { pid: 4242 };
+    },
   });
 
-  const launch = await adapter.spawn({
+  const spawnResult = await adapter.spawn({
     executionId: "run-1",
-    prompt: "Implement issue #4",
+    prompt: "Implement the endpoint",
     workspacePath: "/tmp/specrail/run-1",
     profile: "default",
   });
 
-  assert.equal(launch.sessionRef, "run-1:spawn");
-  assert.deepEqual(launch.command, {
-    command: "codex",
-    args: ["exec", "--full-auto", "--sandbox", "workspace-write", "--profile", "default", "Implement issue #4"],
-    cwd: "/tmp/specrail/run-1",
-    prompt: "Implement issue #4",
-    resumeSessionRef: undefined,
-    environment: { OPENAI_API_KEY: "redacted" },
-  });
-  assert.equal(launch.events[0]?.type, "task_status_changed");
-  assert.equal(launch.events[1]?.type, "shell_command");
-});
-
-test("CodexAdapterStub resume adds resume metadata to the command contract", async () => {
-  const adapter = new CodexAdapterStub({ now: () => "2026-04-09T04:00:00.000Z" });
-
-  const launch = await adapter.resume({
-    executionId: "run-2",
-    sessionRef: "session-abc",
-    prompt: "Continue from failure",
-    workspacePath: "/tmp/specrail/run-2",
-    profile: "debug",
-  });
-
-  assert.equal(launch.sessionRef, "session-abc");
-  assert.deepEqual(launch.command?.args, [
-    "exec",
-    "--full-auto",
-    "--sandbox",
-    "workspace-write",
-    "--profile",
-    "debug",
-    "resume",
-    "session-abc",
-    "Continue from failure",
-  ]);
-  assert.equal(launch.command?.resumeSessionRef, "session-abc");
-});
-
-test("CodexAdapterStub cancel and normalize map lifecycle and shell events", async () => {
-  const adapter = new CodexAdapterStub({ now: () => "2026-04-09T04:00:00.000Z" });
-
-  const cancelEvent = await adapter.cancel({
-    executionId: "run-3",
-    sessionRef: "session-cancel",
-    workspacePath: "/tmp/specrail/run-3",
-    profile: "default",
-  });
-
-  assert.equal(cancelEvent.type, "task_status_changed");
-  assert.match(cancelEvent.summary, /Cancellation requested/);
-
-  const normalizedShell = adapter.normalize({
-    executionId: "run-3",
-    type: "shell.command",
-    timestamp: "2026-04-09T04:01:00.000Z",
-    summary: "Spawn command prepared",
-    command: "codex",
-    args: ["exec", "hello"],
-  });
-
-  assert.deepEqual(normalizedShell, {
-    id: "run-3:shell.command",
-    executionId: "run-3",
-    type: "shell_command",
-    timestamp: "2026-04-09T04:01:00.000Z",
-    source: "codex",
-    summary: "Spawn command prepared",
-    payload: {
+  assert.equal(spawnResult.sessionRef, "run-1-codex");
+  assert.deepEqual(spawnedCalls, [
+    {
       command: "codex",
-      args: ["exec", "hello"],
+      args: ["exec", "--profile", "default", "Implement the endpoint"],
+      cwd: "/tmp/specrail/run-1",
     },
+  ]);
+
+  assert.deepEqual(await readCodexSessionMetadata(sessionsDir, spawnResult.sessionRef), {
+    executionId: "run-1",
+    sessionRef: "run-1-codex",
+    backend: "codex",
+    profile: "default",
+    workspacePath: "/tmp/specrail/run-1",
+    command: {
+      command: "codex",
+      args: ["exec", "--profile", "default", "Implement the endpoint"],
+      cwd: "/tmp/specrail/run-1",
+    },
+    pid: 4242,
+    status: "spawned",
+    prompt: "Implement the endpoint",
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:00:00.000Z",
   });
 
-  const normalizedLifecycle = adapter.normalize({
-    executionId: "run-3",
-    type: "session.started",
-    timestamp: "2026-04-09T04:01:00.000Z",
-    summary: "Run started",
-  });
+  await adapter.resume({ sessionRef: spawnResult.sessionRef, prompt: "Continue with tests" });
+  await adapter.cancel(spawnResult.sessionRef);
 
-  assert.equal(normalizedLifecycle?.type, "task_status_changed");
-  assert.equal(adapter.normalize({ nope: true }), null);
+  assert.deepEqual(await readCodexSessionMetadata(sessionsDir, spawnResult.sessionRef), {
+    executionId: "run-1",
+    sessionRef: "run-1-codex",
+    backend: "codex",
+    profile: "default",
+    workspacePath: "/tmp/specrail/run-1",
+    command: {
+      command: "codex",
+      args: ["exec", "--profile", "default", "Implement the endpoint"],
+      cwd: "/tmp/specrail/run-1",
+    },
+    pid: 4242,
+    status: "cancelled",
+    prompt: "Continue with tests",
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:10:00.000Z",
+    resumedAt: "2026-04-09T00:05:00.000Z",
+    cancelledAt: "2026-04-09T00:10:00.000Z",
+  });
+});
+
+test("CodexAdapterStub normalizes lifecycle events into shared execution events", () => {
+  const adapter = new CodexAdapterStub({ sessionsDir: "/tmp/specrail-codex" });
+
+  assert.deepEqual(
+    adapter.normalize({
+      kind: "spawned",
+      executionId: "run-1",
+      sessionRef: "run-1-codex",
+      timestamp: "2026-04-09T00:00:00.000Z",
+      command: {
+        command: "codex",
+        args: ["exec"],
+        cwd: "/tmp/specrail/run-1",
+      },
+    }),
+    {
+      id: "run-1:spawned:2026-04-09T00:00:00.000Z",
+      executionId: "run-1",
+      type: "shell_command",
+      timestamp: "2026-04-09T00:00:00.000Z",
+      source: "codex",
+      summary: "Spawned Codex session run-1-codex",
+      payload: {
+        sessionRef: "run-1-codex",
+        command: {
+          command: "codex",
+          args: ["exec"],
+          cwd: "/tmp/specrail/run-1",
+        },
+      },
+    },
+  );
+
+  assert.deepEqual(
+    adapter.normalize({
+      kind: "resumed",
+      executionId: "run-1",
+      sessionRef: "run-1-codex",
+      timestamp: "2026-04-09T00:05:00.000Z",
+    }),
+    {
+      id: "run-1:resumed:2026-04-09T00:05:00.000Z",
+      executionId: "run-1",
+      type: "task_status_changed",
+      timestamp: "2026-04-09T00:05:00.000Z",
+      source: "codex",
+      summary: "Resumed Codex session run-1-codex",
+      payload: {
+        sessionRef: "run-1-codex",
+        status: "resumed",
+      },
+    },
+  );
+
+  assert.equal(adapter.normalize({ foo: "bar" }), null);
 });

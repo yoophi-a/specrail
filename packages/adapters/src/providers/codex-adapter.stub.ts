@@ -1,48 +1,66 @@
-import type { ExecutionEvent } from "@specrail/core";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import type { CommandExecutionMetadata, ExecutionEvent } from "@specrail/core";
 import type {
   CancelExecutionInput,
   ExecutorAdapter,
-  ExecutorLaunch,
+  ExecutorCommandSpec,
+  ExecutorSessionMetadata,
   ResumeExecutionInput,
+  ResumeExecutionResult,
   SpawnExecutionInput,
+  SpawnExecutionResult,
 } from "../interfaces/executor-adapter.js";
 
-export interface CodexAdapterOptions {
-  binaryPath?: string;
-  fullAuto?: boolean;
-  sandboxMode?: "workspace-write" | "danger-full-access";
-  additionalArgs?: string[];
-  environment?: Record<string, string>;
-  now?: () => string;
-  eventIdFactory?: (executionId: string, kind: string) => string;
+interface SpawnedProcessLike {
+  pid?: number;
 }
 
-interface RawCodexEvent {
+export interface CodexLifecycleEvent {
+  kind: "spawned" | "resumed" | "cancelled";
   executionId: string;
-  type: "session.started" | "session.resumed" | "session.cancelled" | "shell.command" | "message";
+  sessionRef: string;
   timestamp: string;
-  summary: string;
-  command?: string;
-  args?: string[];
-  text?: string;
+  command?: ExecutorCommandSpec;
 }
 
-function createDefaultEventId(executionId: string, kind: string): string {
-  return `${executionId}:${kind}`;
+export interface CodexAdapterOptions {
+  sessionsDir?: string;
+  now?: () => string;
+  spawnProcess?: (command: string, args: string[], cwd: string) => SpawnedProcessLike;
 }
 
-function isRawCodexEvent(value: unknown): value is RawCodexEvent {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
+function buildSessionMetadataPath(sessionsDir: string, sessionRef: string): string {
+  return path.join(sessionsDir, `${sessionRef}.json`);
+}
 
-  const candidate = value as Partial<RawCodexEvent>;
-  return (
-    typeof candidate.executionId === "string" &&
-    typeof candidate.type === "string" &&
-    typeof candidate.timestamp === "string" &&
-    typeof candidate.summary === "string"
-  );
+async function writeSessionMetadata(sessionsDir: string, metadata: ExecutorSessionMetadata): Promise<void> {
+  await mkdir(sessionsDir, { recursive: true });
+  await writeFile(buildSessionMetadataPath(sessionsDir, metadata.sessionRef), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+}
+
+async function readSessionMetadata(sessionsDir: string, sessionRef: string): Promise<ExecutorSessionMetadata> {
+  const content = await readFile(buildSessionMetadataPath(sessionsDir, sessionRef), "utf8");
+  return JSON.parse(content) as ExecutorSessionMetadata;
+}
+
+function toCommandMetadata(command: ExecutorCommandSpec, prompt: string, sessionRef?: string): CommandExecutionMetadata {
+  return {
+    command: command.command,
+    args: command.args,
+    cwd: command.cwd,
+    prompt,
+    resumeSessionRef: sessionRef,
+  };
+}
+
+export function buildCodexSpawnCommand(input: SpawnExecutionInput): ExecutorCommandSpec {
+  return {
+    command: "codex",
+    args: ["exec", "--profile", input.profile, input.prompt],
+    cwd: input.workspacePath,
+  };
 }
 
 export class CodexAdapterStub implements ExecutorAdapter {
@@ -54,184 +72,166 @@ export class CodexAdapterStub implements ExecutorAdapter {
     supportsApprovalBroker: true,
   };
 
-  private readonly binaryPath: string;
-  private readonly fullAuto: boolean;
-  private readonly sandboxMode: "workspace-write" | "danger-full-access";
-  private readonly additionalArgs: string[];
-  private readonly environment?: Record<string, string>;
+  private readonly sessionsDir: string;
   private readonly now: () => string;
-  private readonly eventIdFactory: (executionId: string, kind: string) => string;
+  private readonly spawnProcess: (command: string, args: string[], cwd: string) => SpawnedProcessLike;
 
   constructor(options: CodexAdapterOptions = {}) {
-    this.binaryPath = options.binaryPath ?? "codex";
-    this.fullAuto = options.fullAuto ?? true;
-    this.sandboxMode = options.sandboxMode ?? "workspace-write";
-    this.additionalArgs = options.additionalArgs ?? [];
-    this.environment = options.environment;
+    this.sessionsDir = options.sessionsDir ?? path.resolve(process.cwd(), ".specrail-data", "sessions");
     this.now = options.now ?? (() => new Date().toISOString());
-    this.eventIdFactory = options.eventIdFactory ?? createDefaultEventId;
+    this.spawnProcess = options.spawnProcess ?? (() => ({ pid: undefined }));
   }
 
-  async spawn(input: SpawnExecutionInput): Promise<ExecutorLaunch> {
-    const sessionRef = `${input.executionId}:spawn`;
-    return this.createLaunch({
+  async spawn(input: SpawnExecutionInput): Promise<SpawnExecutionResult> {
+    const timestamp = this.now();
+    const sessionRef = `${input.executionId}-codex`;
+    const command = buildCodexSpawnCommand(input);
+    const spawned = this.spawnProcess(command.command, command.args, command.cwd);
+    const metadata: ExecutorSessionMetadata = {
       executionId: input.executionId,
-      prompt: input.prompt,
-      workspacePath: input.workspacePath,
-      profile: input.profile,
       sessionRef,
-      lifecycleType: "session.started",
-      lifecycleSummary: `Codex run queued for ${input.profile}`,
-    });
-  }
-
-  async resume(input: ResumeExecutionInput): Promise<ExecutorLaunch> {
-    return this.createLaunch({
-      executionId: input.executionId,
-      prompt: input.prompt,
-      workspacePath: input.workspacePath,
+      backend: this.name,
       profile: input.profile,
-      sessionRef: input.sessionRef,
-      lifecycleType: "session.resumed",
-      lifecycleSummary: `Codex run resumed for session ${input.sessionRef}`,
-      resumeSessionRef: input.sessionRef,
+      workspacePath: input.workspacePath,
+      command,
+      pid: spawned.pid,
+      status: "spawned",
+      prompt: input.prompt,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    await writeSessionMetadata(this.sessionsDir, metadata);
+
+    const event = this.normalize({
+      kind: "spawned",
+      executionId: input.executionId,
+      sessionRef,
+      timestamp,
+      command,
     });
+
+    return {
+      sessionRef,
+      metadata,
+      command: toCommandMetadata(command, input.prompt),
+      events: [
+        {
+          id: `${input.executionId}:running:${timestamp}`,
+          executionId: input.executionId,
+          type: "task_status_changed",
+          timestamp,
+          source: this.name,
+          summary: "Run started",
+          payload: { status: "running", sessionRef },
+        },
+        ...(event ? [event] : []),
+      ],
+    };
   }
 
-  async cancel(input: CancelExecutionInput): Promise<ExecutionEvent> {
+  async resume(input: ResumeExecutionInput): Promise<ResumeExecutionResult> {
+    const metadata = await readSessionMetadata(this.sessionsDir, input.sessionRef);
+    const timestamp = this.now();
+    const updatedMetadata: ExecutorSessionMetadata = {
+      ...metadata,
+      prompt: input.prompt,
+      status: "resumed",
+      resumedAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    await writeSessionMetadata(this.sessionsDir, updatedMetadata);
+
+    const event = this.normalize({
+      kind: "resumed",
+      executionId: metadata.executionId,
+      sessionRef: input.sessionRef,
+      timestamp,
+    });
+
     return {
-      id: this.eventIdFactory(input.executionId, `cancelled:${input.sessionRef}`),
-      executionId: input.executionId,
+      sessionRef: input.sessionRef,
+      command: toCommandMetadata(metadata.command, input.prompt, input.sessionRef),
+      events: event ? [event] : [],
+    };
+  }
+
+  async cancel(input: CancelExecutionInput | string): Promise<ExecutionEvent> {
+    const sessionRef = typeof input === "string" ? input : input.sessionRef;
+    const metadata = await readSessionMetadata(this.sessionsDir, sessionRef);
+    const timestamp = this.now();
+
+    await writeSessionMetadata(this.sessionsDir, {
+      ...metadata,
+      status: "cancelled",
+      cancelledAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    return {
+      id: `${metadata.executionId}:cancelled:${timestamp}`,
+      executionId: metadata.executionId,
       type: "task_status_changed",
-      timestamp: this.now(),
+      timestamp,
       source: this.name,
-      summary: `Cancellation requested for session ${input.sessionRef}`,
+      summary: `Cancelled Codex session ${sessionRef}`,
       payload: {
-        profile: input.profile,
-        workspacePath: input.workspacePath,
-        sessionRef: input.sessionRef,
+        sessionRef,
         status: "cancelled",
       },
     };
   }
 
   normalize(rawEvent: unknown): ExecutionEvent | null {
-    if (!isRawCodexEvent(rawEvent)) {
+    if (!rawEvent || typeof rawEvent !== "object") {
       return null;
     }
 
-    switch (rawEvent.type) {
-      case "session.started":
-      case "session.resumed":
-      case "session.cancelled":
-        return {
-          id: this.eventIdFactory(rawEvent.executionId, rawEvent.type),
-          executionId: rawEvent.executionId,
-          type: "task_status_changed",
-          timestamp: rawEvent.timestamp,
-          source: this.name,
-          summary: rawEvent.summary,
-          payload: { lifecycle: rawEvent.type },
-        };
-      case "shell.command":
-        return {
-          id: this.eventIdFactory(rawEvent.executionId, rawEvent.type),
-          executionId: rawEvent.executionId,
-          type: "shell_command",
-          timestamp: rawEvent.timestamp,
-          source: this.name,
-          summary: rawEvent.summary,
-          payload: {
-            command: rawEvent.command,
-            args: rawEvent.args ?? [],
-          },
-        };
-      case "message":
-        return {
-          id: this.eventIdFactory(rawEvent.executionId, rawEvent.type),
-          executionId: rawEvent.executionId,
-          type: "message",
-          timestamp: rawEvent.timestamp,
-          source: this.name,
-          summary: rawEvent.summary,
-          payload: {
-            text: rawEvent.text,
-          },
-        };
-      default:
-        return null;
-    }
-  }
+    const event = rawEvent as Partial<CodexLifecycleEvent>;
 
-  private async createLaunch(params: {
-    executionId: string;
-    prompt: string;
-    workspacePath: string;
-    profile: string;
-    sessionRef: string;
-    lifecycleType: "session.started" | "session.resumed";
-    lifecycleSummary: string;
-    resumeSessionRef?: string;
-  }): Promise<ExecutorLaunch> {
-    const args = this.buildArgs(params.prompt, params.profile, params.resumeSessionRef);
-    const timestamp = this.now();
+    if (
+      (event.kind !== "spawned" && event.kind !== "resumed" && event.kind !== "cancelled") ||
+      typeof event.executionId !== "string" ||
+      typeof event.sessionRef !== "string" ||
+      typeof event.timestamp !== "string"
+    ) {
+      return null;
+    }
+
+    if (event.kind === "spawned") {
+      return {
+        id: `${event.executionId}:${event.kind}:${event.timestamp}`,
+        executionId: event.executionId,
+        type: "shell_command",
+        timestamp: event.timestamp,
+        source: this.name,
+        summary: `Spawned Codex session ${event.sessionRef}`,
+        payload: {
+          sessionRef: event.sessionRef,
+          command: event.command,
+        },
+      };
+    }
 
     return {
-      sessionRef: params.sessionRef,
-      command: {
-        command: this.binaryPath,
-        args,
-        cwd: params.workspacePath,
-        prompt: params.prompt,
-        resumeSessionRef: params.resumeSessionRef,
-        environment: this.environment,
+      id: `${event.executionId}:${event.kind}:${event.timestamp}`,
+      executionId: event.executionId,
+      type: "task_status_changed",
+      timestamp: event.timestamp,
+      source: this.name,
+      summary: `${event.kind === "resumed" ? "Resumed" : "Cancelled"} Codex session ${event.sessionRef}`,
+      payload: {
+        sessionRef: event.sessionRef,
+        status: event.kind,
       },
-      events: [
-        {
-          id: this.eventIdFactory(params.executionId, params.lifecycleType),
-          executionId: params.executionId,
-          type: "task_status_changed",
-          timestamp,
-          source: this.name,
-          summary: params.lifecycleSummary,
-          payload: {
-            lifecycle: params.lifecycleType,
-            profile: params.profile,
-            sessionRef: params.sessionRef,
-          },
-        },
-        {
-          id: this.eventIdFactory(params.executionId, `shell:${params.sessionRef}`),
-          executionId: params.executionId,
-          type: "shell_command",
-          timestamp,
-          source: this.name,
-          summary: `Prepared Codex command for ${params.profile}`,
-          payload: {
-            command: this.binaryPath,
-            args,
-            cwd: params.workspacePath,
-          },
-        },
-      ],
     };
   }
+}
 
-  private buildArgs(prompt: string, profile: string, resumeSessionRef?: string): string[] {
-    const args = ["exec"];
-
-    if (this.fullAuto) {
-      args.push("--full-auto");
-    }
-
-    args.push("--sandbox", this.sandboxMode, "--profile", profile);
-
-    if (resumeSessionRef) {
-      args.push("resume", resumeSessionRef);
-    }
-
-    args.push(...this.additionalArgs, prompt);
-
-    return args;
-  }
+export async function readCodexSessionMetadata(
+  sessionsDir: string,
+  sessionRef: string,
+): Promise<ExecutorSessionMetadata> {
+  return readSessionMetadata(sessionsDir, sessionRef);
 }
