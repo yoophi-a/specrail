@@ -135,16 +135,7 @@ export function buildCodexSpawnCommand(input: SpawnExecutionInput): ExecutorComm
   const sessionRef = `${input.executionId}-codex`;
   return {
     command: "codex",
-    args: [
-      "exec",
-      "--json",
-      "--output-last-message",
-      buildSessionLastMessagePath(path.resolve(process.cwd(), ".specrail-data", "sessions"), sessionRef),
-      "--skip-git-repo-check",
-      "--profile",
-      input.profile,
-      input.prompt,
-    ],
+    args: buildCodexSpawnArgs(input, path.resolve(process.cwd(), ".specrail-data", "sessions"), sessionRef),
     cwd: input.workspacePath,
   };
 }
@@ -153,18 +144,26 @@ function buildCodexSpawnCommandForSessionsDir(input: SpawnExecutionInput, sessio
   const sessionRef = `${input.executionId}-codex`;
   return {
     command: "codex",
-    args: [
-      "exec",
-      "--json",
-      "--output-last-message",
-      buildSessionLastMessagePath(sessionsDir, sessionRef),
-      "--skip-git-repo-check",
-      "--profile",
-      input.profile,
-      input.prompt,
-    ],
+    args: buildCodexSpawnArgs(input, sessionsDir, sessionRef),
     cwd: input.workspacePath,
   };
+}
+
+function buildCodexSpawnArgs(input: SpawnExecutionInput, sessionsDir: string, sessionRef: string): string[] {
+  const args = [
+    "exec",
+    "--json",
+    "--output-last-message",
+    buildSessionLastMessagePath(sessionsDir, sessionRef),
+    "--skip-git-repo-check",
+  ];
+
+  if (input.profile && input.profile !== "default") {
+    args.push("--profile", input.profile);
+  }
+
+  args.push(input.prompt);
+  return args;
 }
 
 function buildCodexResumeCommand(input: ResumeExecutionInput, sessionsDir: string, sessionRef: string): ExecutorCommandSpec {

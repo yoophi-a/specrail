@@ -39,7 +39,7 @@ function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-test("buildCodexSpawnCommand creates a deterministic codex exec invocation", () => {
+test("buildCodexSpawnCommand omits the profile flag for the default profile", () => {
   const command = buildCodexSpawnCommand({
     executionId: "run-1",
     prompt: "Implement the endpoint",
@@ -49,17 +49,36 @@ test("buildCodexSpawnCommand creates a deterministic codex exec invocation", () 
 
   assert.equal(command.command, "codex");
   assert.equal(command.cwd, "/tmp/specrail/run-1");
-  assert.deepEqual(command.args.slice(0, 6), [
+  assert.deepEqual(command.args.slice(0, 5), [
+    "exec",
+    "--json",
+    "--output-last-message",
+    command.args[3],
+    "--skip-git-repo-check",
+  ]);
+  assert.equal(command.args[5], "Implement the endpoint");
+  assert.ok(!command.args.includes("--profile"));
+  assert.match(command.args[3] ?? "", /run-1-codex\.last-message\.txt$/);
+});
+
+test("buildCodexSpawnCommand preserves explicit non-default profiles", () => {
+  const command = buildCodexSpawnCommand({
+    executionId: "run-2",
+    prompt: "Implement the endpoint",
+    workspacePath: "/tmp/specrail/run-2",
+    profile: "fast-lane",
+  });
+
+  assert.deepEqual(command.args.slice(0, 7), [
     "exec",
     "--json",
     "--output-last-message",
     command.args[3],
     "--skip-git-repo-check",
     "--profile",
+    "fast-lane",
   ]);
-  assert.equal(command.args[6], "default");
   assert.equal(command.args[7], "Implement the endpoint");
-  assert.match(command.args[3] ?? "", /run-1-codex\.last-message\.txt$/);
 });
 
 test("CodexAdapter persists process metadata, parses session id, records runtime events, and fans them out", async () => {
