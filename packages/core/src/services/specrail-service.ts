@@ -59,6 +59,8 @@ export interface OpenSpecImportSource {
   path: string;
 }
 
+export type OpenSpecImportConflictPolicy = "reject" | "overwrite";
+
 export interface OpenSpecExportTarget {
   kind: "file";
   path: string;
@@ -185,6 +187,19 @@ export interface ExportTrackToOpenSpecInput {
 
 export interface ImportTrackFromOpenSpecInput {
   source: OpenSpecImportSource;
+  dryRun?: boolean;
+  conflictPolicy?: OpenSpecImportConflictPolicy;
+}
+
+export interface ImportTrackFromOpenSpecResult {
+  track: Track;
+  action: "created" | "updated";
+  applied: boolean;
+  conflictPolicy: OpenSpecImportConflictPolicy;
+  conflict: {
+    hasConflict: boolean;
+    reason: "track_id_exists" | null;
+  };
 }
 
 export type SortOrder = "asc" | "desc";
@@ -544,13 +559,19 @@ export class SpecRailService {
     });
   }
 
-  async importTrackFromOpenSpec(input: ImportTrackFromOpenSpecInput): Promise<{ track: Track; action: "created" | "updated" }> {
+  async importTrackFromOpenSpec(input: ImportTrackFromOpenSpecInput): Promise<ImportTrackFromOpenSpecResult> {
     const adapter = this.requireOpenSpecAdapter();
     const project = await this.ensureDefaultProject();
     const imported = await adapter.importPackage({ source: input.source });
     const timestamp = this.now();
     const importedTrack = imported.package.track;
     const existingTrack = await this.dependencies.trackRepository.getById(importedTrack.id);
+    const conflictPolicy = input.conflictPolicy ?? "reject";
+    const action = existingTrack ? "updated" : "created";
+    const conflict = {
+      hasConflict: existingTrack !== null,
+      reason: existingTrack ? ("track_id_exists" as const) : null,
+    };
 
     const track: Track = {
       ...importedTrack,
@@ -562,6 +583,30 @@ export class SpecRailService {
       updatedAt: timestamp,
       createdAt: existingTrack?.createdAt ?? importedTrack.createdAt ?? timestamp,
     };
+
+    if (existingTrack && conflictPolicy === "reject") {
+      if (input.dryRun) {
+        return {
+          track,
+          action,
+          applied: false,
+          conflictPolicy,
+          conflict,
+        };
+      }
+
+      throw new ConflictError(`OpenSpec import would overwrite existing track: ${track.id}. Retry with conflictPolicy=overwrite or dryRun=true.`);
+    }
+
+    if (input.dryRun) {
+      return {
+        track,
+        action,
+        applied: false,
+        conflictPolicy,
+        conflict,
+      };
+    }
 
     if (existingTrack) {
       await this.dependencies.trackRepository.update(track);
@@ -579,7 +624,10 @@ export class SpecRailService {
 
     return {
       track,
-      action: existingTrack ? "updated" : "created",
+      action,
+      applied: true,
+      conflictPolicy,
+      conflict,
     };
   }
 

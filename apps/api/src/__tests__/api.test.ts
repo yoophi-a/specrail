@@ -567,17 +567,75 @@ test("API exports and imports OpenSpec bundles through admin routes", async () =
     const importResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: bundleDir }),
+      body: JSON.stringify({ path: bundleDir, conflictPolicy: "overwrite" }),
     });
     assert.equal(importResponse.status, 200);
 
-    const imported = (await importResponse.json()) as { action: string; track: { id: string } };
+    const imported = (await importResponse.json()) as { action: string; applied: boolean; track: { id: string } };
     assert.equal(imported.action, "updated");
+    assert.equal(imported.applied, true);
     assert.equal(imported.track.id, trackPayload.track.id);
 
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     const getTrackPayload = (await getTrackResponse.json()) as { artifacts: { spec: string } };
     assert.equal(getTrackPayload.artifacts.spec, "# Imported spec\n");
+  });
+});
+
+test("API previews OpenSpec imports and reports collisions before overwrite", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "OpenSpec preview track",
+        description: "Preview import behavior.",
+      }),
+    });
+    assert.equal(trackResponse.status, 201);
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const bundleDir = await mkdtemp(path.join(os.tmpdir(), "specrail-api-openspec-preview-"));
+    await fetch(`${baseUrl}/admin/openspec/export`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        path: bundleDir,
+        overwrite: true,
+      }),
+    });
+
+    await writeFile(path.join(bundleDir, "spec.md"), "# Preview only\n", "utf8");
+
+    const previewResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: bundleDir, dryRun: true }),
+    });
+    assert.equal(previewResponse.status, 200);
+    const preview = (await previewResponse.json()) as {
+      action: string;
+      applied: boolean;
+      conflictPolicy: string;
+      conflict: { hasConflict: boolean; reason: string | null };
+    };
+    assert.equal(preview.action, "updated");
+    assert.equal(preview.applied, false);
+    assert.equal(preview.conflictPolicy, "reject");
+    assert.equal(preview.conflict.hasConflict, true);
+    assert.equal(preview.conflict.reason, "track_id_exists");
+
+    const conflictResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: bundleDir }),
+    });
+    assert.equal(conflictResponse.status, 409);
+
+    const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
+    const getTrackPayload = (await getTrackResponse.json()) as { artifacts: { spec: string } };
+    assert.notEqual(getTrackPayload.artifacts.spec, "# Preview only\n");
   });
 });
 
@@ -1104,7 +1162,7 @@ test("API returns structured validation and bad-request errors", async () => {
     const invalidOpenSpecImportResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "" }),
+      body: JSON.stringify({ path: "", dryRun: "yes", conflictPolicy: "merge" }),
     });
     assert.equal(invalidOpenSpecImportResponse.status, 422);
   });

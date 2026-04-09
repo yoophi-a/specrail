@@ -1691,8 +1691,10 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
 
   const created = await service.importTrackFromOpenSpec({
     source: { kind: "file", path: path.join(rootDir, "bundle") },
+    conflictPolicy: "overwrite",
   });
   assert.equal(created.action, "created");
+  assert.equal(created.applied, true);
   assert.equal(created.track.id, importedTrack.id);
   assert.equal(created.track.projectId, importedTrack.projectId);
   assert.equal(created.track.title, "Imported track");
@@ -1701,8 +1703,10 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
 
   const updated = await service.importTrackFromOpenSpec({
     source: { kind: "file", path: path.join(rootDir, "bundle") },
+    conflictPolicy: "overwrite",
   });
   assert.equal(updated.action, "updated");
+  assert.equal(updated.applied, true);
   assert.equal(updated.track.createdAt, "2026-04-09T00:00:00.000Z");
   assert.equal(updated.track.updatedAt, "2026-04-10T04:10:00.000Z");
 
@@ -1720,4 +1724,112 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
       tasks: "# Imported tasks",
     },
   ]);
+});
+
+test("SpecRailService previews OpenSpec imports and rejects collisions unless overwrite is explicit", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-openspec-import-preview-"));
+  const writes: Array<{ trackId: string; spec: string; plan: string; tasks: string }> = [];
+  const importedTrack = {
+    id: "track-openspec-preview",
+    projectId: "project-foreign",
+    title: "Imported preview",
+    description: "Imported preview description",
+    status: "ready" as const,
+    specStatus: "approved" as const,
+    planStatus: "pending" as const,
+    priority: "medium" as const,
+    githubIssue: null,
+    githubPullRequest: null,
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:00:00.000Z",
+  };
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: {
+      async write(input) {
+        writes.push({
+          trackId: input.track.id,
+          spec: input.specContent,
+          plan: input.planContent,
+          tasks: input.tasksContent,
+        });
+      },
+    },
+    executor: {
+      name: "codex",
+      async spawn() { throw new Error("should not be called"); },
+      async resume() { throw new Error("should not be called"); },
+      async cancel() { throw new Error("should not be called"); },
+    },
+    openSpecAdapter: {
+      name: "openspec-file",
+      async importPackage() {
+        return {
+          package: {
+            metadata: {
+              version: 1,
+              format: "specrail.openspec.bundle",
+              exportedAt: "2026-04-10T04:00:00.000Z",
+              generatedBy: "specrail",
+            },
+            track: importedTrack,
+            artifacts: {
+              spec: "# Preview spec",
+              plan: "# Preview plan",
+              tasks: "# Preview tasks",
+            },
+            files: {
+              spec: "spec.md",
+              plan: "plan.md",
+              tasks: "tasks.md",
+            },
+          },
+        };
+      },
+      async exportPackage() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => "2026-04-10T04:00:00.000Z",
+  });
+
+  const preview = await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: path.join(rootDir, "bundle") },
+    dryRun: true,
+  });
+  assert.equal(preview.action, "created");
+  assert.equal(preview.applied, false);
+  assert.equal(preview.conflict.hasConflict, false);
+
+  await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: path.join(rootDir, "bundle") },
+    conflictPolicy: "overwrite",
+  });
+
+  await assert.rejects(
+    () =>
+      service.importTrackFromOpenSpec({
+        source: { kind: "file", path: path.join(rootDir, "bundle") },
+      }),
+    /Retry with conflictPolicy=overwrite or dryRun=true/,
+  );
+
+  const collisionPreview = await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: path.join(rootDir, "bundle") },
+    dryRun: true,
+  });
+  assert.equal(collisionPreview.action, "updated");
+  assert.equal(collisionPreview.applied, false);
+  assert.equal(collisionPreview.conflict.hasConflict, true);
+  assert.equal(collisionPreview.conflict.reason, "track_id_exists");
+  assert.equal(writes.length, 1);
 });

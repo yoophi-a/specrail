@@ -93,8 +93,10 @@ Current endpoints in `apps/api/src/index.ts`:
   - export a track into an OpenSpec file bundle
   - body: `{ trackId, path, overwrite? }`
 - `POST /admin/openspec/import`
-  - import an OpenSpec bundle and create/update the referenced track plus artifacts
-  - body: `{ path }`
+  - preview or import an OpenSpec bundle and create/update the referenced track plus artifacts
+  - body: `{ path, dryRun?, conflictPolicy? }`
+  - `dryRun: true` previews the normalized track and collision status without writing files or track state
+  - `conflictPolicy` supports `reject` (default, safe preview-first flow) and `overwrite` (explicitly update an existing track id)
 
 ### Runs
 - `POST /runs`

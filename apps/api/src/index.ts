@@ -66,6 +66,8 @@ interface OpenSpecExportRequestBody {
 
 interface OpenSpecImportRequestBody {
   path: string;
+  dryRun?: boolean;
+  conflictPolicy?: "reject" | "overwrite";
 }
 
 interface TrackListQuery {
@@ -460,10 +462,23 @@ function assertValidOpenSpecExportBody(body: OpenSpecExportRequestBody): void {
 }
 
 function assertValidOpenSpecImportBody(body: OpenSpecImportRequestBody): void {
+  const details: ApiErrorDetail[] = [];
   const pathDetail = getNonEmptyStringDetail("path", body.path);
 
   if (pathDetail) {
-    throw new RequestValidationError("request validation failed", [pathDetail]);
+    details.push(pathDetail);
+  }
+
+  if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") {
+    details.push({ field: "dryRun", message: "must be a boolean" });
+  }
+
+  if (body.conflictPolicy !== undefined && !["reject", "overwrite"].includes(body.conflictPolicy)) {
+    details.push({ field: "conflictPolicy", message: "must be one of reject, overwrite" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
   }
 }
 
@@ -775,6 +790,8 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
             kind: "file",
             path: body.path,
           },
+          dryRun: body.dryRun,
+          conflictPolicy: body.conflictPolicy,
         });
         sendJson(response, 200, result);
         return;
