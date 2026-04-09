@@ -21,6 +21,9 @@
     "openspec:import:help": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec import help",
     "openspec:imports": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec imports",
     "openspec:exports": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec exports",
+    "openspec:inspect": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec inspect",
+    "openspec:inspect:imports": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec inspect imports",
+    "openspec:inspect:exports": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec inspect exports",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

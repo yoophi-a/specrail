@@ -2,6 +2,7 @@
 import { loadConfig } from "@specrail/config";
 import {
   OPENSPEC_RESOLUTION_PRESETS,
+  type TrackOpenSpecInspection,
   type OpenSpecImportResolution,
   type OpenSpecImportResolutionChoice,
   type OpenSpecImportResolutionPresetName,
@@ -22,7 +23,16 @@ type OpenSpecImportField =
   | "artifacts.tasks";
 
 interface ParsedArgs {
-  command: "openspec-export" | "openspec-import" | "openspec-import-help" | "openspec-imports" | "openspec-exports" | null;
+  command:
+    | "openspec-export"
+    | "openspec-import"
+    | "openspec-import-help"
+    | "openspec-imports"
+    | "openspec-exports"
+    | "openspec-inspect"
+    | "openspec-inspect-imports"
+    | "openspec-inspect-exports"
+    | null;
   path?: string;
   trackId?: string;
   overwrite: boolean;
@@ -31,6 +41,10 @@ interface ParsedArgs {
   json: boolean;
   page?: number;
   pageSize?: number;
+  importPage?: number;
+  importPageSize?: number;
+  exportPage?: number;
+  exportPageSize?: number;
   sourcePath?: string;
   targetPath?: string;
   after?: string;
@@ -66,6 +80,9 @@ Usage:
   specrail-admin openspec import help [--preset <name>] [--json]
   specrail-admin openspec imports [--track-id <track-id>] [--page <n>] [--page-size <count>] [--source-path <text>] [--after <iso>] [--before <iso>] [--filter-conflict-policy <reject|overwrite|resolve>] [--json]
   specrail-admin openspec exports [--track-id <track-id>] [--page <n>] [--page-size <count>] [--target-path <text>] [--after <iso>] [--before <iso>] [--overwrite-only | --no-overwrite-only] [--json]
+  specrail-admin openspec inspect --track-id <track-id> [--page <n>] [--page-size <count>] [--import-page <n>] [--import-page-size <count>] [--export-page <n>] [--export-page-size <count>] [--json]
+  specrail-admin openspec inspect imports --track-id <track-id> [--page <n>] [--page-size <count>] [--json]
+  specrail-admin openspec inspect exports --track-id <track-id> [--page <n>] [--page-size <count>] [--json]
 
 Examples:
   specrail-admin openspec export --track-id track_123 --path ./bundle
@@ -75,6 +92,8 @@ Examples:
   specrail-admin openspec import help --preset policyDefaults
   specrail-admin openspec imports --track-id track_123 --page-size 5 --filter-conflict-policy resolve
   specrail-admin openspec exports --track-id track_123 --page-size 5 --overwrite-only
+  specrail-admin openspec inspect --track-id track_123 --page-size 1 --export-page 2
+  specrail-admin openspec inspect imports --track-id track_123 --page 2 --page-size 5
 `);
 }
 
@@ -158,6 +177,13 @@ function parseArgs(argv: string[]): ParsedArgs {
   } else if (group === "openspec" && action === "exports") {
     args.command = "openspec-exports";
     rest.unshift(subaction);
+  } else if (group === "openspec" && action === "inspect" && subaction === "imports") {
+    args.command = "openspec-inspect-imports";
+  } else if (group === "openspec" && action === "inspect" && subaction === "exports") {
+    args.command = "openspec-inspect-exports";
+  } else if (group === "openspec" && action === "inspect") {
+    args.command = "openspec-inspect";
+    rest.unshift(subaction);
   } else {
     throw new Error(`Unknown command: ${argv.join(" ")}`);
   }
@@ -227,6 +253,38 @@ function parseArgs(argv: string[]): ParsedArgs {
         args.pageSize = value;
         break;
       }
+      case "--import-page": {
+        const value = Number.parseInt(rest[++index] ?? "", 10);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error(`Invalid import page: ${rest[index] ?? ""}`);
+        }
+        args.importPage = value;
+        break;
+      }
+      case "--import-page-size": {
+        const value = Number.parseInt(rest[++index] ?? "", 10);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error(`Invalid import page size: ${rest[index] ?? ""}`);
+        }
+        args.importPageSize = value;
+        break;
+      }
+      case "--export-page": {
+        const value = Number.parseInt(rest[++index] ?? "", 10);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error(`Invalid export page: ${rest[index] ?? ""}`);
+        }
+        args.exportPage = value;
+        break;
+      }
+      case "--export-page-size": {
+        const value = Number.parseInt(rest[++index] ?? "", 10);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error(`Invalid export page size: ${rest[index] ?? ""}`);
+        }
+        args.exportPageSize = value;
+        break;
+      }
       case "--source-path":
         args.sourcePath = rest[++index];
         break;
@@ -281,6 +339,72 @@ function printExportHistory(result: Awaited<ReturnType<ReturnType<typeof createD
     console.log(`  - target: ${entry.exportRecord.target.path}`);
     console.log(`  - overwrite: ${entry.exportRecord.target.overwrite ? "true" : "false"}`);
   }
+}
+
+function resolveTrackInspectionPagination(args: ParsedArgs): {
+  importPage: number | undefined;
+  importPageSize: number | undefined;
+  exportPage: number | undefined;
+  exportPageSize: number | undefined;
+} {
+  return {
+    importPage: args.importPage ?? args.page,
+    importPageSize: args.importPageSize ?? args.pageSize,
+    exportPage: args.exportPage ?? args.page,
+    exportPageSize: args.exportPageSize ?? args.pageSize,
+  };
+}
+
+function printTrackImportInspection(page: TrackOpenSpecInspection["imports"], pageNumber: number): void {
+  console.log(`OpenSpec import inspection (page ${pageNumber}/${page.meta.totalPages || 1}, total ${page.meta.total})`);
+  if (page.latest) {
+    console.log(`- latest: ${page.latest.importedAt} ${page.latest.source.path} (${page.latest.conflictPolicy})`);
+  } else {
+    console.log("- latest: none");
+  }
+
+  if (page.items.length === 0) {
+    console.log("- history: none");
+    return;
+  }
+
+  console.log("- history:");
+  for (const entry of page.items) {
+    console.log(`  - ${entry.provenance.importedAt} ${entry.trackId} (${entry.trackTitle})`);
+    console.log(`    - source: ${entry.provenance.source.path}`);
+    console.log(`    - conflictPolicy: ${entry.provenance.conflictPolicy}`);
+    if (entry.provenance.resolutionPreset) {
+      console.log(`    - preset: ${entry.provenance.resolutionPreset}`);
+    }
+  }
+}
+
+function printTrackExportInspection(page: TrackOpenSpecInspection["exports"], pageNumber: number): void {
+  console.log(`OpenSpec export inspection (page ${pageNumber}/${page.meta.totalPages || 1}, total ${page.meta.total})`);
+  if (page.latest) {
+    console.log(`- latest: ${page.latest.exportedAt} ${page.latest.target.path} (overwrite=${page.latest.target.overwrite ? "true" : "false"})`);
+  } else {
+    console.log("- latest: none");
+  }
+
+  if (page.items.length === 0) {
+    console.log("- history: none");
+    return;
+  }
+
+  console.log("- history:");
+  for (const entry of page.items) {
+    console.log(`  - ${entry.exportRecord.exportedAt} ${entry.trackId} (${entry.trackTitle})`);
+    console.log(`    - target: ${entry.exportRecord.target.path}`);
+    console.log(`    - overwrite: ${entry.exportRecord.target.overwrite ? "true" : "false"}`);
+  }
+}
+
+function printTrackInspection(result: TrackOpenSpecInspection, args: ParsedArgs): void {
+  const pagination = resolveTrackInspectionPagination(args);
+  console.log(`OpenSpec track inspection for ${result.trackId}`);
+  printTrackImportInspection(result.imports, pagination.importPage ?? 1);
+  printTrackExportInspection(result.exports, pagination.exportPage ?? 1);
 }
 
 function inferConflictPolicy(args: ParsedArgs): "reject" | "overwrite" | "resolve" | undefined {
@@ -458,6 +582,45 @@ async function run(): Promise<void> {
     }
 
     printExportHistory(result, args);
+    return;
+  }
+
+  if (args.command === "openspec-inspect" || args.command === "openspec-inspect-imports" || args.command === "openspec-inspect-exports") {
+    if (!args.trackId) {
+      throw new Error("Missing required option: --track-id");
+    }
+
+    const pagination = resolveTrackInspectionPagination(args);
+    const result = await service.getTrackOpenSpecImports(args.trackId, pagination);
+    if (!result) {
+      throw new Error(`Track not found: ${args.trackId}`);
+    }
+
+    if (args.json) {
+      if (args.command === "openspec-inspect-imports") {
+        console.log(JSON.stringify({ config: loadConfig(), result: { trackId: result.trackId, imports: result.imports } }, null, 2));
+        return;
+      }
+      if (args.command === "openspec-inspect-exports") {
+        console.log(JSON.stringify({ config: loadConfig(), result: { trackId: result.trackId, exports: result.exports } }, null, 2));
+        return;
+      }
+      console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+      return;
+    }
+
+    if (args.command === "openspec-inspect-imports") {
+      console.log(`OpenSpec track import inspection for ${result.trackId}`);
+      printTrackImportInspection(result.imports, pagination.importPage ?? 1);
+      return;
+    }
+    if (args.command === "openspec-inspect-exports") {
+      console.log(`OpenSpec track export inspection for ${result.trackId}`);
+      printTrackExportInspection(result.exports, pagination.exportPage ?? 1);
+      return;
+    }
+
+    printTrackInspection(result, args);
     return;
   }
 

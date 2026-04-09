@@ -142,6 +142,15 @@ pnpm --filter @specrail/api openspec:imports -- --track-id track_123 --page-size
 
 # inspect persisted export history
 pnpm --filter @specrail/api openspec:exports -- --track-id track_123 --page-size 10 --overwrite-only
+
+# inspect track-scoped OpenSpec history with shared pagination
+pnpm --filter @specrail/api openspec:inspect -- --track-id track_123 --page-size 5
+
+# inspect only track-scoped import history on a later page
+pnpm --filter @specrail/api openspec:inspect:imports -- --track-id track_123 --page 2 --page-size 5
+
+# inspect only track-scoped export history with separate paging
+pnpm --filter @specrail/api openspec:inspect:exports -- --track-id track_123 --page-size 5 --page 3
 ```
 
 Notes:
@@ -151,6 +160,7 @@ Notes:
 - field overrides are available via `--existing track.status,artifacts.plan` and `--incoming track.title`
 - import history supports `--page`/`--page-size` plus `--track-id`, `--source-path`, `--filter-conflict-policy`, `--after`, and `--before`
 - export history supports `--page`/`--page-size` plus `--track-id`, `--target-path`, `--overwrite-only`/`--no-overwrite-only`, `--after`, and `--before`
+- track inspection supports `--page`/`--page-size` for both import and export history together, plus `--import-page`, `--import-page-size`, `--export-page`, and `--export-page-size` when operators want to page each side independently
 - JSON output is available with `--json` for scripting or operator tooling
 
 ### Runs

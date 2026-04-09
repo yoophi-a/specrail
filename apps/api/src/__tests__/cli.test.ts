@@ -157,3 +157,105 @@ test("CLI exposes import help in JSON mode", async () => {
   assert.equal(payload.operatorGuide.selectedPreset?.name, "policyDefaults");
   assert.ok(payload.operatorGuide.examples.some((example) => example.id === "preset-with-override"));
 });
+
+test("CLI inspects paginated track-scoped OpenSpec history", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-openspec-inspect-"));
+  const service = await createService(rootDir);
+
+  const track = await service.createTrack({
+    title: "CLI inspect source",
+    description: "Source track for CLI inspection",
+  });
+
+  const importBundleA = path.join(rootDir, "import-a");
+  const importBundleB = path.join(rootDir, "import-b");
+  const exportBundleA = path.join(rootDir, "export-a");
+  const exportBundleB = path.join(rootDir, "export-b");
+
+  await service.exportTrackToOpenSpec({
+    trackId: track.id,
+    target: { kind: "file", path: importBundleA },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await service.exportTrackToOpenSpec({
+    trackId: track.id,
+    target: { kind: "file", path: importBundleB },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: importBundleA },
+    conflictPolicy: "overwrite",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: importBundleB },
+    conflictPolicy: "resolve",
+    resolutionPreset: "policyDefaults",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await service.exportTrackToOpenSpec({
+    trackId: track.id,
+    target: { kind: "file", path: exportBundleA },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await service.exportTrackToOpenSpec({
+    trackId: track.id,
+    target: { kind: "file", path: exportBundleB },
+  });
+
+  const env = {
+    ...process.env,
+    SPECRAIL_DATA_DIR: path.join(rootDir, "data"),
+    SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "repo-visible"),
+  };
+  const cwd = path.resolve(import.meta.dirname, "../..");
+
+  const inspectResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "inspect", "--track-id", track.id, "--page-size", "1", "--export-page", "2", "--json"],
+    { cwd, env },
+  );
+  const inspectPayload = JSON.parse(inspectResult.stdout) as {
+    result: {
+      trackId: string;
+      imports: { items: Array<{ provenance: { source: { path: string } } }>; meta: { total: number; totalPages: number } };
+      exports: { items: Array<{ exportRecord: { target: { path: string } } }>; meta: { total: number; totalPages: number } };
+    };
+  };
+  assert.equal(inspectPayload.result.trackId, track.id);
+  assert.equal(inspectPayload.result.imports.items.length, 1);
+  assert.equal(inspectPayload.result.imports.meta.total, 2);
+  assert.equal(inspectPayload.result.imports.meta.totalPages, 2);
+  assert.equal(inspectPayload.result.exports.items.length, 1);
+  assert.equal(inspectPayload.result.exports.meta.total, 3);
+  assert.equal(inspectPayload.result.exports.meta.totalPages, 3);
+  assert.ok([
+    importBundleB,
+    exportBundleA,
+  ].includes(inspectPayload.result.exports.items[0]?.exportRecord.target.path ?? ""));
+
+  const importInspectResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "inspect", "imports", "--track-id", track.id, "--page", "2", "--page-size", "1", "--json"],
+    { cwd, env },
+  );
+  const importInspectPayload = JSON.parse(importInspectResult.stdout) as {
+    result: {
+      trackId: string;
+      imports: { items: Array<{ provenance: { source: { path: string } } }>; meta: { total: number; totalPages: number } };
+    };
+  };
+  assert.equal(importInspectPayload.result.trackId, track.id);
+  assert.equal(importInspectPayload.result.imports.items.length, 1);
+  assert.equal(importInspectPayload.result.imports.meta.total, 2);
+  assert.equal(importInspectPayload.result.imports.items[0]?.provenance.source.path, importBundleA);
+
+  const exportInspectResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "inspect", "exports", "--track-id", track.id, "--page", "2", "--page-size", "1"],
+    { cwd, env },
+  );
+  assert.match(exportInspectResult.stdout, /OpenSpec track export inspection/);
+  assert.match(exportInspectResult.stdout, /page 2\/3/);
+  assert.match(exportInspectResult.stdout, /export-a/);
+});
