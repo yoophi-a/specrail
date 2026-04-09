@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.js";
@@ -16,7 +16,7 @@ interface FileStatePaths {
   eventsDir: string;
 }
 
-function getStatePaths(rootDir: string): FileStatePaths {
+export function getStatePaths(rootDir: string): FileStatePaths {
   return {
     projectsDir: path.join(rootDir, "projects"),
     tracksDir: path.join(rootDir, "tracks"),
@@ -129,16 +129,7 @@ export class JsonlEventStore implements EventStore {
   async append(event: ExecutionEvent): Promise<void> {
     const filePath = path.join(this.eventsDir, `${event.executionId}.jsonl`);
     await ensureDir(path.dirname(filePath));
-
-    const existing = await readFile(filePath, "utf8").catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") {
-        return "";
-      }
-
-      throw error;
-    });
-
-    await writeFile(filePath, `${existing}${JSON.stringify(event)}\n`, "utf8");
+    await appendFile(filePath, `${JSON.stringify(event)}\n`, "utf8");
   }
 
   async listByExecution(executionId: string): Promise<ExecutionEvent[]> {

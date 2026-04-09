@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { watch } from "node:fs";
+import { open, readFile, stat } from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -12,6 +13,7 @@ import {
   FileTrackRepository,
   JsonlEventStore,
   NotFoundError,
+  getStatePaths,
   SpecRailService,
   TRACK_STATUSES,
   type ExecutionEvent,
@@ -22,6 +24,7 @@ import {
 
 interface ApiDeps {
   artifactRoot: string;
+  eventLogDir: string;
   service: SpecRailService;
 }
 
@@ -49,6 +52,7 @@ interface ResumeRunRequestBody {
 
 interface DefaultDependencies {
   artifactRoot: string;
+  eventLogDir: string;
   serviceDependencies: SpecRailServiceDependencies;
 }
 
@@ -84,6 +88,7 @@ function createDependencies(dataDir: string): DefaultDependencies {
 
   return {
     artifactRoot,
+    eventLogDir: getStatePaths(stateDir).eventsDir,
     serviceDependencies: {
       projectRepository: new FileProjectRepository(stateDir),
       trackRepository: new FileTrackRepository(stateDir),
@@ -272,6 +277,7 @@ function assertValidResumeRunBody(body: ResumeRunRequestBody): void {
 async function streamRunEvents(
   response: ServerResponse,
   service: SpecRailService,
+  eventLogDir: string,
   runId: string,
 ): Promise<void> {
   response.writeHead(200, {
@@ -281,17 +287,68 @@ async function streamRunEvents(
   });
 
   let closed = false;
-  let sentCount = 0;
+  let offset = 0;
+  let pendingLine = "";
+  const eventLogPath = path.join(eventLogDir, `${runId}.jsonl`);
 
-  const flushEvents = async (): Promise<void> => {
-    const events = await service.listRunEvents(runId);
-    const nextEvents = events.slice(sentCount);
+  const flushAppendedEvents = async (): Promise<void> => {
+    const fileStat = await stat(eventLogPath).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        return null;
+      }
 
-    for (const event of nextEvents) {
-      writeSseEvent(response, event);
-      sentCount += 1;
+      throw error;
+    });
+
+    if (!fileStat || fileStat.size <= offset) {
+      return;
+    }
+
+    const handle = await open(eventLogPath, "r");
+
+    try {
+      const chunkLength = fileStat.size - offset;
+      const buffer = Buffer.alloc(chunkLength);
+      const { bytesRead } = await handle.read(buffer, 0, chunkLength, offset);
+      offset += bytesRead;
+
+      pendingLine += buffer.subarray(0, bytesRead).toString("utf8");
+      const lines = pendingLine.split("\n");
+      pendingLine = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
+
+        writeSseEvent(response, JSON.parse(line) as ExecutionEvent);
+      }
+    } finally {
+      await handle.close();
     }
   };
+
+  const initialEvents = await service.listRunEvents(runId);
+  for (const event of initialEvents) {
+    writeSseEvent(response, event);
+  }
+
+  offset = (await stat(eventLogPath).catch(() => null))?.size ?? 0;
+  response.write(`: connected\n\n`);
+
+  const watcher = watch(eventLogDir, (_eventType, filename) => {
+    if (closed || filename !== `${runId}.jsonl`) {
+      return;
+    }
+
+    void flushAppendedEvents().catch(() => {
+      close();
+    });
+  });
+
+  const heartbeat = setInterval(() => {
+    response.write(`: keep-alive\n\n`);
+  }, 15000);
 
   const close = (): void => {
     if (closed) {
@@ -299,18 +356,10 @@ async function streamRunEvents(
     }
 
     closed = true;
-    clearInterval(interval);
+    clearInterval(heartbeat);
+    watcher.close();
     response.end();
   };
-
-  await flushEvents();
-  response.write(`: connected\n\n`);
-
-  const interval = setInterval(() => {
-    void flushEvents().catch(() => {
-      close();
-    });
-  }, 50);
 
   response.on("close", close);
   response.on("error", close);
@@ -417,7 +466,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           return;
         }
 
-        await streamRunEvents(response, deps.service, run.id);
+        await streamRunEvents(response, deps.service, deps.eventLogDir, run.id);
         return;
       }
 
@@ -463,6 +512,7 @@ export function createDefaultServer(): http.Server {
 
   return createSpecRailHttpServer({
     artifactRoot: dependencies.artifactRoot,
+    eventLogDir: dependencies.eventLogDir,
     service: new SpecRailService(dependencies.serviceDependencies),
   });
 }

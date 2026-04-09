@@ -208,7 +208,17 @@ test("API supports streaming run events over SSE", async () => {
     assert.equal(resumeResponse.status, 200);
 
     const resumedEvents = await stream.waitForEvents(3);
+    assert.equal(resumedEvents.length, 3);
     assert.match(resumedEvents[2]?.summary ?? "", /Resumed Codex session/);
+
+    const cancelResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/cancel`, {
+      method: "POST",
+    });
+    assert.equal(cancelResponse.status, 200);
+
+    const cancelledEvents = await stream.waitForEvents(4);
+    assert.equal(cancelledEvents.length, 4);
+    assert.match(cancelledEvents[3]?.summary ?? "", /Cancelled Codex session/);
     stream.close();
   });
 });
