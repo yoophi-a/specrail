@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { promisify } from "node:util";
 import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
@@ -11,6 +12,46 @@ import { SpecRailService } from "@specrail/core";
 import { createDependencies } from "../runtime.js";
 
 const execFileAsync = promisify(execFile);
+
+async function waitForStdout(proc: ReturnType<typeof spawn>, matcher: (output: string) => boolean): Promise<string> {
+  if (!proc.stdout) {
+    throw new Error("spawned process did not expose stdout");
+  }
+  const stdout = proc.stdout;
+
+  let output = "";
+
+  if (matcher(output)) {
+    return output;
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const onData = (chunk: string | Buffer): void => {
+      output += chunk.toString();
+      if (matcher(output)) {
+        cleanup();
+        resolve(output);
+      }
+    };
+    const onError = (error: Error): void => {
+      cleanup();
+      reject(error);
+    };
+    const onExit = (): void => {
+      cleanup();
+      reject(new Error(`process exited before matcher was satisfied: ${output}`));
+    };
+    const cleanup = (): void => {
+      stdout.off("data", onData);
+      proc.off("error", onError);
+      proc.off("exit", onExit);
+    };
+
+    stdout.on("data", onData);
+    proc.on("error", onError);
+    proc.on("exit", onExit);
+  });
+}
 
 async function createService(rootDir: string): Promise<SpecRailService> {
   const dependencies = createDependencies(path.join(rootDir, "data"), path.join(rootDir, "repo-visible"));
@@ -520,4 +561,92 @@ test("CLI lists run event history and tail output", async () => {
   assert.equal(tailJsonPayload.result.meta.mode, "tail");
   assert.equal(tailJsonPayload.result.meta.total, 2);
   assert.equal(tailJsonPayload.result.meta.limit, 2);
+});
+
+test("CLI follows appended run events in human and json modes", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-run-follow-"));
+  const dependencies = createDependencies(path.join(rootDir, "data"), path.join(rootDir, "repo-visible"));
+  const service = new SpecRailService(dependencies.serviceDependencies);
+
+  const track = await service.createTrack({
+    title: "CLI run follow",
+    description: "Follow appended run events from the shell",
+  });
+  const run = {
+    id: "run_cli_follow",
+    trackId: track.id,
+    backend: "codex",
+    profile: "default",
+    workspacePath: path.join(rootDir, "data", "workspaces", "run_cli_follow"),
+    branchName: "specrail/run_cli_follow",
+    status: "running" as const,
+    createdAt: "2026-04-10T00:00:00.000Z",
+    startedAt: "2026-04-10T00:00:00.500Z",
+  };
+  await dependencies.serviceDependencies.executionRepository.create(run);
+
+  await service.recordExecutionEvent({
+    id: `${run.id}_event_1`,
+    executionId: run.id,
+    type: "message",
+    timestamp: "2026-04-10T00:00:01.000Z",
+    source: "agent",
+    summary: "Queued initial work",
+  });
+
+  const env = {
+    ...process.env,
+    SPECRAIL_DATA_DIR: path.join(rootDir, "data"),
+    SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "repo-visible"),
+  };
+  const cwd = path.resolve(import.meta.dirname, "../..");
+
+  const humanFollow = spawn(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "runs", "tail", "--run-id", run.id, "--limit", "1", "--follow"],
+    { cwd, env, stdio: ["ignore", "pipe", "pipe"] },
+  );
+
+  const initialHumanOutput = await waitForStdout(humanFollow, (output) => output.includes("Queued initial work"));
+  assert.match(initialHumanOutput, /Run event tail for run_cli_follow live/);
+
+  await service.recordExecutionEvent({
+    id: `${run.id}_event_2`,
+    executionId: run.id,
+    type: "summary",
+    timestamp: "2026-04-10T00:00:02.000Z",
+    source: "system",
+    summary: "Completed follow-up work",
+  });
+
+  const finalHumanOutput = await waitForStdout(humanFollow, (output) => output.includes("Completed follow-up work"));
+  assert.match(finalHumanOutput, /Completed follow-up work/);
+  humanFollow.kill("SIGINT");
+  await once(humanFollow, "exit");
+
+  const jsonFollow = spawn(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "runs", "tail", "--run-id", run.id, "--limit", "1", "--follow", "--json"],
+    { cwd, env, stdio: ["ignore", "pipe", "pipe"] },
+  );
+
+  const initialJsonOutput = await waitForStdout(jsonFollow, (output) => output.includes("Completed follow-up work"));
+  const initialJsonLines = initialJsonOutput.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { mode: string; event: { summary: string } });
+  assert.equal(initialJsonLines.at(-1)?.mode, "follow");
+  assert.equal(initialJsonLines.at(-1)?.event.summary, "Completed follow-up work");
+
+  await service.recordExecutionEvent({
+    id: `${run.id}_event_3`,
+    executionId: run.id,
+    type: "tool_result",
+    timestamp: "2026-04-10T00:00:03.000Z",
+    source: "agent",
+    summary: "Captured final output",
+  });
+
+  const finalJsonOutput = await waitForStdout(jsonFollow, (output) => output.includes("Captured final output"));
+  const finalJsonLines = finalJsonOutput.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { mode: string; event: { summary: string } });
+  assert.equal(finalJsonLines.at(-1)?.event.summary, "Captured final output");
+  jsonFollow.kill("SIGINT");
+  await once(jsonFollow, "exit");
 });

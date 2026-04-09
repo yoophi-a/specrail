@@ -170,6 +170,9 @@ pnpm --filter @specrail/api runs:events -- --run-id run_123 --after 2026-04-10T0
 # tail the latest persisted run events
 pnpm --filter @specrail/api runs:tail -- --run-id run_123 --limit 10 --json
 
+# follow newly appended run events in the terminal
+pnpm --filter @specrail/api runs:tail -- --run-id run_123 --limit 10 --follow
+
 # inspect a persisted run payload
 pnpm --filter @specrail/api run:inspect -- --run-id run_123
 ```
@@ -186,6 +189,7 @@ Notes:
 - `runs:list` mirrors `GET /runs` with `--track-id`, `--status`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, and `--json`
 - `runs:events` mirrors `GET /runs/:runId/events` with shell-friendly filtering via `--after`, `--before`, `--type`, `--limit`, and `--json`
 - `runs:tail` focuses on the latest persisted events for a run and reuses the same `--type`, `--limit`, and `--json` switches
+- add `--follow` to keep the tail open and stream newly appended events; in `--json` mode this emits newline-delimited JSON event envelopes for shell pipelines
 - `track:inspect` mirrors `GET /tracks/:trackId`, `track:inspect:integrations` mirrors `GET /tracks/:trackId/integrations`, and `run:inspect` mirrors `GET /runs/:runId`
 - JSON output is available with `--json` for scripting or operator tooling
 

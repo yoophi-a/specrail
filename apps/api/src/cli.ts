@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { watch } from "node:fs";
+import { mkdir, open, stat } from "node:fs/promises";
+import path from "node:path";
 import { loadConfig } from "@specrail/config";
 import {
   OPENSPEC_RESOLUTION_PRESETS,
@@ -49,6 +52,7 @@ interface ParsedArgs {
   path?: string;
   trackId?: string;
   runId?: string;
+  follow: boolean;
   overwrite: boolean;
   preview: boolean;
   apply: boolean;
@@ -108,7 +112,7 @@ Usage:
   specrail-admin runs list [--track-id <track-id>] [--status <status>] [--page <n>] [--page-size <count>] [--sort-by <createdAt|startedAt|finishedAt|status>] [--sort-order <asc|desc>] [--json]
   specrail-admin runs inspect --run-id <run-id> [--json]
   specrail-admin runs events --run-id <run-id> [--after <iso>] [--before <iso>] [--type <event-type>] [--limit <count>] [--json]
-  specrail-admin runs tail --run-id <run-id> [--type <event-type>] [--limit <count>] [--json]
+  specrail-admin runs tail --run-id <run-id> [--type <event-type>] [--limit <count>] [--follow] [--json]
 
 Examples:
   specrail-admin openspec export --track-id track_123 --path ./bundle
@@ -127,6 +131,7 @@ Examples:
   specrail-admin runs inspect --run-id run_123
   specrail-admin runs events --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20
   specrail-admin runs tail --run-id run_123 --limit 10 --json
+  specrail-admin runs tail --run-id run_123 --follow
 `);
 }
 
@@ -182,12 +187,13 @@ function buildResolution(input: Pick<ParsedArgs, "incoming" | "existing">): Open
 
 function parseArgs(argv: string[]): ParsedArgs {
   if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
-    return { command: null, overwrite: false, preview: false, apply: false, json: false, incoming: [], existing: [] };
+    return { command: null, follow: false, overwrite: false, preview: false, apply: false, json: false, incoming: [], existing: [] };
   }
 
   const [group, action, subaction, ...rest] = argv;
   const args: ParsedArgs = {
     command: null,
+    follow: false,
     overwrite: false,
     preview: false,
     apply: false,
@@ -268,6 +274,10 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--json":
         args.json = true;
+        break;
+      case "--follow":
+      case "-f":
+        args.follow = true;
         break;
       case "--preset": {
         const value = rest[++index] as OpenSpecImportResolutionPresetName | undefined;
@@ -583,17 +593,28 @@ function printRunInspection(result: RunInspection): void {
   console.log(`- githubRunCommentSyncForRun: ${result.githubRunCommentSyncForRun.length} matching target(s)`);
 }
 
+function isSelectedRunEvent(event: ExecutionEvent, args: ParsedArgs): boolean {
+  return (args.after ? event.timestamp >= args.after : true)
+    && (args.before ? event.timestamp <= args.before : true)
+    && (args.eventType ? event.type === args.eventType : true);
+}
+
 function selectRunEvents(events: ExecutionEvent[], args: ParsedArgs, tailMode = false): ExecutionEvent[] {
-  const filtered = events
-    .filter((event) => (args.after ? event.timestamp >= args.after : true))
-    .filter((event) => (args.before ? event.timestamp <= args.before : true))
-    .filter((event) => (args.eventType ? event.type === args.eventType : true));
+  const filtered = events.filter((event) => isSelectedRunEvent(event, args));
 
   if (!args.pageSize) {
     return filtered;
   }
 
   return tailMode ? filtered.slice(-args.pageSize) : filtered.slice(0, args.pageSize);
+}
+
+function printRunEvent(event: ExecutionEvent): void {
+  console.log(`- ${event.timestamp} [${event.type}] ${event.summary}`);
+  console.log(`  - source: ${event.source}`);
+  if (event.payload && Object.keys(event.payload).length > 0) {
+    console.log(`  - payload: ${JSON.stringify(event.payload)}`);
+  }
 }
 
 function printRunEvents(events: ExecutionEvent[], args: ParsedArgs, label: string): void {
@@ -604,12 +625,109 @@ function printRunEvents(events: ExecutionEvent[], args: ParsedArgs, label: strin
 
   console.log(`${label} (${events.length})`);
   for (const event of events) {
-    console.log(`- ${event.timestamp} [${event.type}] ${event.summary}`);
-    console.log(`  - source: ${event.source}`);
-    if (event.payload && Object.keys(event.payload).length > 0) {
-      console.log(`  - payload: ${JSON.stringify(event.payload)}`);
+    printRunEvent(event);
+  }
+}
+
+function getRunEventLogPath(runId: string): string {
+  const config = loadConfig();
+  return path.join(config.dataDir, "state", "events", `${runId}.jsonl`);
+}
+
+async function followRunEvents(run: Execution, args: ParsedArgs, initialEvents: ExecutionEvent[]): Promise<void> {
+  const label = `Run event tail for ${run.id}`;
+  const eventLogPath = getRunEventLogPath(run.id);
+  const eventLogDir = path.dirname(eventLogPath);
+  await mkdir(eventLogDir, { recursive: true });
+
+  if (args.json) {
+    for (const event of initialEvents) {
+      console.log(JSON.stringify({ mode: "follow", run, event }));
+    }
+  } else {
+    if (initialEvents.length === 0) {
+      console.log(`${label} live (waiting for events)`);
+    } else {
+      console.log(`${label} live`);
+      for (const event of initialEvents) {
+        printRunEvent(event);
+      }
     }
   }
+
+  let offset = (await stat(eventLogPath).catch(() => null))?.size ?? 0;
+  let pendingLine = "";
+  let closed = false;
+  let finish: (() => void) | undefined;
+
+  const close = (): void => {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
+    watcher.close();
+    if (finish) {
+      process.off("SIGINT", finish);
+      process.off("SIGTERM", finish);
+    }
+  };
+
+  const flushAppendedEvents = async (): Promise<void> => {
+    const fileStat = await stat(eventLogPath).catch(() => null);
+    if (!fileStat || fileStat.size <= offset) {
+      return;
+    }
+
+    const handle = await open(eventLogPath, "r");
+    try {
+      const chunkLength = fileStat.size - offset;
+      const buffer = Buffer.alloc(chunkLength);
+      const { bytesRead } = await handle.read(buffer, 0, chunkLength, offset);
+      offset += bytesRead;
+
+      pendingLine += buffer.subarray(0, bytesRead).toString("utf8");
+      const lines = pendingLine.split("\n");
+      pendingLine = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
+
+        const event = JSON.parse(line) as ExecutionEvent;
+        if (!isSelectedRunEvent(event, args)) {
+          continue;
+        }
+
+        if (args.json) {
+          console.log(JSON.stringify({ mode: "follow", run, event }));
+        } else {
+          printRunEvent(event);
+        }
+      }
+    } finally {
+      await handle.close();
+    }
+  };
+
+  const watcher = watch(eventLogDir, (_eventType, filename) => {
+    if (closed || filename !== `${run.id}.jsonl`) {
+      return;
+    }
+
+    void flushAppendedEvents().catch(close);
+  });
+
+  await new Promise<void>((resolve) => {
+    finish = (): void => {
+      close();
+      resolve();
+    };
+
+    process.once("SIGINT", finish);
+    process.once("SIGTERM", finish);
+  });
 }
 
 function inferConflictPolicy(args: ParsedArgs): "reject" | "overwrite" | "resolve" | undefined {
@@ -841,6 +959,15 @@ async function run(): Promise<void> {
 
     const events = selectRunEvents(await service.listRunEvents(run.id), args, args.command === "run-tail");
     const label = args.command === "run-tail" ? `Run event tail for ${run.id}` : `Run event history for ${run.id}`;
+
+    if (args.follow) {
+      if (args.command !== "run-tail") {
+        throw new Error("--follow is only supported with runs tail");
+      }
+
+      await followRunEvents(run, args, events);
+      return;
+    }
 
     if (args.json) {
       console.log(JSON.stringify({
