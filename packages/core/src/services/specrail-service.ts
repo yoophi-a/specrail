@@ -25,7 +25,7 @@ import type {
   TrackIntegrationsInspection,
   TrackStatus,
 } from "../domain/types.js";
-import { NotFoundError } from "../errors.js";
+import { ConflictError, NotFoundError } from "../errors.js";
 import type {
   EventStore,
   ExecutionRepository,
@@ -660,6 +660,37 @@ export class SpecRailService {
     }
 
     return this.publishRunSummaryForExecution(track, execution);
+  }
+
+  async retryGitHubRunCommentSync(trackId: string): Promise<{ runId: string; results: GitHubRunCommentPublishResult[] }> {
+    const track = await this.dependencies.trackRepository.getById(trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${trackId}`);
+    }
+
+    const syncState = await this.dependencies.githubRunCommentSyncStore?.getByTrackId(track.id);
+    const failedComments = syncState?.comments.filter((comment) => comment.lastSyncStatus === "failed") ?? [];
+
+    if (failedComments.length === 0) {
+      throw new ConflictError(`Track does not have any failed GitHub run comment syncs: ${track.id}`);
+    }
+
+    const retryCandidate = failedComments
+      .slice()
+      .sort((left, right) => {
+        const published = right.lastPublishedAt.localeCompare(left.lastPublishedAt);
+        return published || right.lastRunId.localeCompare(left.lastRunId);
+      })[0];
+
+    if (!retryCandidate) {
+      throw new ConflictError(`Track does not have any retryable GitHub run comment syncs: ${track.id}`);
+    }
+
+    return {
+      runId: retryCandidate.lastRunId,
+      results: await this.publishRunSummary(retryCandidate.lastRunId),
+    };
   }
 
   private async reconcileTrackStatusFromRun(trackId: string, execution: Execution): Promise<Track | undefined> {

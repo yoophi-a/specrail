@@ -8,6 +8,7 @@ import { CodexAdapter, GitHubRunCommentGhPublisher } from "@specrail/adapters";
 import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
 import {
   APPROVAL_STATUSES,
+  ConflictError,
   FileGitHubRunCommentSyncStore,
   FileExecutionRepository,
   FileProjectRepository,
@@ -640,6 +641,27 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (
+        method === "POST" &&
+        segments.length === 6 &&
+        segments[0] === "tracks" &&
+        segments[2] === "integrations" &&
+        segments[3] === "github" &&
+        segments[4] === "run-comment-sync" &&
+        segments[5] === "retry"
+      ) {
+        const retry = await deps.service.retryGitHubRunCommentSync(segments[1] ?? "");
+        const inspection = await deps.service.getTrackIntegrationsInspection(segments[1] ?? "");
+
+        sendJson(response, 200, {
+          trackId: segments[1] ?? "",
+          runId: retry.runId,
+          results: retry.results,
+          integrations: inspection,
+        });
+        return;
+      }
+
       if (method === "GET" && segments.length === 2 && segments[0] === "tracks") {
         const inspection = await deps.service.getTrackInspection(segments[1] ?? "");
 
@@ -772,6 +794,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (error instanceof NotFoundError) {
         sendError(response, 404, "not_found", error.message);
+        return;
+      }
+
+      if (error instanceof ConflictError) {
+        sendError(response, 409, "conflict", error.message);
         return;
       }
 

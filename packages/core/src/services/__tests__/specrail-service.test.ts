@@ -1328,6 +1328,126 @@ test("SpecRailService persists GitHub run comment sync metadata and passes it ba
   });
 });
 
+test("SpecRailService retries failed GitHub run comment syncs using the latest failed run", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-retry-sync-"));
+  const syncStore = new FileGitHubRunCommentSyncStore(path.join(rootDir, "state"));
+  const publishCalls: Array<{ runId: string; syncCommentId?: number }> = [];
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    githubRunCommentSyncStore: syncStore,
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    githubRunCommentPublisher: {
+      async publishRunSummary(input) {
+        publishCalls.push({
+          runId: input.run.id,
+          syncCommentId: input.syncState?.comments[0]?.commentId,
+        });
+        return [
+          {
+            action: "updated",
+            target: { kind: "issue", number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+            body: `summary:${input.run.status}`,
+            commentId: 3401,
+          },
+        ];
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = [
+        "2026-04-10T02:00:00.000Z",
+        "2026-04-10T02:00:01.000Z",
+        "2026-04-10T02:00:02.000Z",
+        "2026-04-10T02:00:03.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-10T02:00:03.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-retry", "run-retry-old", "run-retry-new"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Retry sync failures",
+    description: "Reuse the publish flow for failed GitHub syncs.",
+    githubIssue: { number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+  });
+
+  const olderRun = await service.startRun({ trackId: track.id, prompt: "older run" });
+  const newerRun = await service.startRun({ trackId: track.id, prompt: "newer run" });
+
+  await syncStore.upsert({
+    id: track.id,
+    trackId: track.id,
+    updatedAt: "2026-04-10T02:00:02.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+        commentId: 3401,
+        lastRunId: newerRun.id,
+        lastRunStatus: newerRun.status,
+        lastPublishedAt: "2026-04-10T02:00:02.000Z",
+        lastCommentBody: "summary:running",
+        lastSyncStatus: "failed",
+        lastSyncError: "GitHub temporarily unavailable",
+      },
+      {
+        target: { kind: "pull_request", number: 35, url: "https://github.com/yoophi-a/specrail/pull/35" },
+        commentId: 3501,
+        lastRunId: olderRun.id,
+        lastRunStatus: olderRun.status,
+        lastPublishedAt: "2026-04-10T02:00:01.000Z",
+        lastCommentBody: "summary:running",
+        lastSyncStatus: "failed",
+        lastSyncError: "GitHub temporarily unavailable",
+      },
+    ],
+  });
+
+  assert.deepEqual(await service.retryGitHubRunCommentSync(track.id), {
+    runId: newerRun.id,
+    results: [
+      {
+        action: "updated",
+        target: { kind: "issue", number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+        body: "summary:running",
+        commentId: 3401,
+      },
+    ],
+  });
+  assert.deepEqual(publishCalls.at(-1), { runId: newerRun.id, syncCommentId: 3401 });
+});
+
 test("SpecRailService records failed GitHub run summary sync attempts", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-publish-failure-"));
   const syncStore = new FileGitHubRunCommentSyncStore(path.join(rootDir, "state"));

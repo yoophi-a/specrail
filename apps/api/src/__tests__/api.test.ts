@@ -5,7 +5,16 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createDefaultServer } from "../index.js";
+import {
+  FileExecutionRepository,
+  FileGitHubRunCommentSyncStore,
+  FileProjectRepository,
+  FileTrackRepository,
+  JsonlEventStore,
+  SpecRailService,
+} from "@specrail/core";
+
+import { createDefaultServer, createSpecRailHttpServer } from "../index.js";
 
 async function withServer(
   run: (baseUrl: string, paths: { dataDir: string; repoArtifactDir: string }) => Promise<void>,
@@ -119,6 +128,170 @@ async function openSseStream(url: string): Promise<{
     request.on("error", reject);
   });
 }
+
+test("API retries failed GitHub run comment syncs from the integrations route", async () => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "specrail-api-retry-"));
+  const artifactRoot = path.join(dataDir, "repo-visible");
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(dataDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(dataDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(dataDir, "state")),
+    eventStore: new JsonlEventStore(path.join(dataDir, "state")),
+    githubRunCommentSyncStore: new FileGitHubRunCommentSyncStore(path.join(dataDir, "state")),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    githubRunCommentPublisher: {
+      async publishRunSummary(input) {
+        return [
+          {
+            action: input.syncState ? "updated" : "created",
+            target: { kind: "issue", number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+            body: `summary:${input.run.status}`,
+            commentId: 3401,
+          },
+        ];
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(dataDir, "workspaces"),
+    now: (() => {
+      const values = [
+        "2026-04-10T03:00:00.000Z",
+        "2026-04-10T03:00:01.000Z",
+        "2026-04-10T03:00:02.000Z",
+        "2026-04-10T03:00:03.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-10T03:00:03.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-retry-route", "run-retry-route"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const server = createSpecRailHttpServer({
+    artifactRoot,
+    eventLogDir: path.join(dataDir, "state", "events"),
+    service,
+  });
+
+  await new Promise<void>((resolve) => {
+    server.listen(0, () => resolve());
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("failed to bind retry test server");
+  }
+
+  try {
+    const track = await service.createTrack({
+      title: "Retry integration sync",
+      description: "Retry failed GitHub comment syncs.",
+      githubIssue: { number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+    });
+    const run = await service.startRun({ trackId: track.id, prompt: "retry failed sync" });
+
+    await writeFile(
+      path.join(dataDir, "state", "github-run-comment-sync", `${track.id}.json`),
+      `${JSON.stringify(
+        {
+          id: track.id,
+          trackId: track.id,
+          updatedAt: "2026-04-10T03:00:02.000Z",
+          comments: [
+            {
+              target: { kind: "issue", number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+              commentId: 3401,
+              lastRunId: run.id,
+              lastRunStatus: run.status,
+              lastPublishedAt: "2026-04-10T03:00:02.000Z",
+              lastCommentBody: "summary:running",
+              lastSyncStatus: "failed",
+              lastSyncError: "GitHub temporarily unavailable",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    const retryResponse = await fetch(
+      `http://127.0.0.1:${address.port}/tracks/${track.id}/integrations/github/run-comment-sync/retry`,
+      { method: "POST" },
+    );
+    assert.equal(retryResponse.status, 200);
+    assert.deepEqual(await retryResponse.json(), {
+      trackId: track.id,
+      runId: run.id,
+      results: [
+        {
+          action: "updated",
+          target: { kind: "issue", number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+          body: "summary:running",
+          commentId: 3401,
+        },
+      ],
+      integrations: {
+        trackId: track.id,
+        github: {
+          issue: { number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+          runCommentSync: {
+            id: track.id,
+            trackId: track.id,
+            updatedAt: "2026-04-10T03:00:03.000Z",
+            comments: [
+              {
+                target: { kind: "issue", number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
+                commentId: 3401,
+                lastRunId: run.id,
+                lastRunStatus: "running",
+                lastPublishedAt: "2026-04-10T03:00:03.000Z",
+                lastCommentBody: "summary:running",
+                lastSyncStatus: "success",
+              },
+            ],
+          },
+          summary: {
+            linkedTargetCount: 1,
+            syncedTargetCount: 1,
+            lastPublishedAt: "2026-04-10T03:00:03.000Z",
+            lastSyncStatus: "success",
+          },
+        },
+      },
+    });
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
 
 test("API exposes GitHub sync metadata on track and run inspection routes", async () => {
   await withServer(async (baseUrl, paths) => {

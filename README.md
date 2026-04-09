@@ -78,6 +78,10 @@ Current endpoints in `apps/api/src/index.ts`:
 - `GET /tracks/:trackId/integrations`
   - lightweight integration inspection route for polling/debug tooling without artifact payloads
   - returns linked GitHub issue/PR references, raw `runCommentSync`, and summary fields like `linkedTargetCount`, `syncedTargetCount`, `lastPublishedAt`, `lastSyncStatus`, and `lastSyncError`
+- `POST /tracks/:trackId/integrations/github/run-comment-sync/retry`
+  - retries the latest failed GitHub run comment sync for the track by reusing the stored `lastRunId` and existing publish flow
+  - returns `{ trackId, runId, results, integrations }`
+  - `409 conflict` when the track has no failed GitHub run comment syncs to retry
 - `PATCH /tracks/:trackId`
   - update workflow state
   - body: any of `{ status, specStatus, planStatus, githubIssue, githubPullRequest }`
@@ -107,6 +111,7 @@ Current endpoints in `apps/api/src/index.ts`:
 ### Error contract
 - `400` for malformed JSON
 - `404` for missing tracks/runs
+- `409` for retry/conflict cases such as retrying a track with no failed GitHub sync state
 - `422` for validation failures
   - includes invalid pagination/sort params
 - `500` for unexpected server errors
