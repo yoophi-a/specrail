@@ -14,12 +14,18 @@ export interface ExecutorSessionMetadata {
   workspacePath: string;
   command: ExecutorCommandSpec;
   pid?: number;
-  status: "spawned" | "resumed" | "cancelled";
+  codexSessionId?: string;
+  status: "spawned" | "running" | "completed" | "failed" | "cancelled";
   prompt: string;
   createdAt: string;
+  startedAt?: string;
   updatedAt: string;
   resumedAt?: string;
   cancelledAt?: string;
+  finishedAt?: string;
+  exitCode?: number | null;
+  signal?: NodeJS.Signals;
+  failureMessage?: string;
 }
 
 export interface SpawnExecutionInput {

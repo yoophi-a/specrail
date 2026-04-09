@@ -3,7 +3,7 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { CodexAdapterStub } from "@specrail/adapters";
+import { CodexAdapter } from "@specrail/adapters";
 import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
 import {
   APPROVAL_STATUSES,
@@ -104,7 +104,7 @@ function createDependencies(dataDir: string): DefaultDependencies {
           });
         },
       },
-      executor: new CodexAdapterStub({ sessionsDir }),
+      executor: new CodexAdapter({ sessionsDir }),
       defaultProject: {
         id: "project-default",
         name: "SpecRail",
