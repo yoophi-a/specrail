@@ -130,6 +130,18 @@ export interface ListRunsInput {
   sortOrder?: SortOrder;
 }
 
+export interface ListPageMeta {
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+export interface ListPageResult<T> {
+  items: T[];
+  meta: ListPageMeta;
+}
+
 function buildExecutionSummary(events: ExecutionEvent[]): Execution["summary"] {
   const lastEvent = events.at(-1);
 
@@ -207,6 +219,21 @@ function paginateItems<T>(items: T[], page: number, pageSize: number): T[] {
   return items.slice(start, start + pageSize);
 }
 
+function buildListPageResult<T>(items: T[], page: number, pageSize: number): ListPageResult<T> {
+  const total = items.length;
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+
+  return {
+    items: paginateItems(items, page, pageSize),
+    meta: {
+      total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1 && totalPages > 0,
+    },
+  };
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -249,6 +276,11 @@ export class SpecRailService {
   }
 
   async listTracks(input: ListTracksInput = {}): Promise<Track[]> {
+    const result = await this.listTracksPage(input);
+    return result.items;
+  }
+
+  async listTracksPage(input: ListTracksInput = {}): Promise<ListPageResult<Track>> {
     const tracks = await this.dependencies.trackRepository.list();
     const page = input.page ?? 1;
     const pageSize = input.pageSize ?? 20;
@@ -278,7 +310,7 @@ export class SpecRailService {
         return primary || compareValues(left.createdAt, right.createdAt, "desc") || compareValues(left.id, right.id, "desc");
       });
 
-    return paginateItems(sorted, page, pageSize);
+    return buildListPageResult(sorted, page, pageSize);
   }
 
   async updateTrack(input: UpdateTrackInput): Promise<Track> {
@@ -420,6 +452,11 @@ export class SpecRailService {
   }
 
   async listRuns(input: ListRunsInput = {}): Promise<Execution[]> {
+    const result = await this.listRunsPage(input);
+    return result.items;
+  }
+
+  async listRunsPage(input: ListRunsInput = {}): Promise<ListPageResult<Execution>> {
     const executions = await this.dependencies.executionRepository.list();
     const page = input.page ?? 1;
     const pageSize = input.pageSize ?? 20;
@@ -447,7 +484,7 @@ export class SpecRailService {
         return primary || compareValues(left.startedAt, right.startedAt, "desc") || compareValues(left.id, right.id, "desc");
       });
 
-    return paginateItems(sorted, page, pageSize);
+    return buildListPageResult(sorted, page, pageSize);
   }
 
   listRunEvents(runId: string): Promise<ExecutionEvent[]> {

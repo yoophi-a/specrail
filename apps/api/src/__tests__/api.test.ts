@@ -435,7 +435,16 @@ test("API paginates track listings and returns sort metadata", async () => {
 
     const listPayload = (await listResponse.json()) as {
       tracks: Array<{ title: string }>;
-      meta: { page: number; pageSize: number; sortBy: string; sortOrder: string };
+      meta: {
+        page: number;
+        pageSize: number;
+        sortBy: string;
+        sortOrder: string;
+        total: number;
+        totalPages: number;
+        hasNextPage: boolean;
+        hasPrevPage: boolean;
+      };
     };
 
     assert.deepEqual(listPayload.tracks.map((track) => track.title), ["Bravo"]);
@@ -444,6 +453,10 @@ test("API paginates track listings and returns sort metadata", async () => {
       pageSize: 1,
       sortBy: "title",
       sortOrder: "asc",
+      total: 3,
+      totalPages: 3,
+      hasNextPage: true,
+      hasPrevPage: true,
     });
   });
 });
@@ -481,7 +494,16 @@ test("API paginates run listings with explicit sort order", async () => {
 
     const listPayload = (await listResponse.json()) as {
       runs: Array<{ id: string }>;
-      meta: { page: number; pageSize: number; sortBy: string; sortOrder: string };
+      meta: {
+        page: number;
+        pageSize: number;
+        sortBy: string;
+        sortOrder: string;
+        total: number;
+        totalPages: number;
+        hasNextPage: boolean;
+        hasPrevPage: boolean;
+      };
     };
 
     assert.deepEqual(listPayload.runs.map((run) => run.id), [runIds[1]]);
@@ -490,6 +512,10 @@ test("API paginates run listings with explicit sort order", async () => {
       pageSize: 1,
       sortBy: "createdAt",
       sortOrder: "asc",
+      total: 3,
+      totalPages: 3,
+      hasNextPage: true,
+      hasPrevPage: true,
     });
   });
 });

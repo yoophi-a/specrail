@@ -73,6 +73,10 @@ interface ListMeta {
   pageSize: number;
   sortBy: string;
   sortOrder: "asc" | "desc";
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
 }
 
 interface DefaultDependencies {
@@ -240,15 +244,20 @@ function parsePositiveInteger(value: string | null): number | undefined {
   return Number.parseInt(value, 10);
 }
 
-function buildListMeta(query: { page?: number; pageSize?: number; sortBy?: string; sortOrder?: "asc" | "desc" }, defaults: {
-  sortBy: string;
-  sortOrder: "asc" | "desc";
-}): ListMeta {
+function buildListMeta(
+  query: { page?: number; pageSize?: number; sortBy?: string; sortOrder?: "asc" | "desc" },
+  defaults: {
+    sortBy: string;
+    sortOrder: "asc" | "desc";
+  },
+  pagination: Pick<ListMeta, "total" | "totalPages" | "hasNextPage" | "hasPrevPage">,
+): ListMeta {
   return {
     page: query.page ?? 1,
     pageSize: query.pageSize ?? 20,
     sortBy: query.sortBy ?? defaults.sortBy,
     sortOrder: query.sortOrder ?? defaults.sortOrder,
+    ...pagination,
   };
 }
 
@@ -547,8 +556,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         };
         assertValidTrackListQuery(query);
 
-        const tracks = await deps.service.listTracks(query);
-        sendJson(response, 200, { tracks, meta: buildListMeta(query, { sortBy: "updatedAt", sortOrder: "desc" }) });
+        const trackPage = await deps.service.listTracksPage(query);
+        sendJson(response, 200, {
+          tracks: trackPage.items,
+          meta: buildListMeta(query, { sortBy: "updatedAt", sortOrder: "desc" }, trackPage.meta),
+        });
         return;
       }
 
@@ -600,8 +612,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         };
         assertValidRunListQuery(query);
 
-        const runs = await deps.service.listRuns(query);
-        sendJson(response, 200, { runs, meta: buildListMeta(query, { sortBy: "createdAt", sortOrder: "desc" }) });
+        const runPage = await deps.service.listRunsPage(query);
+        sendJson(response, 200, {
+          runs: runPage.items,
+          meta: buildListMeta(query, { sortBy: "createdAt", sortOrder: "desc" }, runPage.meta),
+        });
         return;
       }
 

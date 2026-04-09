@@ -44,7 +44,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - list tracks with pagination and explicit sorting
   - default sort: `sortBy=updatedAt&sortOrder=desc`
   - query: `status?`, `priority?`, `page?=1`, `pageSize?=20`, `sortBy?=updatedAt|createdAt|title|priority|status`, `sortOrder?=asc|desc`
-  - response includes `meta: { page, pageSize, sortBy, sortOrder }`
+  - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
 - `PATCH /tracks/:trackId`
@@ -59,7 +59,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - list runs with pagination and explicit sorting
   - default sort: `sortBy=createdAt&sortOrder=desc`
   - query: `trackId?`, `status?`, `page?=1`, `pageSize?=20`, `sortBy?=createdAt|startedAt|finishedAt|status`, `sortOrder?=asc|desc`
-  - response includes `meta: { page, pageSize, sortBy, sortOrder }`
+  - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /runs/:runId`
   - return persisted run metadata
 - `POST /runs/:runId/resume`

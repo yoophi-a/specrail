@@ -291,6 +291,15 @@ test("SpecRailService applies explicit sorting and pagination for track and run 
   const trackA = await service.createTrack({ title: "Alpha", description: "A" });
   const trackB = await service.createTrack({ title: "Bravo", description: "B" });
 
+  const pagedTrackResult = await service.listTracksPage({ page: 2, pageSize: 1, sortBy: "title", sortOrder: "asc" });
+  assert.deepEqual(pagedTrackResult.items.map((track) => track.id), [trackB.id]);
+  assert.deepEqual(pagedTrackResult.meta, {
+    total: 3,
+    totalPages: 3,
+    hasNextPage: true,
+    hasPrevPage: true,
+  });
+
   const pagedTracks = await service.listTracks({ page: 2, pageSize: 1, sortBy: "title", sortOrder: "asc" });
   assert.deepEqual(pagedTracks.map((track) => track.id), [trackB.id]);
 
@@ -303,6 +312,21 @@ test("SpecRailService applies explicit sorting and pagination for track and run 
     sortBy: "createdAt",
     sortOrder: "asc",
   });
+  const pagedRunResult = await service.listRunsPage({
+    trackId: trackC.id,
+    page: 2,
+    pageSize: 1,
+    sortBy: "createdAt",
+    sortOrder: "asc",
+  });
+  assert.deepEqual(pagedRunResult.items.map((run) => run.id), [sortedRuns[1]?.id]);
+  assert.deepEqual(pagedRunResult.meta, {
+    total: 3,
+    totalPages: 3,
+    hasNextPage: true,
+    hasPrevPage: true,
+  });
+
   const pagedRuns = await service.listRuns({
     trackId: trackC.id,
     page: 2,
