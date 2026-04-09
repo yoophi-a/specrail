@@ -86,6 +86,8 @@ function createDependencies(dataDir: string): DefaultDependencies {
   const sessionsDir = path.join(dataDir, "sessions");
   const templateDir = path.resolve(process.cwd(), ".specrail-template");
 
+  const eventStore = new JsonlEventStore(stateDir);
+
   return {
     artifactRoot,
     eventLogDir: getStatePaths(stateDir).eventsDir,
@@ -93,7 +95,7 @@ function createDependencies(dataDir: string): DefaultDependencies {
       projectRepository: new FileProjectRepository(stateDir),
       trackRepository: new FileTrackRepository(stateDir),
       executionRepository: new FileExecutionRepository(stateDir),
-      eventStore: new JsonlEventStore(stateDir),
+      eventStore,
       artifactWriter: {
         async write(input) {
           await materializeTrackArtifacts({
@@ -109,7 +111,10 @@ function createDependencies(dataDir: string): DefaultDependencies {
           });
         },
       },
-      executor: new CodexAdapter({ sessionsDir }),
+      executor: new CodexAdapter({
+        sessionsDir,
+        onEvent: (event) => eventStore.append(event),
+      }),
       defaultProject: {
         id: "project-default",
         name: "SpecRail",

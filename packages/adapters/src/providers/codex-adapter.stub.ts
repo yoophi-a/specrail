@@ -56,6 +56,7 @@ export interface CodexAdapterOptions {
   sessionsDir?: string;
   now?: () => string;
   spawnProcess?: (command: string, args: string[], cwd: string) => SpawnedProcessLike;
+  onEvent?: (event: ExecutionEvent) => void | Promise<void>;
 }
 
 interface CodexJsonEvent {
@@ -198,11 +199,13 @@ export class CodexAdapter implements ExecutorAdapter {
   private readonly sessionsDir: string;
   private readonly now: () => string;
   private readonly spawnProcess: (command: string, args: string[], cwd: string) => SpawnedProcessLike;
+  private readonly onEvent?: (event: ExecutionEvent) => void | Promise<void>;
 
   constructor(options: CodexAdapterOptions = {}) {
     this.sessionsDir = options.sessionsDir ?? path.resolve(process.cwd(), ".specrail-data", "sessions");
     this.now = options.now ?? (() => new Date().toISOString());
     this.spawnProcess = options.spawnProcess ?? ((command, args, cwd) => nodeSpawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] }));
+    this.onEvent = options.onEvent;
   }
 
   async spawn(input: SpawnExecutionInput): Promise<SpawnExecutionResult> {
@@ -548,6 +551,9 @@ export class CodexAdapter implements ExecutorAdapter {
     }
 
     appendSessionEventSync(this.sessionsDir, sessionRef, event);
+    void Promise.resolve(this.onEvent?.(event)).catch(() => {
+      // Best-effort fan-out only. Session logs stay authoritative for adapter-local recovery.
+    });
   }
 }
 

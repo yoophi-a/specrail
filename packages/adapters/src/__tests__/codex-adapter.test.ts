@@ -62,10 +62,11 @@ test("buildCodexSpawnCommand creates a deterministic codex exec invocation", () 
   assert.match(command.args[3] ?? "", /run-1-codex\.last-message\.txt$/);
 });
 
-test("CodexAdapter persists process metadata, parses session id, and records runtime events", async () => {
+test("CodexAdapter persists process metadata, parses session id, records runtime events, and fans them out", async () => {
   const sessionsDir = await mkdtemp(path.join(os.tmpdir(), "specrail-codex-sessions-"));
   const child = new FakeChildProcess(4242);
   const spawnedCalls: Array<{ command: string; args: string[]; cwd: string }> = [];
+  const forwardedEvents: Array<{ id: string; summary: string }> = [];
   const timestamps = [
     "2026-04-09T00:00:00.000Z",
     "2026-04-09T00:00:01.000Z",
@@ -80,6 +81,9 @@ test("CodexAdapter persists process metadata, parses session id, and records run
     spawnProcess: (command, args, cwd) => {
       spawnedCalls.push({ command, args, cwd });
       return child;
+    },
+    onEvent: (event) => {
+      forwardedEvents.push({ id: event.id, summary: event.summary });
     },
   });
 
@@ -132,6 +136,7 @@ test("CodexAdapter persists process metadata, parses session id, and records run
     "STDERR run-1-codex",
     "Completed Codex session run-1-codex",
   ]);
+  assert.deepEqual(forwardedEvents, runtimeEvents.map((event) => ({ id: event.id, summary: event.summary })));
 });
 
 test("CodexAdapter resume prefers discovered Codex session id and cancel marks the session cancelled", async () => {
