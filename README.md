@@ -2,12 +2,38 @@
 
 SpecRail is a spec-driven orchestration service for coding-agent work.
 
-The current MVP is already executable. It can:
+In one sentence: SpecRail is a tool that helps a team describe a coding task clearly, ask a coding agent to do the work, and keep the plan, execution history, and current status in one place.
+
+## Who this is for
+
+### For engineers
+SpecRail is a file-backed control plane for coding-agent execution.
+It manages tracks, generated artifacts (`spec.md`, `plan.md`, `tasks.md`), run lifecycle, event persistence, and Codex-backed execution through JSON and SSE APIs.
+If you want "spec -> run -> inspect -> resume/cancel -> reconcile state" as an actual service boundary, that is what SpecRail is trying to provide.
+
+### For product managers and planners
+SpecRail is a system for turning "please build this" into a structured work item that an AI coding agent can actually follow.
+Instead of giving the AI a vague request every time, you keep:
+- what should be built
+- the plan for how to build it
+- the task breakdown
+- the current progress and execution history
+in one workflow.
+That makes it easier to review, approve, retry, and understand what happened.
+
+### For vibe-coding beginners
+Think of SpecRail as a "project notebook + task runner" for AI developers.
+You write down the job, the plan, and the checklist.
+Then the AI tries the job.
+SpecRail remembers what the AI did, whether it succeeded or failed, and lets you continue later instead of starting over from scratch.
+
+## What the current MVP can already do
 - create track records and materialize `spec.md`, `plan.md`, and `tasks.md`
 - persist project, track, run, and event state on local files
 - start a Codex-backed run with durable session metadata
 - resume and cancel a run
 - expose run events through JSON and SSE APIs
+- list tracks and runs with filtering, pagination, and sorting
 
 ## Current MVP status
 
