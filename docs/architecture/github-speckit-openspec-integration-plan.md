@@ -327,6 +327,9 @@ That avoids hard-to-debug bidirectional sync too early.
 1. Add repo-visible `.specrail/` artifact sync separate from `.specrail-data/`
 2. Add track external reference fields for GitHub issue/PR linkage
 3. Add execution summary publishing format for issue/PR comments
+   - implemented in core as `formatGitHubRunCommentSummary(...)`
+   - current payload includes linked issue/PR refs, run outcome, backend/profile/branch/session metadata, and recent event highlights
+   - next step is wiring this formatter into a GitHub publishing adapter/upsert flow
 4. Add an import/export adapter boundary for OpenSpec-compatible documents
 5. Add sync metadata schema (`sync.json`) and conflict markers
 

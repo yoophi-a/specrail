@@ -57,6 +57,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - web UI, GitHub app/webhooks, or chat integrations
 - artifact editing endpoints
 - automatic track reconciliation from terminal run outcomes beyond the current first-pass policy
+- posting GitHub issue/PR comments or checks from linked run summaries (the formatter now exists, publish flow still pending)
 
 ## HTTP API
 
@@ -157,6 +158,7 @@ Notes:
 - current API actively exercises `running`, `completed`, `failed`, and `cancelled`
 - terminal run states reconcile back into track status with a first-pass policy: `completed -> review`, `failed -> failed`, `cancelled -> blocked`
 - run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, and event summary
+- `@specrail/core` now exposes `formatGitHubRunCommentSummary(...)` to turn a track + run + recent events into a deterministic GitHub issue/PR comment body
 
 ### Event types
 Normalized event types currently defined in core:
