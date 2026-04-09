@@ -92,6 +92,15 @@ interface RunListQuery {
   sortOrder?: "asc" | "desc";
 }
 
+interface TrackOpenSpecInspectionQuery {
+  page?: number;
+  pageSize?: number;
+  importPage?: number;
+  importPageSize?: number;
+  exportPage?: number;
+  exportPageSize?: number;
+}
+
 interface ListMeta {
   page: number;
   pageSize: number;
@@ -658,7 +667,21 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "GET" && segments.length === 3 && segments[0] === "tracks" && segments[2] === "integrations") {
-        const inspection = await deps.service.getTrackIntegrationsInspection(segments[1] ?? "");
+        const searchParams = getSearchParams(request);
+        const openSpecQuery: TrackOpenSpecInspectionQuery = {
+          page: parsePositiveInteger(searchParams.get("page")),
+          pageSize: parsePositiveInteger(searchParams.get("pageSize") ?? searchParams.get("limit")),
+          importPage: parsePositiveInteger(searchParams.get("importPage")),
+          importPageSize: parsePositiveInteger(searchParams.get("importPageSize")),
+          exportPage: parsePositiveInteger(searchParams.get("exportPage")),
+          exportPageSize: parsePositiveInteger(searchParams.get("exportPageSize")),
+        };
+        const inspection = await deps.service.getTrackIntegrationsInspection(segments[1] ?? "", {
+          importPage: openSpecQuery.importPage ?? openSpecQuery.page,
+          importPageSize: openSpecQuery.importPageSize ?? openSpecQuery.pageSize,
+          exportPage: openSpecQuery.exportPage ?? openSpecQuery.page,
+          exportPageSize: openSpecQuery.exportPageSize ?? openSpecQuery.pageSize,
+        });
 
         if (!inspection) {
           sendError(response, 404, "not_found", "track not found");
@@ -670,7 +693,21 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "GET" && segments.length === 4 && segments[0] === "tracks" && segments[2] === "openspec" && segments[3] === "imports") {
-        const inspection = await deps.service.getTrackOpenSpecImports(segments[1] ?? "");
+        const searchParams = getSearchParams(request);
+        const query: TrackOpenSpecInspectionQuery = {
+          page: parsePositiveInteger(searchParams.get("page")),
+          pageSize: parsePositiveInteger(searchParams.get("pageSize") ?? searchParams.get("limit")),
+          importPage: parsePositiveInteger(searchParams.get("importPage")),
+          importPageSize: parsePositiveInteger(searchParams.get("importPageSize")),
+          exportPage: parsePositiveInteger(searchParams.get("exportPage")),
+          exportPageSize: parsePositiveInteger(searchParams.get("exportPageSize")),
+        };
+        const inspection = await deps.service.getTrackOpenSpecImports(segments[1] ?? "", {
+          importPage: query.importPage ?? query.page,
+          importPageSize: query.importPageSize ?? query.pageSize,
+          exportPage: query.exportPage ?? query.page,
+          exportPageSize: query.exportPageSize ?? query.pageSize,
+        });
 
         if (!inspection) {
           sendError(response, 404, "not_found", "track not found");
@@ -710,11 +747,25 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           return;
         }
 
+        const searchParams = getSearchParams(request);
+        const openSpecQuery: TrackOpenSpecInspectionQuery = {
+          page: parsePositiveInteger(searchParams.get("page")),
+          pageSize: parsePositiveInteger(searchParams.get("pageSize") ?? searchParams.get("limit")),
+          importPage: parsePositiveInteger(searchParams.get("importPage")),
+          importPageSize: parsePositiveInteger(searchParams.get("importPageSize")),
+          exportPage: parsePositiveInteger(searchParams.get("exportPage")),
+          exportPageSize: parsePositiveInteger(searchParams.get("exportPageSize")),
+        };
         const artifacts = await readTrackArtifacts(deps.artifactRoot, inspection.track.id);
         sendJson(response, 200, {
           track: inspection.track,
           githubRunCommentSync: inspection.githubRunCommentSync,
-          openSpecImports: await deps.service.getTrackOpenSpecImports(inspection.track.id),
+          openSpecImports: await deps.service.getTrackOpenSpecImports(inspection.track.id, {
+            importPage: openSpecQuery.importPage ?? openSpecQuery.page,
+            importPageSize: openSpecQuery.importPageSize ?? openSpecQuery.pageSize,
+            exportPage: openSpecQuery.exportPage ?? openSpecQuery.page,
+            exportPageSize: openSpecQuery.exportPageSize ?? openSpecQuery.pageSize,
+          }),
           artifacts,
         });
         return;

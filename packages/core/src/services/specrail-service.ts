@@ -38,6 +38,7 @@ import type {
   Track,
   TrackInspection,
   TrackIntegrationsInspection,
+  TrackOpenSpecInspection,
   TrackStatus,
 } from "../domain/types.js";
 import { ConflictError, NotFoundError } from "../errors.js";
@@ -509,6 +510,13 @@ export interface OpenSpecExportHistoryEntry {
   exportRecord: OpenSpecExportRecord;
 }
 
+export interface TrackOpenSpecInspectionInput {
+  importPage?: number;
+  importPageSize?: number;
+  exportPage?: number;
+  exportPageSize?: number;
+}
+
 export type SortOrder = "asc" | "desc";
 
 export interface ListTracksInput {
@@ -887,7 +895,7 @@ export class SpecRailService {
     };
   }
 
-  async getTrackIntegrationsInspection(trackId: string): Promise<TrackIntegrationsInspection | null> {
+  async getTrackIntegrationsInspection(trackId: string, input: TrackOpenSpecInspectionInput = {}): Promise<TrackIntegrationsInspection | null> {
     const track = await this.dependencies.trackRepository.getById(trackId);
     if (!track) {
       return null;
@@ -897,12 +905,7 @@ export class SpecRailService {
 
     return {
       trackId: track.id,
-      openSpec: {
-        latestImport: track.openSpecImport ?? null,
-        importHistory: [...(track.openSpecImportHistory ?? [])].sort((left, right) => right.importedAt.localeCompare(left.importedAt)),
-        latestExport: track.openSpecExport ?? null,
-        exportHistory: [...(track.openSpecExportHistory ?? [])].sort((left, right) => right.exportedAt.localeCompare(left.exportedAt)),
-      },
+      openSpec: await this.buildTrackOpenSpecInspection(track, input),
       github: {
         issue: track.githubIssue,
         pullRequest: track.githubPullRequest,
@@ -912,25 +915,13 @@ export class SpecRailService {
     };
   }
 
-  async getTrackOpenSpecImports(trackId: string): Promise<{
-    trackId: string;
-    latestImport: OpenSpecImportRecord | null;
-    importHistory: OpenSpecImportRecord[];
-    latestExport: OpenSpecExportRecord | null;
-    exportHistory: OpenSpecExportRecord[];
-  } | null> {
+  async getTrackOpenSpecImports(trackId: string, input: TrackOpenSpecInspectionInput = {}): Promise<TrackOpenSpecInspection | null> {
     const track = await this.dependencies.trackRepository.getById(trackId);
     if (!track) {
       return null;
     }
 
-    return {
-      trackId: track.id,
-      latestImport: track.openSpecImport ?? null,
-      importHistory: [...(track.openSpecImportHistory ?? [])].sort((left, right) => right.importedAt.localeCompare(left.importedAt)),
-      latestExport: track.openSpecExport ?? null,
-      exportHistory: [...(track.openSpecExportHistory ?? [])].sort((left, right) => right.exportedAt.localeCompare(left.exportedAt)),
-    };
+    return this.buildTrackOpenSpecInspection(track, input);
   }
 
   getOpenSpecImportHelp(input?: {
@@ -943,6 +934,38 @@ export class SpecRailService {
   async listOpenSpecImportHistory(input: OpenSpecImportHistoryListInput = {}): Promise<OpenSpecImportHistoryEntry[]> {
     const result = await this.listOpenSpecImportHistoryPage(input);
     return result.items;
+  }
+
+  private async buildTrackOpenSpecInspection(track: Track, input: TrackOpenSpecInspectionInput = {}): Promise<TrackOpenSpecInspection> {
+    const importPage = input.importPage ?? 1;
+    const importPageSize = input.importPageSize ?? 20;
+    const exportPage = input.exportPage ?? 1;
+    const exportPageSize = input.exportPageSize ?? 20;
+
+    const importItems = await this.listOpenSpecImportHistoryPage({
+      trackId: track.id,
+      page: importPage,
+      pageSize: importPageSize,
+    });
+    const exportItems = await this.listOpenSpecExportHistoryPage({
+      trackId: track.id,
+      page: exportPage,
+      pageSize: exportPageSize,
+    });
+
+    return {
+      trackId: track.id,
+      imports: {
+        latest: track.openSpecImport ?? null,
+        items: importItems.items,
+        meta: importItems.meta,
+      },
+      exports: {
+        latest: track.openSpecExport ?? null,
+        items: exportItems.items,
+        meta: exportItems.meta,
+      },
+    };
   }
 
   async listOpenSpecImportHistoryPage(input: OpenSpecImportHistoryListInput = {}): Promise<ListPageResult<OpenSpecImportHistoryEntry>> {

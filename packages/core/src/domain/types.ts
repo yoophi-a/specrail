@@ -197,14 +197,40 @@ export interface GitHubIntegrationSummary {
   lastSyncError?: string;
 }
 
+export interface TrackOpenSpecImportInspectionEntry {
+  trackId: string;
+  trackTitle: string;
+  provenance: OpenSpecImportRecord;
+}
+
+export interface TrackOpenSpecExportInspectionEntry {
+  trackId: string;
+  trackTitle: string;
+  exportRecord: OpenSpecExportRecord;
+}
+
+export interface TrackOpenSpecInspectionPageMeta {
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+export interface TrackOpenSpecInspectionPage<TEntry, TRecord> {
+  latest: TRecord | null;
+  items: TEntry[];
+  meta: TrackOpenSpecInspectionPageMeta;
+}
+
+export interface TrackOpenSpecInspection {
+  trackId: string;
+  imports: TrackOpenSpecInspectionPage<TrackOpenSpecImportInspectionEntry, OpenSpecImportRecord>;
+  exports: TrackOpenSpecInspectionPage<TrackOpenSpecExportInspectionEntry, OpenSpecExportRecord>;
+}
+
 export interface TrackIntegrationsInspection {
   trackId: string;
-  openSpec: {
-    latestImport: OpenSpecImportRecord | null;
-    importHistory: OpenSpecImportRecord[];
-    latestExport: OpenSpecExportRecord | null;
-    exportHistory: OpenSpecExportRecord[];
-  };
+  openSpec: TrackOpenSpecInspection;
   github: {
     issue?: GitHubIssueReference;
     pullRequest?: GitHubPullRequestReference;

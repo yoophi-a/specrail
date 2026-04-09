@@ -114,9 +114,12 @@ Current endpoints in `apps/api/src/index.ts`:
   - query: `trackId?`, `page?=1`, `pageSize?=20`, `targetPath?`, `overwrite?=true|false`, `exportedAfter?`, `exportedBefore?`
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /tracks/:trackId/openspec/imports`
-  - return the latest OpenSpec import/export provenance and persisted history for a single track
+  - return the latest OpenSpec import/export provenance plus paginated track-scoped audit history for a single track
+  - query: `page?=1`, `pageSize?=20`, `importPage?`, `importPageSize?`, `exportPage?`, `exportPageSize?`
+  - response includes `imports: { latest, items, meta }` and `exports: { latest, items, meta }`, mirroring the admin audit entry shape while keeping the newest summary easy to read
 - `GET /tracks/:trackId` and `GET /tracks/:trackId/integrations`
-  - now include OpenSpec import/export inspection data alongside track state and GitHub sync metadata
+  - now include the same paginated OpenSpec inspection data alongside track state and GitHub sync metadata
+  - accept the same OpenSpec pagination query params when callers need to bound embedded track inspection payloads
 
 ### Terminal admin wrapper
 A terminal wrapper now exposes the same guided OpenSpec admin flow without needing the HTTP admin routes first.

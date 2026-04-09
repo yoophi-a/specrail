@@ -1250,10 +1250,17 @@ test("SpecRailService exposes empty GitHub integration inspection summaries with
   assert.deepEqual(await service.getTrackIntegrationsInspection(track.id), {
     trackId: track.id,
     openSpec: {
-      latestImport: null,
-      importHistory: [],
-      latestExport: null,
-      exportHistory: [],
+      trackId: track.id,
+      imports: {
+        latest: null,
+        items: [],
+        meta: { total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false },
+      },
+      exports: {
+        latest: null,
+        items: [],
+        meta: { total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false },
+      },
     },
     github: {
       issue: { number: 33, url: "https://github.com/yoophi-a/specrail/issues/33" },
@@ -1639,8 +1646,8 @@ test("SpecRailService exports a track through the OpenSpec adapter", async () =>
 
   const exportInspection = await service.getTrackOpenSpecImports(track.id);
   assert.ok(exportInspection);
-  assert.equal(exportInspection.latestExport?.target.path, path.join(rootDir, "bundle"));
-  assert.equal(exportInspection.exportHistory.length, 1);
+  assert.equal(exportInspection.exports.latest?.target.path, path.join(rootDir, "bundle"));
+  assert.equal(exportInspection.exports.items.length, 1);
 
   const exportHistory = await service.listOpenSpecExportHistory({ trackId: track.id });
   assert.equal(exportHistory.length, 1);
@@ -2102,10 +2109,10 @@ test("SpecRailService resolves OpenSpec conflicts with field-level keep-existing
 
   const importInspection = await service.getTrackOpenSpecImports(created.id);
   assert.ok(importInspection);
-  assert.equal(importInspection.latestImport?.conflictPolicy, "resolve");
-  assert.equal(importInspection.importHistory.length, 1);
-  assert.equal(importInspection.latestExport, null);
-  assert.equal(importInspection.exportHistory.length, 0);
+  assert.equal(importInspection.imports.latest?.conflictPolicy, "resolve");
+  assert.equal(importInspection.imports.items.length, 1);
+  assert.equal(importInspection.exports.latest, null);
+  assert.equal(importInspection.exports.items.length, 0);
 
   const adminHistory = await service.listOpenSpecImportHistory();
   assert.equal(adminHistory.length, 1);

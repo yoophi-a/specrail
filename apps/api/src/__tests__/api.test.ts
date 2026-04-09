@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -260,10 +260,17 @@ test("API retries failed GitHub run comment syncs from the integrations route", 
       integrations: {
         trackId: track.id,
         openSpec: {
-          latestImport: null,
-          importHistory: [],
-          latestExport: null,
-          exportHistory: [],
+          trackId: track.id,
+          imports: {
+            latest: null,
+            items: [],
+            meta: { total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false },
+          },
+          exports: {
+            latest: null,
+            items: [],
+            meta: { total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false },
+          },
         },
         github: {
           issue: { number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
@@ -321,10 +328,17 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
     assert.deepEqual(await emptyIntegrationsResponse.json(), {
       trackId: trackPayload.track.id,
       openSpec: {
-        latestImport: null,
-        importHistory: [],
-        latestExport: null,
-        exportHistory: [],
+        trackId: trackPayload.track.id,
+        imports: {
+          latest: null,
+          items: [],
+          meta: { total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false },
+        },
+        exports: {
+          latest: null,
+          items: [],
+          meta: { total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false },
+        },
       },
       github: {
         issue: {
@@ -386,10 +400,17 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
     assert.deepEqual(await integrationsResponse.json(), {
       trackId: trackPayload.track.id,
       openSpec: {
-        latestImport: null,
-        importHistory: [],
-        latestExport: null,
-        exportHistory: [],
+        trackId: trackPayload.track.id,
+        imports: {
+          latest: null,
+          items: [],
+          meta: { total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false },
+        },
+        exports: {
+          latest: null,
+          items: [],
+          meta: { total: 0, totalPages: 0, hasNextPage: false, hasPrevPage: false },
+        },
       },
       github: {
         issue: {
@@ -607,23 +628,36 @@ test("API exports and imports OpenSpec bundles through admin routes", async () =
     const getTrackPayload = (await getTrackResponse.json()) as {
       artifacts: { spec: string };
       openSpecImports: {
-        latestImport: { source: { path: string } };
-        importHistory: Array<unknown>;
-        latestExport: { target: { path: string }; exportedAt: string };
-        exportHistory: Array<unknown>;
+        imports: {
+          latest: { source: { path: string } };
+          items: Array<{ provenance: { source: { path: string } } }>;
+          meta: { total: number; totalPages: number };
+        };
+        exports: {
+          latest: { target: { path: string }; exportedAt: string };
+          items: Array<{ exportRecord: { target: { path: string } } }>;
+          meta: { total: number; totalPages: number };
+        };
       };
     };
     assert.equal(getTrackPayload.artifacts.spec, "# Imported spec\n");
-    assert.equal(getTrackPayload.openSpecImports.latestImport.source.path, bundleDir);
-    assert.equal(getTrackPayload.openSpecImports.importHistory.length, 1);
-    assert.equal(getTrackPayload.openSpecImports.latestExport.target.path, bundleDir);
-    assert.ok(getTrackPayload.openSpecImports.latestExport.exportedAt);
-    assert.equal(getTrackPayload.openSpecImports.exportHistory.length, 1);
+    assert.equal(getTrackPayload.openSpecImports.imports.latest.source.path, bundleDir);
+    assert.equal(getTrackPayload.openSpecImports.imports.items.length, 1);
+    assert.equal(getTrackPayload.openSpecImports.imports.items[0]?.provenance.source.path, bundleDir);
+    assert.equal(getTrackPayload.openSpecImports.imports.meta.total, 1);
+    assert.equal(getTrackPayload.openSpecImports.exports.latest.target.path, bundleDir);
+    assert.ok(getTrackPayload.openSpecImports.exports.latest.exportedAt);
+    assert.equal(getTrackPayload.openSpecImports.exports.items.length, 1);
+    assert.equal(getTrackPayload.openSpecImports.exports.meta.total, 1);
 
     const trackImportsResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/openspec/imports`);
     assert.equal(trackImportsResponse.status, 200);
-    const trackImports = (await trackImportsResponse.json()) as { importHistory: Array<{ source: { path: string } }> };
-    assert.equal(trackImports.importHistory.length, 1);
+    const trackImports = (await trackImportsResponse.json()) as {
+      imports: { items: Array<{ provenance: { source: { path: string } } }> };
+      exports: { items: Array<{ exportRecord: { target: { path: string } } }> };
+    };
+    assert.equal(trackImports.imports.items.length, 1);
+    assert.equal(trackImports.exports.items.length, 1);
 
     const adminImportsResponse = await fetch(`${baseUrl}/admin/openspec/imports?trackId=${trackPayload.track.id}`);
     assert.equal(adminImportsResponse.status, 200);
@@ -725,6 +759,111 @@ test("API paginates and filters OpenSpec audit history endpoints", async () => {
     assert.equal(exportsPayload.exports[0]?.exportRecord.target.overwrite, true);
     assert.equal(exportsPayload.meta.total, 1);
     assert.equal(exportsPayload.meta.totalPages, 1);
+  });
+});
+
+test("API paginates track-scoped OpenSpec inspection history", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Track-scoped OpenSpec history", description: "Paged track audit history" }),
+    });
+    assert.equal(trackResponse.status, 201);
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const importBundleA = await mkdtemp(path.join(os.tmpdir(), "specrail-api-openspec-track-import-a-"));
+    const importBundleB = await mkdtemp(path.join(os.tmpdir(), "specrail-api-openspec-track-import-b-"));
+
+    await fetch(`${baseUrl}/admin/openspec/export`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ trackId: trackPayload.track.id, path: importBundleA, overwrite: true }),
+    });
+    await cp(importBundleA, importBundleB, { recursive: true });
+
+    await fetch(`${baseUrl}/admin/openspec/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: importBundleA, conflictPolicy: "overwrite" }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await fetch(`${baseUrl}/admin/openspec/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: importBundleB, conflictPolicy: "resolve", resolutionPreset: "policyDefaults" }),
+    });
+
+    const firstBundle = await mkdtemp(path.join(os.tmpdir(), "specrail-api-openspec-track-page-a-"));
+    const secondBundle = await mkdtemp(path.join(os.tmpdir(), "specrail-api-openspec-track-page-b-"));
+
+    await fetch(`${baseUrl}/admin/openspec/export`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ trackId: trackPayload.track.id, path: firstBundle, overwrite: true }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await fetch(`${baseUrl}/admin/openspec/export`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ trackId: trackPayload.track.id, path: secondBundle, overwrite: true }),
+    });
+
+    const trackInspectionResponse = await fetch(
+      `${baseUrl}/tracks/${trackPayload.track.id}/openspec/imports?pageSize=1&exportPage=2&exportPageSize=1`,
+    );
+    assert.equal(trackInspectionResponse.status, 200);
+    const trackInspection = (await trackInspectionResponse.json()) as {
+      trackId: string;
+      imports: {
+        latest: { source: { path: string }; conflictPolicy: string };
+        items: Array<{ trackId: string; provenance: { source: { path: string } } }>;
+        meta: { total: number; totalPages: number; hasNextPage: boolean; hasPrevPage: boolean };
+      };
+      exports: {
+        latest: { target: { path: string } };
+        items: Array<{ trackId: string; exportRecord: { target: { path: string } } }>;
+        meta: { total: number; totalPages: number; hasNextPage: boolean; hasPrevPage: boolean };
+      };
+    };
+    assert.equal(trackInspection.trackId, trackPayload.track.id);
+    assert.ok(trackInspection.imports.latest);
+    assert.ok([importBundleA, importBundleB].includes(trackInspection.imports.latest.source.path));
+    assert.ok(["overwrite", "resolve"].includes(trackInspection.imports.latest.conflictPolicy));
+    assert.equal(trackInspection.imports.items.length, 1);
+    assert.equal(trackInspection.imports.items[0]?.trackId, trackPayload.track.id);
+    assert.match(trackInspection.imports.items[0]?.provenance.source.path ?? "", /track-import-b/);
+    assert.deepEqual(trackInspection.imports.meta, {
+      total: 2,
+      totalPages: 2,
+      hasNextPage: true,
+      hasPrevPage: false,
+    });
+    assert.ok(trackInspection.exports.latest);
+    assert.ok([firstBundle, secondBundle].includes(trackInspection.exports.latest.target.path));
+    assert.equal(trackInspection.exports.items.length, 1);
+    assert.equal(trackInspection.exports.items[0]?.trackId, trackPayload.track.id);
+    assert.match(trackInspection.exports.items[0]?.exportRecord.target.path ?? "", /track-page-a/);
+    assert.deepEqual(trackInspection.exports.meta, {
+      total: 3,
+      totalPages: 3,
+      hasNextPage: true,
+      hasPrevPage: true,
+    });
+
+    const trackResponsePaged = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}?pageSize=1`);
+    assert.equal(trackResponsePaged.status, 200);
+    const trackInspectionPayload = (await trackResponsePaged.json()) as {
+      openSpecImports: {
+        imports: { items: Array<{ provenance: { source: { path: string } } }>; meta: { total: number; totalPages: number } };
+        exports: { items: Array<{ exportRecord: { target: { path: string } } }>; meta: { total: number; totalPages: number } };
+      };
+    };
+    assert.equal(trackInspectionPayload.openSpecImports.imports.items.length, 1);
+    assert.equal(trackInspectionPayload.openSpecImports.imports.meta.total, 2);
+    assert.equal(trackInspectionPayload.openSpecImports.imports.meta.totalPages, 2);
+    assert.equal(trackInspectionPayload.openSpecImports.exports.items.length, 1);
+    assert.equal(trackInspectionPayload.openSpecImports.exports.meta.total, 3);
   });
 });
 
