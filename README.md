@@ -94,11 +94,18 @@ Current endpoints in `apps/api/src/index.ts`:
   - body: `{ trackId, path, overwrite? }`
 - `POST /admin/openspec/import`
   - preview or import an OpenSpec bundle and create/update the referenced track plus artifacts
-  - body: `{ path, dryRun?, conflictPolicy? }`
+  - body: `{ path, dryRun?, conflictPolicy?, resolution? }`
   - `dryRun: true` previews the normalized track and collision status without writing files or track state
-  - `conflictPolicy` supports `reject` (default, safe preview-first flow) and `overwrite` (explicitly update an existing track id)
-  - response now includes `provenance` plus `conflict.details[]` so callers can see source path, bundle metadata, and which track/artifact fields would be replaced
-  - applied imports persist `track.openSpecImport` into state and artifact metadata (`track.json`) for auditability
+  - `conflictPolicy` supports `reject` (default, safe preview-first flow), `overwrite` (replace the whole imported payload), and `resolve` (apply a field/artifact-level `resolution` map where `existing` keeps the current value and `incoming` applies the bundle value)
+  - response now includes `provenance`, `importHistory`, `resolvedArtifacts`, and `conflict.details[]` so callers can inspect source path, bundle metadata, selected resolution choices, and which fields would be replaced
+  - applied imports persist `track.openSpecImport` as the latest provenance plus `track.openSpecImportHistory[]` in state and artifact metadata (`track.json`) for auditability
+- `GET /admin/openspec/imports`
+  - list persisted OpenSpec import history across tracks
+  - query: `trackId?`, `limit?`
+- `GET /tracks/:trackId/openspec/imports`
+  - return the latest OpenSpec provenance and persisted import history for a single track
+- `GET /tracks/:trackId` and `GET /tracks/:trackId/integrations`
+  - now include OpenSpec import inspection data alongside track state and GitHub sync metadata
 
 ### Runs
 - `POST /runs`

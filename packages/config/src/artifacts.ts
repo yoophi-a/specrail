@@ -40,12 +40,17 @@ export interface MaterializeTrackArtifactsInput {
   trackTitle: string;
   trackDescription: string;
   openSpecImport?: {
+    id?: string;
     source: {
       kind: "file";
       path: string;
     };
     importedAt: string;
-    conflictPolicy: "reject" | "overwrite";
+    conflictPolicy: "reject" | "overwrite" | "resolve";
+    resolution?: {
+      track?: Partial<Record<"title" | "description" | "status" | "specStatus" | "planStatus" | "priority" | "githubIssue" | "githubPullRequest", "incoming" | "existing">>;
+      artifacts?: Partial<Record<"spec" | "plan" | "tasks", "incoming" | "existing">>;
+    };
     bundle: {
       version: 1;
       format: "specrail.openspec.bundle";

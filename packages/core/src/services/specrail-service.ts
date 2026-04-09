@@ -15,6 +15,10 @@ import type {
   Execution,
   ExecutionEvent,
   ExecutionStatus,
+  OpenSpecImportConflictPolicy,
+  OpenSpecImportRecord,
+  OpenSpecImportResolution,
+  OpenSpecImportResolutionChoice,
   GitHubIssueReference,
   GitHubPullRequestReference,
   GitHubRunCommentSyncState,
@@ -58,8 +62,6 @@ export interface OpenSpecImportSource {
   kind: "file";
   path: string;
 }
-
-export type OpenSpecImportConflictPolicy = "reject" | "overwrite";
 
 export interface OpenSpecExportTarget {
   kind: "file";
@@ -189,6 +191,7 @@ export interface ImportTrackFromOpenSpecInput {
   source: OpenSpecImportSource;
   dryRun?: boolean;
   conflictPolicy?: OpenSpecImportConflictPolicy;
+  resolution?: OpenSpecImportResolution;
 }
 
 export interface ImportTrackFromOpenSpecResult {
@@ -196,7 +199,9 @@ export interface ImportTrackFromOpenSpecResult {
   action: "created" | "updated";
   applied: boolean;
   conflictPolicy: OpenSpecImportConflictPolicy;
-  provenance: NonNullable<Track["openSpecImport"]>;
+  provenance: OpenSpecImportRecord;
+  importHistory: OpenSpecImportRecord[];
+  resolvedArtifacts: OpenSpecTrackArtifacts;
   conflict: {
     hasConflict: boolean;
     reason: "track_id_exists" | null;
@@ -207,6 +212,17 @@ export interface ImportTrackFromOpenSpecResult {
       incomingValue: unknown;
     }>;
   };
+}
+
+export interface OpenSpecImportHistoryListInput {
+  trackId?: string;
+  limit?: number;
+}
+
+export interface OpenSpecImportHistoryEntry {
+  trackId: string;
+  trackTitle: string;
+  provenance: OpenSpecImportRecord;
 }
 
 export type SortOrder = "asc" | "desc";
@@ -432,6 +448,65 @@ function buildOpenSpecConflictDetails(
   return details;
 }
 
+function pickResolvedValue<T>(incoming: T, existing: T, choice?: OpenSpecImportResolutionChoice): T {
+  return choice === "existing" ? existing : incoming;
+}
+
+function buildResolvedOpenSpecTrack(
+  existingTrack: Track | null,
+  importedTrack: Track,
+  projectId: string,
+  timestamp: string,
+  provenance: OpenSpecImportRecord,
+  resolution?: OpenSpecImportResolution,
+): Track {
+  const track = existingTrack
+    ? {
+        ...existingTrack,
+        ...importedTrack,
+      }
+    : importedTrack;
+
+  return {
+    ...track,
+    projectId: existingTrack?.projectId ?? importedTrack.projectId ?? projectId,
+    title: normalizeRequiredString(pickResolvedValue(importedTrack.title, existingTrack?.title ?? importedTrack.title, resolution?.track?.title)),
+    description: normalizeRequiredString(
+      pickResolvedValue(importedTrack.description, existingTrack?.description ?? importedTrack.description, resolution?.track?.description),
+    ),
+    status: pickResolvedValue(importedTrack.status, existingTrack?.status ?? importedTrack.status, resolution?.track?.status),
+    specStatus: pickResolvedValue(importedTrack.specStatus, existingTrack?.specStatus ?? importedTrack.specStatus, resolution?.track?.specStatus),
+    planStatus: pickResolvedValue(importedTrack.planStatus, existingTrack?.planStatus ?? importedTrack.planStatus, resolution?.track?.planStatus),
+    priority: pickResolvedValue(importedTrack.priority, existingTrack?.priority ?? importedTrack.priority, resolution?.track?.priority),
+    githubIssue: normalizeGitHubReference(
+      pickResolvedValue(importedTrack.githubIssue, existingTrack?.githubIssue ?? importedTrack.githubIssue, resolution?.track?.githubIssue),
+    ),
+    githubPullRequest: normalizeGitHubReference(
+      pickResolvedValue(
+        importedTrack.githubPullRequest,
+        existingTrack?.githubPullRequest ?? importedTrack.githubPullRequest,
+        resolution?.track?.githubPullRequest,
+      ),
+    ),
+    openSpecImport: provenance,
+    openSpecImportHistory: [...(existingTrack?.openSpecImportHistory ?? []), provenance],
+    updatedAt: timestamp,
+    createdAt: existingTrack?.createdAt ?? importedTrack.createdAt ?? timestamp,
+  };
+}
+
+function buildResolvedOpenSpecArtifacts(
+  importedArtifacts: OpenSpecTrackArtifacts,
+  existingArtifacts: OpenSpecTrackArtifacts | null,
+  resolution?: OpenSpecImportResolution,
+): OpenSpecTrackArtifacts {
+  return {
+    spec: pickResolvedValue(importedArtifacts.spec, existingArtifacts?.spec ?? importedArtifacts.spec, resolution?.artifacts?.spec),
+    plan: pickResolvedValue(importedArtifacts.plan, existingArtifacts?.plan ?? importedArtifacts.plan, resolution?.artifacts?.plan),
+    tasks: pickResolvedValue(importedArtifacts.tasks, existingArtifacts?.tasks ?? importedArtifacts.tasks, resolution?.artifacts?.tasks),
+  };
+}
+
 function listGitHubRunCommentTargets(track: Pick<Track, "githubIssue" | "githubPullRequest">): GitHubRunCommentSyncState["comments"][number]["target"][] {
   const targets = [] as GitHubRunCommentSyncState["comments"][number]["target"][];
 
@@ -538,6 +613,10 @@ export class SpecRailService {
 
     return {
       trackId: track.id,
+      openSpec: {
+        latestImport: track.openSpecImport ?? null,
+        importHistory: [...(track.openSpecImportHistory ?? [])].sort((left, right) => right.importedAt.localeCompare(left.importedAt)),
+      },
       github: {
         issue: track.githubIssue,
         pullRequest: track.githubPullRequest,
@@ -545,6 +624,36 @@ export class SpecRailService {
         summary: summarizeGitHubIntegration(track, githubRunCommentSync),
       },
     };
+  }
+
+  async getTrackOpenSpecImports(trackId: string): Promise<{ trackId: string; latestImport: OpenSpecImportRecord | null; importHistory: OpenSpecImportRecord[] } | null> {
+    const track = await this.dependencies.trackRepository.getById(trackId);
+    if (!track) {
+      return null;
+    }
+
+    return {
+      trackId: track.id,
+      latestImport: track.openSpecImport ?? null,
+      importHistory: [...(track.openSpecImportHistory ?? [])].sort((left, right) => right.importedAt.localeCompare(left.importedAt)),
+    };
+  }
+
+  async listOpenSpecImportHistory(input: OpenSpecImportHistoryListInput = {}): Promise<OpenSpecImportHistoryEntry[]> {
+    const tracks = input.trackId
+      ? [await this.dependencies.trackRepository.getById(input.trackId)].filter((track): track is Track => track !== null)
+      : await this.dependencies.trackRepository.list();
+
+    const entries = tracks.flatMap((track) =>
+      (track.openSpecImportHistory ?? []).map((provenance) => ({
+        trackId: track.id,
+        trackTitle: track.title,
+        provenance,
+      })),
+    );
+
+    entries.sort((left, right) => right.provenance.importedAt.localeCompare(left.provenance.importedAt));
+    return entries.slice(0, input.limit ?? entries.length);
   }
 
   async listTracks(input: ListTracksInput = {}): Promise<Track[]> {
@@ -650,10 +759,12 @@ export class SpecRailService {
     const existingArtifacts = existingTrack ? await artifactReader.read(existingTrack.id) : null;
     const conflictPolicy = input.conflictPolicy ?? "reject";
     const action = existingTrack ? "updated" : "created";
-    const provenance: NonNullable<Track["openSpecImport"]> = {
+    const provenance: OpenSpecImportRecord = {
+      id: `openspec-import-${this.idGenerator()}`,
       source: input.source,
       importedAt: timestamp,
       conflictPolicy,
+      ...(input.resolution ? { resolution: input.resolution } : {}),
       bundle: imported.package.metadata,
     };
     const conflict = {
@@ -662,17 +773,8 @@ export class SpecRailService {
       details: buildOpenSpecConflictDetails(existingTrack, importedTrack, imported.package.artifacts, existingArtifacts),
     };
 
-    const track: Track = {
-      ...importedTrack,
-      projectId: existingTrack?.projectId ?? importedTrack.projectId ?? project.id,
-      title: normalizeRequiredString(importedTrack.title),
-      description: normalizeRequiredString(importedTrack.description),
-      githubIssue: normalizeGitHubReference(importedTrack.githubIssue),
-      githubPullRequest: normalizeGitHubReference(importedTrack.githubPullRequest),
-      openSpecImport: provenance,
-      updatedAt: timestamp,
-      createdAt: existingTrack?.createdAt ?? importedTrack.createdAt ?? timestamp,
-    };
+    const resolvedArtifacts = buildResolvedOpenSpecArtifacts(imported.package.artifacts, existingArtifacts, input.resolution);
+    const track = buildResolvedOpenSpecTrack(existingTrack, importedTrack, project.id, timestamp, provenance, input.resolution);
 
     if (existingTrack && conflictPolicy === "reject") {
       if (input.dryRun) {
@@ -682,6 +784,8 @@ export class SpecRailService {
           applied: false,
           conflictPolicy,
           provenance,
+          importHistory: track.openSpecImportHistory ?? [],
+          resolvedArtifacts,
           conflict,
         };
       }
@@ -699,6 +803,8 @@ export class SpecRailService {
         applied: false,
         conflictPolicy,
         provenance,
+        importHistory: track.openSpecImportHistory ?? [],
+        resolvedArtifacts,
         conflict,
       };
     }
@@ -712,9 +818,9 @@ export class SpecRailService {
     await this.dependencies.artifactWriter.write({
       track,
       project,
-      specContent: imported.package.artifacts.spec,
-      planContent: imported.package.artifacts.plan,
-      tasksContent: imported.package.artifacts.tasks,
+      specContent: resolvedArtifacts.spec,
+      planContent: resolvedArtifacts.plan,
+      tasksContent: resolvedArtifacts.tasks,
     });
 
     return {
@@ -723,6 +829,8 @@ export class SpecRailService {
       applied: true,
       conflictPolicy,
       provenance,
+      importHistory: track.openSpecImportHistory ?? [],
+      resolvedArtifacts,
       conflict,
     };
   }

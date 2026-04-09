@@ -1222,6 +1222,10 @@ test("SpecRailService exposes empty GitHub integration inspection summaries with
 
   assert.deepEqual(await service.getTrackIntegrationsInspection(track.id), {
     trackId: track.id,
+    openSpec: {
+      latestImport: null,
+      importHistory: [],
+    },
     github: {
       issue: { number: 33, url: "https://github.com/yoophi-a/specrail/issues/33" },
       pullRequest: { number: 34, url: "https://github.com/yoophi-a/specrail/pull/34" },
@@ -1699,6 +1703,10 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
       name: "SpecRail",
     },
     workspaceRoot: path.join(rootDir, "workspaces"),
+    idGenerator: (() => {
+      const values = ["import-1", "import-2"];
+      return () => values.shift() ?? "import-tail";
+    })(),
     now: (() => {
       const values = ["2026-04-10T04:00:00.000Z", "2026-04-10T04:05:00.000Z", "2026-04-10T04:10:00.000Z"];
       return () => values.shift() ?? "2026-04-10T04:10:00.000Z";
@@ -1717,6 +1725,7 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
   assert.equal(created.track.description, "Imported description");
   assert.equal(created.track.updatedAt, "2026-04-10T04:05:00.000Z");
   assert.deepEqual(created.provenance, {
+    id: "openspec-import-import-1",
     source: { kind: "file", path: path.join(rootDir, "bundle") },
     importedAt: "2026-04-10T04:05:00.000Z",
     conflictPolicy: "overwrite",
@@ -1727,6 +1736,8 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
       generatedBy: "specrail",
     },
   });
+  assert.equal(created.importHistory.length, 1);
+  assert.equal(created.resolvedArtifacts.spec, "# Imported spec");
 
   const updated = await service.importTrackFromOpenSpec({
     source: { kind: "file", path: path.join(rootDir, "bundle") },
@@ -1738,6 +1749,7 @@ test("SpecRailService imports OpenSpec bundles into created and existing tracks"
   assert.equal(updated.track.updatedAt, "2026-04-10T04:10:00.000Z");
   assert.equal(updated.conflict.details[0]?.field, "track.id");
   assert.equal(updated.track.openSpecImport?.source.path, path.join(rootDir, "bundle"));
+  assert.equal(updated.importHistory.length, 2);
 
   assert.deepEqual(writes, [
     {
@@ -1882,4 +1894,127 @@ test("SpecRailService previews OpenSpec imports and rejects collisions unless ov
   assert.ok(collisionPreview.conflict.details.some((detail) => detail.field === "artifacts.spec"));
   assert.equal(collisionPreview.provenance.source.path, path.join(rootDir, "bundle"));
   assert.equal(writes.length, 1);
+});
+
+test("SpecRailService resolves OpenSpec conflicts with field-level keep-existing choices and lists import history", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-openspec-resolve-"));
+  const existingArtifacts = new Map<string, { spec: string; plan: string; tasks: string }>();
+  const importedPackage = {
+    metadata: {
+      version: 1 as const,
+      format: "specrail.openspec.bundle" as const,
+      exportedAt: "2026-04-10T06:00:00.000Z",
+      generatedBy: "specrail" as const,
+    },
+    track: {
+      id: "track-placeholder",
+      projectId: "project-foreign",
+      title: "Incoming title",
+      description: "Incoming description",
+      status: "ready" as const,
+      specStatus: "approved" as const,
+      planStatus: "approved" as const,
+      priority: "high" as const,
+      githubIssue: { number: 39, url: "https://github.com/yoophi-a/specrail/issues/39" },
+      createdAt: "2026-04-09T00:00:00.000Z",
+      updatedAt: "2026-04-09T00:00:00.000Z",
+    },
+    artifacts: {
+      spec: "# Incoming spec\n",
+      plan: "# Incoming plan\n",
+      tasks: "# Incoming tasks\n",
+    },
+    files: {
+      spec: "spec.md",
+      plan: "plan.md",
+      tasks: "tasks.md",
+    },
+  };
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: {
+      async write(input) {
+        existingArtifacts.set(input.track.id, {
+          spec: input.specContent,
+          plan: input.planContent,
+          tasks: input.tasksContent,
+        });
+      },
+    },
+    artifactReader: {
+      async read(trackId) {
+        const artifacts = existingArtifacts.get(trackId);
+        if (!artifacts) {
+          throw new Error(`missing artifacts for ${trackId}`);
+        }
+
+        return artifacts;
+      },
+    },
+    executor: {
+      name: "codex",
+      async spawn() { throw new Error("should not be called"); },
+      async resume() { throw new Error("should not be called"); },
+      async cancel() { throw new Error("should not be called"); },
+    },
+    openSpecAdapter: {
+      name: "openspec-file",
+      async importPackage() {
+        return { package: importedPackage };
+      },
+      async exportPackage() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    idGenerator: () => "resolve-1",
+    now: () => "2026-04-10T06:05:00.000Z",
+  });
+
+  const created = await service.createTrack({ title: "Existing title", description: "Existing description" });
+  existingArtifacts.set(created.id, {
+    spec: "# Existing spec\n",
+    plan: "# Existing plan\n",
+    tasks: "# Existing tasks\n",
+  });
+  await service.updateTrack({ trackId: created.id, status: "planned" });
+  importedPackage.track.id = created.id;
+
+  const result = await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: path.join(rootDir, "bundle") },
+    conflictPolicy: "resolve",
+    resolution: {
+      track: { title: "existing" },
+      artifacts: { spec: "existing", plan: "incoming", tasks: "existing" },
+    },
+  });
+
+  assert.equal(result.track.title, "Existing title");
+  assert.equal(result.track.description, "Incoming description");
+  assert.equal(result.track.status, "ready");
+  assert.equal(result.resolvedArtifacts.spec, "# Existing spec\n");
+  assert.equal(result.resolvedArtifacts.plan, "# Incoming plan\n");
+  assert.equal(result.resolvedArtifacts.tasks, "# Existing tasks\n");
+  assert.equal(result.provenance.conflictPolicy, "resolve");
+  assert.deepEqual(result.provenance.resolution, {
+    track: { title: "existing" },
+    artifacts: { spec: "existing", plan: "incoming", tasks: "existing" },
+  });
+
+  const importInspection = await service.getTrackOpenSpecImports(created.id);
+  assert.ok(importInspection);
+  assert.equal(importInspection.latestImport?.conflictPolicy, "resolve");
+  assert.equal(importInspection.importHistory.length, 1);
+
+  const adminHistory = await service.listOpenSpecImportHistory();
+  assert.equal(adminHistory.length, 1);
+  assert.equal(adminHistory[0]?.trackId, created.id);
 });

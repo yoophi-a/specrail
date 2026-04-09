@@ -67,7 +67,11 @@ interface OpenSpecExportRequestBody {
 interface OpenSpecImportRequestBody {
   path: string;
   dryRun?: boolean;
-  conflictPolicy?: "reject" | "overwrite";
+  conflictPolicy?: "reject" | "overwrite" | "resolve";
+  resolution?: {
+    track?: Partial<Record<"title" | "description" | "status" | "specStatus" | "planStatus" | "priority" | "githubIssue" | "githubPullRequest", "incoming" | "existing">>;
+    artifacts?: Partial<Record<"spec" | "plan" | "tasks", "incoming" | "existing">>;
+  };
 }
 
 interface TrackListQuery {
@@ -464,6 +468,7 @@ function assertValidOpenSpecExportBody(body: OpenSpecExportRequestBody): void {
 
 function assertValidOpenSpecImportBody(body: OpenSpecImportRequestBody): void {
   const details: ApiErrorDetail[] = [];
+  const validResolutionValues = ["incoming", "existing"];
   const pathDetail = getNonEmptyStringDetail("path", body.path);
 
   if (pathDetail) {
@@ -474,8 +479,21 @@ function assertValidOpenSpecImportBody(body: OpenSpecImportRequestBody): void {
     details.push({ field: "dryRun", message: "must be a boolean" });
   }
 
-  if (body.conflictPolicy !== undefined && !["reject", "overwrite"].includes(body.conflictPolicy)) {
-    details.push({ field: "conflictPolicy", message: "must be one of reject, overwrite" });
+  if (body.conflictPolicy !== undefined && !["reject", "overwrite", "resolve"].includes(body.conflictPolicy)) {
+    details.push({ field: "conflictPolicy", message: "must be one of reject, overwrite, resolve" });
+  }
+
+  for (const [groupKey, group] of Object.entries(body.resolution ?? {})) {
+    if (!group || typeof group !== "object" || Array.isArray(group)) {
+      details.push({ field: `resolution.${groupKey}`, message: "must be an object" });
+      continue;
+    }
+
+    for (const [field, value] of Object.entries(group)) {
+      if (!validResolutionValues.includes(String(value))) {
+        details.push({ field: `resolution.${groupKey}.${field}`, message: "must be one of incoming, existing" });
+      }
+    }
   }
 
   if (details.length > 0) {
@@ -703,6 +721,18 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "GET" && segments.length === 4 && segments[0] === "tracks" && segments[2] === "openspec" && segments[3] === "imports") {
+        const inspection = await deps.service.getTrackOpenSpecImports(segments[1] ?? "");
+
+        if (!inspection) {
+          sendError(response, 404, "not_found", "track not found");
+          return;
+        }
+
+        sendJson(response, 200, inspection);
+        return;
+      }
+
       if (
         method === "POST" &&
         segments.length === 6 &&
@@ -736,6 +766,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         sendJson(response, 200, {
           track: inspection.track,
           githubRunCommentSync: inspection.githubRunCommentSync,
+          openSpecImports: await deps.service.getTrackOpenSpecImports(inspection.track.id),
           artifacts,
         });
         return;
@@ -793,8 +824,19 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           },
           dryRun: body.dryRun,
           conflictPolicy: body.conflictPolicy,
+          resolution: body.resolution,
         });
         sendJson(response, 200, result);
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "admin" && segments[1] === "openspec" && segments[2] === "imports") {
+        const searchParams = getSearchParams(request);
+        const trackId = searchParams.get("trackId") ?? undefined;
+        const limit = parsePositiveInteger(searchParams.get("limit"));
+        sendJson(response, 200, {
+          imports: await deps.service.listOpenSpecImportHistory({ trackId, limit }),
+        });
         return;
       }
 

@@ -62,6 +62,32 @@ export interface TrackInspection {
   githubRunCommentSync: GitHubRunCommentSyncState | null;
 }
 
+export type OpenSpecImportConflictPolicy = "reject" | "overwrite" | "resolve";
+
+export type OpenSpecImportResolutionChoice = "incoming" | "existing";
+
+export interface OpenSpecImportResolution {
+  track?: Partial<Record<"title" | "description" | "status" | "specStatus" | "planStatus" | "priority" | "githubIssue" | "githubPullRequest", OpenSpecImportResolutionChoice>>;
+  artifacts?: Partial<Record<"spec" | "plan" | "tasks", OpenSpecImportResolutionChoice>>;
+}
+
+export interface OpenSpecImportRecord {
+  id: string;
+  source: {
+    kind: "file";
+    path: string;
+  };
+  importedAt: string;
+  conflictPolicy: OpenSpecImportConflictPolicy;
+  resolution?: OpenSpecImportResolution;
+  bundle: {
+    version: 1;
+    format: "specrail.openspec.bundle";
+    exportedAt: string;
+    generatedBy: "specrail";
+  };
+}
+
 export interface GitHubIntegrationSummary {
   linkedTargetCount: number;
   syncedTargetCount: number;
@@ -72,6 +98,10 @@ export interface GitHubIntegrationSummary {
 
 export interface TrackIntegrationsInspection {
   trackId: string;
+  openSpec: {
+    latestImport: OpenSpecImportRecord | null;
+    importHistory: OpenSpecImportRecord[];
+  };
   github: {
     issue?: GitHubIssueReference;
     pullRequest?: GitHubPullRequestReference;
@@ -116,20 +146,8 @@ export interface Track {
   specStatus: ApprovalStatus;
   planStatus: ApprovalStatus;
   priority: "low" | "medium" | "high";
-  openSpecImport?: {
-    source: {
-      kind: "file";
-      path: string;
-    };
-    importedAt: string;
-    conflictPolicy: "reject" | "overwrite";
-    bundle: {
-      version: 1;
-      format: "specrail.openspec.bundle";
-      exportedAt: string;
-      generatedBy: "specrail";
-    };
-  };
+  openSpecImport?: OpenSpecImportRecord;
+  openSpecImportHistory?: OpenSpecImportRecord[];
   createdAt: string;
   updatedAt: string;
 }

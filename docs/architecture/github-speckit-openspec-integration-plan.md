@@ -318,7 +318,8 @@ That avoids hard-to-debug bidirectional sync too early.
 
 ### Phase 5. Round-trip and policy hardening
 - repeated sync safety
-- conflict workflows
+- [x] conflict workflows (`resolve` with selective keep-existing choices for track/artifact fields)
+- [x] import history inspection endpoints for track and admin APIs
 - source-of-truth policies by field
 - better auditability and operator tools
 

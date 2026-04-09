@@ -259,6 +259,10 @@ test("API retries failed GitHub run comment syncs from the integrations route", 
       ],
       integrations: {
         trackId: track.id,
+        openSpec: {
+          latestImport: null,
+          importHistory: [],
+        },
         github: {
           issue: { number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
           runCommentSync: {
@@ -314,6 +318,10 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
     assert.equal(emptyIntegrationsResponse.status, 200);
     assert.deepEqual(await emptyIntegrationsResponse.json(), {
       trackId: trackPayload.track.id,
+      openSpec: {
+        latestImport: null,
+        importHistory: [],
+      },
       github: {
         issue: {
           number: 32,
@@ -373,6 +381,10 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
     assert.equal(integrationsResponse.status, 200);
     assert.deepEqual(await integrationsResponse.json(), {
       trackId: trackPayload.track.id,
+      openSpec: {
+        latestImport: null,
+        importHistory: [],
+      },
       github: {
         issue: {
           number: 32,
@@ -575,6 +587,7 @@ test("API exports and imports OpenSpec bundles through admin routes", async () =
       action: string;
       applied: boolean;
       provenance: { source: { path: string } };
+      importHistory: Array<{ source: { path: string } }>;
       track: { id: string; openSpecImport: { source: { path: string } } };
     };
     assert.equal(imported.action, "updated");
@@ -582,10 +595,27 @@ test("API exports and imports OpenSpec bundles through admin routes", async () =
     assert.equal(imported.track.id, trackPayload.track.id);
     assert.equal(imported.provenance.source.path, bundleDir);
     assert.equal(imported.track.openSpecImport.source.path, bundleDir);
+    assert.equal(imported.importHistory.length, 1);
 
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
-    const getTrackPayload = (await getTrackResponse.json()) as { artifacts: { spec: string } };
+    const getTrackPayload = (await getTrackResponse.json()) as {
+      artifacts: { spec: string };
+      openSpecImports: { latestImport: { source: { path: string } }; importHistory: Array<unknown> };
+    };
     assert.equal(getTrackPayload.artifacts.spec, "# Imported spec\n");
+    assert.equal(getTrackPayload.openSpecImports.latestImport.source.path, bundleDir);
+    assert.equal(getTrackPayload.openSpecImports.importHistory.length, 1);
+
+    const trackImportsResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/openspec/imports`);
+    assert.equal(trackImportsResponse.status, 200);
+    const trackImports = (await trackImportsResponse.json()) as { importHistory: Array<{ source: { path: string } }> };
+    assert.equal(trackImports.importHistory.length, 1);
+
+    const adminImportsResponse = await fetch(`${baseUrl}/admin/openspec/imports?trackId=${trackPayload.track.id}`);
+    assert.equal(adminImportsResponse.status, 200);
+    const adminImports = (await adminImportsResponse.json()) as { imports: Array<{ provenance: { source: { path: string } } }> };
+    assert.equal(adminImports.imports.length, 1);
+    assert.equal(adminImports.imports[0]?.provenance.source.path, bundleDir);
   });
 });
 
@@ -648,6 +678,65 @@ test("API previews OpenSpec imports and reports collisions before overwrite", as
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     const getTrackPayload = (await getTrackResponse.json()) as { artifacts: { spec: string } };
     assert.notEqual(getTrackPayload.artifacts.spec, "# Preview only\n");
+  });
+});
+
+test("API resolves OpenSpec conflicts with selective keep-existing choices", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Existing resolve track",
+        description: "Keep some fields from the current track.",
+      }),
+    });
+    assert.equal(trackResponse.status, 201);
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const bundleDir = await mkdtemp(path.join(os.tmpdir(), "specrail-api-openspec-resolve-"));
+    await fetch(`${baseUrl}/admin/openspec/export`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ trackId: trackPayload.track.id, path: bundleDir, overwrite: true }),
+    });
+
+    const manifestPath = path.join(bundleDir, "openspec.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { track: { title: string; description: string } };
+    manifest.track.title = "Incoming title";
+    manifest.track.description = "Incoming description";
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    await writeFile(path.join(bundleDir, "spec.md"), "# Keep existing spec\n", "utf8");
+    await writeFile(path.join(bundleDir, "plan.md"), "# Incoming plan\n", "utf8");
+
+    const resolveResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        path: bundleDir,
+        conflictPolicy: "resolve",
+        resolution: {
+          track: { title: "existing" },
+          artifacts: { spec: "existing", plan: "incoming" },
+        },
+      }),
+    });
+    assert.equal(resolveResponse.status, 200);
+    const resolved = (await resolveResponse.json()) as {
+      track: { title: string; description: string; openSpecImport: { conflictPolicy: string; resolution: { track: { title: string } } } };
+      resolvedArtifacts: { spec: string; plan: string };
+    };
+    assert.equal(resolved.track.title, "Existing resolve track");
+    assert.equal(resolved.track.description, "Incoming description");
+    assert.equal(resolved.track.openSpecImport.conflictPolicy, "resolve");
+    assert.equal(resolved.track.openSpecImport.resolution.track.title, "existing");
+    assert.notEqual(resolved.resolvedArtifacts.spec, "# Keep existing spec\n");
+    assert.equal(resolved.resolvedArtifacts.plan, "# Incoming plan\n");
+
+    const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
+    const getTrackPayload = (await getTrackResponse.json()) as { artifacts: { spec: string; plan: string } };
+    assert.notEqual(getTrackPayload.artifacts.spec, "# Keep existing spec\n");
+    assert.equal(getTrackPayload.artifacts.plan, "# Incoming plan\n");
   });
 });
 
@@ -1174,7 +1263,7 @@ test("API returns structured validation and bad-request errors", async () => {
     const invalidOpenSpecImportResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "", dryRun: "yes", conflictPolicy: "merge" }),
+      body: JSON.stringify({ path: "", dryRun: "yes", conflictPolicy: "merge", resolution: { artifacts: { spec: "later" } } }),
     });
     assert.equal(invalidOpenSpecImportResponse.status, 422);
   });
