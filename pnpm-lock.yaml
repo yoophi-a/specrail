@@ -20,6 +20,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@specrail/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
       '@specrail/config':
         specifier: workspace:*
         version: link:../../packages/config
