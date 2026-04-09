@@ -113,6 +113,26 @@ Current endpoints in `apps/api/src/index.ts`:
 - `GET /tracks/:trackId` and `GET /tracks/:trackId/integrations`
   - now include OpenSpec import inspection data alongside track state and GitHub sync metadata
 
+### Terminal admin wrapper
+A terminal wrapper now exposes the same guided OpenSpec import flow without needing the HTTP admin route first.
+
+```bash
+# preview with operator guidance
+pnpm --filter @specrail/api openspec:import -- --path ./bundle --preview
+
+# apply with the recommended preset-driven resolve flow
+pnpm --filter @specrail/api openspec:import -- --path ./bundle --apply --preset policyDefaults
+
+# inspect preset guidance from the terminal
+pnpm --filter @specrail/api openspec:import:help -- --preset policyDefaults
+```
+
+Notes:
+- preview mode defaults to `dryRun=true` with `conflictPolicy=reject`
+- apply mode auto-selects `conflictPolicy=resolve` when a preset or explicit keep/take overrides are supplied
+- field overrides are available via `--existing track.status,artifacts.plan` and `--incoming track.title`
+- JSON output is available with `--json` for scripting or operator tooling
+
 ### Runs
 - `POST /runs`
   - start a run for a track

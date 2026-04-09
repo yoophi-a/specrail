@@ -4,19 +4,12 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { CodexAdapter, FileOpenSpecAdapter, GitHubRunCommentGhPublisher } from "@specrail/adapters";
-import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
+import { getTrackArtifactPaths, loadConfig } from "@specrail/config";
 import {
   APPROVAL_STATUSES,
   ConflictError,
-  FileGitHubRunCommentSyncStore,
-  FileExecutionRepository,
-  FileProjectRepository,
-  FileTrackRepository,
-  JsonlEventStore,
   NotFoundError,
   OPENSPEC_RESOLUTION_PRESETS,
-  getStatePaths,
   SpecRailService,
   TRACK_STATUSES,
   type ExecutionEvent,
@@ -24,9 +17,9 @@ import {
   type GitHubIssueReference,
   type GitHubPullRequestReference,
   type OpenSpecImportResolutionPresetName,
-  type SpecRailServiceDependencies,
   type TrackStatus,
 } from "@specrail/core";
+import { createDependencies } from "./runtime.js";
 
 interface ApiDeps {
   artifactRoot: string;
@@ -110,12 +103,6 @@ interface ListMeta {
   hasPrevPage: boolean;
 }
 
-interface DefaultDependencies {
-  artifactRoot: string;
-  eventLogDir: string;
-  serviceDependencies: SpecRailServiceDependencies;
-}
-
 interface ApiErrorDetail {
   field: string;
   message: string;
@@ -137,80 +124,6 @@ class RequestValidationError extends Error {
     super(message);
     this.name = "RequestValidationError";
   }
-}
-
-function createDependencies(dataDir: string, repoArtifactRoot: string, githubPublishEnabled = false): DefaultDependencies {
-  const stateDir = path.join(dataDir, "state");
-  const artifactRoot = path.join(dataDir, "artifacts");
-  const workspaceRoot = path.join(dataDir, "workspaces");
-  const sessionsDir = path.join(dataDir, "sessions");
-  const templateDir = path.resolve(process.cwd(), ".specrail-template");
-
-  const eventStore = new JsonlEventStore(stateDir);
-  const githubRunCommentSyncStore = new FileGitHubRunCommentSyncStore(stateDir);
-  const projectRepository = new FileProjectRepository(stateDir);
-  const trackRepository = new FileTrackRepository(stateDir);
-  const executionRepository = new FileExecutionRepository(stateDir);
-  let service: SpecRailService | null = null;
-
-  const serviceDependencies: SpecRailServiceDependencies = {
-    projectRepository,
-    trackRepository,
-    executionRepository,
-    eventStore,
-    artifactWriter: {
-      async write(input) {
-        await materializeTrackArtifacts({
-          rootDir: artifactRoot,
-          repoVisibleRootDir: repoArtifactRoot,
-          templateDir,
-          trackId: input.track.id,
-          projectName: input.project.name,
-          trackTitle: input.track.title,
-          trackDescription: input.track.description,
-          openSpecImport: input.track.openSpecImport,
-          specContent: input.specContent,
-          planContent: input.planContent,
-          tasksContent: input.tasksContent,
-        });
-      },
-    },
-    artifactReader: {
-      async read(trackId) {
-        return readTrackArtifacts(artifactRoot, trackId);
-      },
-    },
-    executor: new CodexAdapter({
-      sessionsDir,
-      onEvent: async (event) => {
-        if (service) {
-          await service.recordExecutionEvent(event);
-          return;
-        }
-
-        await eventStore.append(event);
-      },
-    }),
-    defaultProject: {
-      id: "project-default",
-      name: "SpecRail",
-      repoUrl: "https://github.com/yoophi-a/specrail",
-      localRepoPath: process.cwd(),
-      defaultWorkflowPolicy: "artifact-first-mvp",
-    },
-    workspaceRoot,
-    openSpecAdapter: new FileOpenSpecAdapter(),
-    githubRunCommentPublisher: githubPublishEnabled ? new GitHubRunCommentGhPublisher() : undefined,
-    githubRunCommentSyncStore,
-  };
-
-  service = new SpecRailService(serviceDependencies);
-
-  return {
-    artifactRoot,
-    eventLogDir: getStatePaths(stateDir).eventsDir,
-    serviceDependencies,
-  };
 }
 
 async function readJson<T>(request: IncomingMessage): Promise<T> {
