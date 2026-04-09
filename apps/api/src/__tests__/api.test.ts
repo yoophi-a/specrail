@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import http from "node:http";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -38,6 +39,79 @@ async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void
     process.env.SPECRAIL_DATA_DIR = previousDataDir;
     process.env.SPECRAIL_PORT = previousPort;
   }
+}
+
+function parseSseEvents(buffer: string): Array<{ id: string; summary: string }> {
+  return buffer
+    .split("\n\n")
+    .filter((chunk) => chunk.includes("data: "))
+    .map((chunk) => chunk.split("\n").find((line) => line.startsWith("data: ")) ?? "")
+    .map((line) => JSON.parse(line.slice("data: ".length)) as { id: string; summary: string });
+}
+
+async function openSseStream(url: string): Promise<{
+  statusCode: number;
+  headers: http.IncomingHttpHeaders;
+  waitForEvents: (expectedCount: number) => Promise<Array<{ id: string; summary: string }>>;
+  close: () => void;
+}> {
+  return await new Promise((resolve, reject) => {
+    const request = http.get(
+      url,
+      { headers: { accept: "text/event-stream" } },
+      (response) => {
+        response.setEncoding("utf8");
+        let buffer = "";
+
+        resolve({
+          statusCode: response.statusCode ?? 0,
+          headers: response.headers,
+          waitForEvents: async (expectedCount: number) => {
+            if (parseSseEvents(buffer).length >= expectedCount) {
+              return parseSseEvents(buffer);
+            }
+
+            return await new Promise((innerResolve, innerReject) => {
+              const timeout = setTimeout(() => {
+                cleanup();
+                innerReject(new Error(`timed out waiting for ${expectedCount} SSE events`));
+              }, 5000);
+
+              const onData = (chunk: string): void => {
+                buffer += chunk;
+                const events = parseSseEvents(buffer);
+
+                if (events.length >= expectedCount) {
+                  cleanup();
+                  innerResolve(events);
+                }
+              };
+
+              const onError = (error: Error): void => {
+                cleanup();
+                innerReject(error);
+              };
+
+              const cleanup = (): void => {
+                clearTimeout(timeout);
+                response.off("data", onData);
+                response.off("error", onError);
+              };
+
+              response.on("data", onData);
+              response.on("error", onError);
+            });
+          },
+          close: () => {
+            response.destroy();
+            request.destroy();
+          },
+        });
+      },
+    );
+
+    request.on("error", reject);
+  });
 }
 
 test("API supports creating tracks, starting runs, and listing run events", async () => {
@@ -92,6 +166,50 @@ test("API supports creating tracks, starting runs, and listing run events", asyn
       eventsPayload.events.map((event) => event.type),
       ["task_status_changed", "shell_command"],
     );
+  });
+});
+
+test("API supports streaming run events over SSE", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "SSE run",
+        description: "Exercise stream route.",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const createRunResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        prompt: "Start the work",
+      }),
+    });
+    const runPayload = (await createRunResponse.json()) as { run: { id: string } };
+
+    const stream = await openSseStream(`${baseUrl}/runs/${runPayload.run.id}/events/stream`);
+    assert.equal(stream.statusCode, 200);
+    assert.match(String(stream.headers["content-type"] ?? ""), /text\/event-stream/);
+
+    const initialEvents = await stream.waitForEvents(2);
+    assert.equal(initialEvents.length, 2);
+    assert.equal(initialEvents[0]?.summary, "Run started");
+    assert.match(initialEvents[1]?.summary ?? "", /Spawned Codex session/);
+
+    const resumeResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "Continue with verification" }),
+    });
+    assert.equal(resumeResponse.status, 200);
+
+    const resumedEvents = await stream.waitForEvents(3);
+    assert.match(resumedEvents[2]?.summary ?? "", /Resumed Codex session/);
+    stream.close();
   });
 });
 
@@ -158,6 +276,11 @@ test("API returns 404s for unknown tracks and runs", async () => {
 
     const missingRun = await fetch(`${baseUrl}/runs/missing/events`);
     assert.equal(missingRun.status, 404);
+
+    const missingStream = await fetch(`${baseUrl}/runs/missing/events/stream`, {
+      headers: { accept: "text/event-stream" },
+    });
+    assert.equal(missingStream.status, 404);
 
     const missingResume = await fetch(`${baseUrl}/runs/missing/resume`, {
       method: "POST",

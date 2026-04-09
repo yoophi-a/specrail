@@ -11,6 +11,7 @@ import {
   FileTrackRepository,
   JsonlEventStore,
   SpecRailService,
+  type ExecutionEvent,
   type SpecRailServiceDependencies,
 } from "@specrail/core";
 
@@ -103,6 +104,58 @@ function getPathSegments(request: IncomingMessage): string[] {
     .split("?")[0]
     .split("/")
     .filter(Boolean);
+}
+
+function writeSseEvent(response: ServerResponse, event: ExecutionEvent): void {
+  response.write(`event: execution-event\n`);
+  response.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+async function streamRunEvents(
+  response: ServerResponse,
+  service: SpecRailService,
+  runId: string,
+): Promise<void> {
+  response.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+  });
+
+  let closed = false;
+  let sentCount = 0;
+
+  const flushEvents = async (): Promise<void> => {
+    const events = await service.listRunEvents(runId);
+    const nextEvents = events.slice(sentCount);
+
+    for (const event of nextEvents) {
+      writeSseEvent(response, event);
+      sentCount += 1;
+    }
+  };
+
+  const close = (): void => {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
+    clearInterval(interval);
+    response.end();
+  };
+
+  await flushEvents();
+  response.write(`: connected\n\n`);
+
+  const interval = setInterval(() => {
+    void flushEvents().catch(() => {
+      close();
+    });
+  }, 50);
+
+  response.on("close", close);
+  response.on("error", close);
 }
 
 async function readTrackArtifacts(artifactRoot: string, trackId: string): Promise<{
@@ -207,6 +260,18 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         }
 
         sendJson(response, 200, { run });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 4 && segments[0] === "runs" && segments[2] === "events" && segments[3] === "stream") {
+        const run = await deps.service.getRun(segments[1] ?? "");
+
+        if (!run) {
+          sendJson(response, 404, { error: "run not found" });
+          return;
+        }
+
+        await streamRunEvents(response, deps.service, run.id);
         return;
       }
 
