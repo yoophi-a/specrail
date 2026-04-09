@@ -74,6 +74,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
+  - also returns `githubRunCommentSync`, when present, with persisted target comment ids, last sync status, last sync error, and last published run info
 - `PATCH /tracks/:trackId`
   - update workflow state
   - body: any of `{ status, specStatus, planStatus, githubIssue, githubPullRequest }`
@@ -89,6 +90,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /runs/:runId`
   - return persisted run metadata
+  - also returns `githubRunCommentSync` for the parent track and `githubRunCommentSyncForRun` filtered to entries last published for that run
 - `POST /runs/:runId/resume`
   - resume an existing run
   - body: `{ prompt }`

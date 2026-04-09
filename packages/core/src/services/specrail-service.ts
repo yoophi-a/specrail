@@ -19,7 +19,9 @@ import type {
   GitHubPullRequestReference,
   GitHubRunCommentSyncState,
   Project,
+  RunInspection,
   Track,
+  TrackInspection,
   TrackStatus,
 } from "../domain/types.js";
 import { NotFoundError } from "../errors.js";
@@ -336,6 +338,18 @@ export class SpecRailService {
     return this.dependencies.trackRepository.getById(trackId);
   }
 
+  async getTrackInspection(trackId: string): Promise<TrackInspection | null> {
+    const track = await this.dependencies.trackRepository.getById(trackId);
+    if (!track) {
+      return null;
+    }
+
+    return {
+      track,
+      githubRunCommentSync: (await this.dependencies.githubRunCommentSyncStore?.getByTrackId(track.id)) ?? null,
+    };
+  }
+
   async listTracks(input: ListTracksInput = {}): Promise<Track[]> {
     const result = await this.listTracksPage(input);
     return result.items;
@@ -518,6 +532,21 @@ export class SpecRailService {
 
   getRun(runId: string): Promise<Execution | null> {
     return this.dependencies.executionRepository.getById(runId);
+  }
+
+  async getRunInspection(runId: string): Promise<RunInspection | null> {
+    const run = await this.dependencies.executionRepository.getById(runId);
+    if (!run) {
+      return null;
+    }
+
+    const githubRunCommentSync = (await this.dependencies.githubRunCommentSyncStore?.getByTrackId(run.trackId)) ?? null;
+
+    return {
+      run,
+      githubRunCommentSync,
+      githubRunCommentSyncForRun: githubRunCommentSync?.comments.filter((comment) => comment.lastRunId === run.id) ?? [],
+    };
   }
 
   async listRuns(input: ListRunsInput = {}): Promise<Execution[]> {

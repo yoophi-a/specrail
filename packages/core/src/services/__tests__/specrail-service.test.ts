@@ -1041,6 +1041,120 @@ test("SpecRailService skips GitHub publishing when a track has no linked targets
   assert.equal(publishCount, 0);
 });
 
+test("SpecRailService exposes track and run inspections with persisted GitHub sync metadata", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-inspection-sync-"));
+  const syncStore = new FileGitHubRunCommentSyncStore(path.join(rootDir, "state"));
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    githubRunCommentSyncStore: syncStore,
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => "2026-04-10T00:00:00.000Z",
+    idGenerator: (() => {
+      const values = ["track-inspection", "run-inspection"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Inspect sync state",
+    description: "Surface persisted GitHub sync metadata.",
+    githubIssue: { number: 32, url: "https://github.com/yoophi-a/specrail/issues/32" },
+  });
+  const run = await service.startRun({ trackId: track.id, prompt: "inspect" });
+
+  await syncStore.upsert({
+    id: track.id,
+    trackId: track.id,
+    updatedAt: "2026-04-10T00:30:00.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 32, url: "https://github.com/yoophi-a/specrail/issues/32" },
+        commentId: 3201,
+        lastRunId: run.id,
+        lastRunStatus: "running",
+        lastPublishedAt: "2026-04-10T00:25:00.000Z",
+        lastSyncStatus: "success",
+      },
+    ],
+  });
+
+  const trackInspection = await service.getTrackInspection(track.id);
+  assert.equal(trackInspection?.track.id, track.id);
+  assert.deepEqual(trackInspection?.githubRunCommentSync, {
+    id: track.id,
+    trackId: track.id,
+    updatedAt: "2026-04-10T00:30:00.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 32, url: "https://github.com/yoophi-a/specrail/issues/32" },
+        commentId: 3201,
+        lastRunId: run.id,
+        lastRunStatus: "running",
+        lastPublishedAt: "2026-04-10T00:25:00.000Z",
+        lastSyncStatus: "success",
+      },
+    ],
+  });
+
+  const runInspection = await service.getRunInspection(run.id);
+  assert.equal(runInspection?.run.id, run.id);
+  assert.deepEqual(runInspection?.githubRunCommentSync, {
+    id: track.id,
+    trackId: track.id,
+    updatedAt: "2026-04-10T00:30:00.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 32, url: "https://github.com/yoophi-a/specrail/issues/32" },
+        commentId: 3201,
+        lastRunId: run.id,
+        lastRunStatus: "running",
+        lastPublishedAt: "2026-04-10T00:25:00.000Z",
+        lastSyncStatus: "success",
+      },
+    ],
+  });
+  assert.deepEqual(runInspection?.githubRunCommentSyncForRun, [
+    {
+      target: { kind: "issue", number: 32, url: "https://github.com/yoophi-a/specrail/issues/32" },
+      commentId: 3201,
+      lastRunId: run.id,
+      lastRunStatus: "running",
+      lastPublishedAt: "2026-04-10T00:25:00.000Z",
+      lastSyncStatus: "success",
+    },
+  ]);
+});
+
 test("SpecRailService persists GitHub run comment sync metadata and passes it back on republish", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-publish-sync-"));
   const syncStore = new FileGitHubRunCommentSyncStore(path.join(rootDir, "state"));

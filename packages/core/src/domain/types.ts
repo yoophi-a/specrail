@@ -57,6 +57,17 @@ export interface GitHubRunCommentSyncState {
   comments: GitHubRunCommentSyncRecord[];
 }
 
+export interface TrackInspection {
+  track: Track;
+  githubRunCommentSync: GitHubRunCommentSyncState | null;
+}
+
+export interface RunInspection {
+  run: Execution;
+  githubRunCommentSync: GitHubRunCommentSyncState | null;
+  githubRunCommentSyncForRun: GitHubRunCommentSyncRecord[];
+}
+
 export type ExecutionStatus =
   | "created"
   | "queued"

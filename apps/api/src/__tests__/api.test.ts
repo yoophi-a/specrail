@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -119,6 +119,120 @@ async function openSseStream(url: string): Promise<{
     request.on("error", reject);
   });
 }
+
+test("API exposes GitHub sync metadata on track and run inspection routes", async () => {
+  await withServer(async (baseUrl, paths) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Sync inspection",
+        description: "Expose persisted GitHub sync state.",
+        githubIssue: {
+          number: 32,
+          url: "https://github.com/yoophi-a/specrail/issues/32",
+        },
+      }),
+    });
+    assert.equal(trackResponse.status, 201);
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const runResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        prompt: "Inspect sync metadata",
+      }),
+    });
+    assert.equal(runResponse.status, 201);
+    const runPayload = (await runResponse.json()) as { run: { id: string } };
+
+    const syncFilePath = path.join(paths.dataDir, "state", "github-run-comment-sync", `${trackPayload.track.id}.json`);
+    await mkdir(path.dirname(syncFilePath), { recursive: true });
+    await writeFile(
+      syncFilePath,
+      `${JSON.stringify(
+        {
+          id: trackPayload.track.id,
+          trackId: trackPayload.track.id,
+          updatedAt: "2026-04-10T03:00:00.000Z",
+          comments: [
+            {
+              target: {
+                kind: "issue",
+                number: 32,
+                url: "https://github.com/yoophi-a/specrail/issues/32",
+              },
+              commentId: 3201,
+              lastRunId: runPayload.run.id,
+              lastRunStatus: "running",
+              lastPublishedAt: "2026-04-10T02:59:30.000Z",
+              lastSyncStatus: "failed",
+              lastSyncError: "GitHub temporarily unavailable",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
+    assert.equal(getTrackResponse.status, 200);
+    const getTrackPayload = (await getTrackResponse.json()) as {
+      githubRunCommentSync: {
+        updatedAt: string;
+        comments: Array<{
+          commentId?: number;
+          lastRunId: string;
+          lastRunStatus: string;
+          lastPublishedAt: string;
+          lastSyncStatus: string;
+          lastSyncError?: string;
+        }>;
+      } | null;
+    };
+    assert.equal(getTrackPayload.githubRunCommentSync?.updatedAt, "2026-04-10T03:00:00.000Z");
+    assert.deepEqual(getTrackPayload.githubRunCommentSync?.comments[0], {
+      target: {
+        kind: "issue",
+        number: 32,
+        url: "https://github.com/yoophi-a/specrail/issues/32",
+      },
+      commentId: 3201,
+      lastRunId: runPayload.run.id,
+      lastRunStatus: "running",
+      lastPublishedAt: "2026-04-10T02:59:30.000Z",
+      lastSyncStatus: "failed",
+      lastSyncError: "GitHub temporarily unavailable",
+    });
+
+    const getRunResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}`);
+    assert.equal(getRunResponse.status, 200);
+    const getRunPayload = (await getRunResponse.json()) as {
+      githubRunCommentSync: { comments: Array<{ commentId?: number; lastRunId: string }> } | null;
+      githubRunCommentSyncForRun: Array<{ commentId?: number; lastRunId: string }>;
+    };
+    assert.equal(getRunPayload.githubRunCommentSync?.comments[0]?.commentId, 3201);
+    assert.deepEqual(getRunPayload.githubRunCommentSyncForRun, [
+      {
+        target: {
+          kind: "issue",
+          number: 32,
+          url: "https://github.com/yoophi-a/specrail/issues/32",
+        },
+        commentId: 3201,
+        lastRunId: runPayload.run.id,
+        lastRunStatus: "running",
+        lastPublishedAt: "2026-04-10T02:59:30.000Z",
+        lastSyncStatus: "failed",
+        lastSyncError: "GitHub temporarily unavailable",
+      },
+    ]);
+  });
+});
 
 test("API supports creating tracks, starting runs, and listing run events", async () => {
   await withServer(async (baseUrl, paths) => {

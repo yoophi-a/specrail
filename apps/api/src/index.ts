@@ -629,15 +629,19 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "GET" && segments.length === 2 && segments[0] === "tracks") {
-        const track = await deps.service.getTrack(segments[1] ?? "");
+        const inspection = await deps.service.getTrackInspection(segments[1] ?? "");
 
-        if (!track) {
+        if (!inspection) {
           sendError(response, 404, "not_found", "track not found");
           return;
         }
 
-        const artifacts = await readTrackArtifacts(deps.artifactRoot, track.id);
-        sendJson(response, 200, { track, artifacts });
+        const artifacts = await readTrackArtifacts(deps.artifactRoot, inspection.track.id);
+        sendJson(response, 200, {
+          track: inspection.track,
+          githubRunCommentSync: inspection.githubRunCommentSync,
+          artifacts,
+        });
         return;
       }
 
@@ -702,14 +706,18 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "GET" && segments.length === 2 && segments[0] === "runs") {
-        const run = await deps.service.getRun(segments[1] ?? "");
+        const inspection = await deps.service.getRunInspection(segments[1] ?? "");
 
-        if (!run) {
+        if (!inspection) {
           sendError(response, 404, "not_found", "run not found");
           return;
         }
 
-        sendJson(response, 200, { run });
+        sendJson(response, 200, {
+          run: inspection.run,
+          githubRunCommentSync: inspection.githubRunCommentSync,
+          githubRunCommentSyncForRun: inspection.githubRunCommentSyncForRun,
+        });
         return;
       }
 
