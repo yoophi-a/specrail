@@ -67,6 +67,40 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
           ],
         };
       },
+      async resume(input) {
+        return {
+          sessionRef: input.sessionRef,
+          command: {
+            command: "codex",
+            args: ["exec", "resume", input.sessionRef, input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+            resumeSessionRef: input.sessionRef,
+          },
+          events: [
+            {
+              id: `${input.executionId}:resumed`,
+              executionId: input.executionId,
+              type: "task_status_changed",
+              timestamp: "2026-04-09T03:05:00.000Z",
+              source: "codex",
+              summary: "Run resumed",
+              payload: { status: "running", sessionRef: input.sessionRef },
+            },
+          ],
+        };
+      },
+      async cancel(input) {
+        return {
+          id: `${input.executionId}:cancelled`,
+          executionId: input.executionId,
+          type: "task_status_changed",
+          timestamp: "2026-04-09T03:10:00.000Z",
+          source: "codex",
+          summary: "Run cancelled",
+          payload: { status: "cancelled", sessionRef: input.sessionRef },
+        };
+      },
     },
     defaultProject: {
       id: "project-default",
@@ -74,7 +108,14 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
       repoUrl: "https://github.com/yoophi-a/specrail",
     },
     workspaceRoot,
-    now: () => "2026-04-09T03:00:00.000Z",
+    now: (() => {
+      const values = [
+        "2026-04-09T03:00:00.000Z",
+        "2026-04-09T03:00:00.000Z",
+        "2026-04-09T03:10:00.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-09T03:10:00.000Z";
+    })(),
     idGenerator: (() => {
       const values = ["track-a", "run-a"];
       return () => values.shift() ?? "extra";
@@ -104,13 +145,27 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(run.command?.command, "codex");
   assert.equal(run.status, "running");
 
+  const resumedRun = await service.resumeRun({
+    runId: run.id,
+    prompt: "Continue with verification",
+  });
+  assert.equal(resumedRun.command?.resumeSessionRef, "session:run-run-a");
+  assert.equal(resumedRun.command?.prompt, "Continue with verification");
+  assert.equal(resumedRun.status, "running");
+
+  const cancelledRun = await service.cancelRun({ runId: run.id });
+  assert.equal(cancelledRun.status, "cancelled");
+  assert.equal(cancelledRun.finishedAt, "2026-04-09T03:10:00.000Z");
+
   const persistedRun = await service.getRun(run.id);
-  assert.deepEqual(persistedRun, run);
+  assert.deepEqual(persistedRun, cancelledRun);
 
   const events = await service.listRunEvents(run.id);
-  assert.equal(events.length, 2);
-  assert.equal(events[0]?.type, "task_status_changed");
-  assert.equal(events[1]?.type, "shell_command");
+  assert.equal(events.length, 4);
+  assert.deepEqual(
+    events.map((event) => event.summary),
+    ["Run started", "Prepared Codex command", "Run resumed", "Run cancelled"],
+  );
 });
 
 test("SpecRailService throws when starting a run for a missing track", async () => {
@@ -127,6 +182,12 @@ test("SpecRailService throws when starting a run for a missing track", async () 
       async spawn() {
         throw new Error("should not be called");
       },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
     },
     defaultProject: {
       id: "project-default",
@@ -136,4 +197,6 @@ test("SpecRailService throws when starting a run for a missing track", async () 
   });
 
   await assert.rejects(() => service.startRun({ trackId: "missing-track", prompt: "nope" }), /Track not found/);
+  await assert.rejects(() => service.resumeRun({ runId: "missing-run", prompt: "nope" }), /Run not found/);
+  await assert.rejects(() => service.cancelRun({ runId: "missing-run" }), /Run not found/);
 });

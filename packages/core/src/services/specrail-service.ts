@@ -39,6 +39,19 @@ export interface ExecutionBackend {
     workspacePath: string;
     profile: string;
   }): Promise<ExecutorLaunchResult>;
+  resume(input: {
+    executionId: string;
+    sessionRef: string;
+    prompt: string;
+    workspacePath: string;
+    profile: string;
+  }): Promise<ExecutorLaunchResult>;
+  cancel(input: {
+    executionId: string;
+    sessionRef: string;
+    workspacePath: string;
+    profile: string;
+  }): Promise<ExecutionEvent>;
 }
 
 export interface SpecRailServiceDependencies {
@@ -70,6 +83,15 @@ export interface StartRunInput {
   trackId: string;
   prompt: string;
   profile?: string;
+}
+
+export interface ResumeRunInput {
+  runId: string;
+  prompt: string;
+}
+
+export interface CancelRunInput {
+  runId: string;
 }
 
 export class SpecRailService {
@@ -155,12 +177,79 @@ export class SpecRailService {
     return execution;
   }
 
+  async resumeRun(input: ResumeRunInput): Promise<Execution> {
+    const execution = await this.requireRun(input.runId);
+
+    if (!execution.sessionRef) {
+      throw new Error(`Run is missing sessionRef: ${input.runId}`);
+    }
+
+    const launch = await this.dependencies.executor.resume({
+      executionId: execution.id,
+      sessionRef: execution.sessionRef,
+      prompt: input.prompt,
+      workspacePath: execution.workspacePath,
+      profile: execution.profile,
+    });
+
+    const resumedExecution: Execution = {
+      ...execution,
+      command: launch.command,
+      status: "running",
+      startedAt: execution.startedAt ?? this.now(),
+    };
+
+    await this.dependencies.executionRepository.update(resumedExecution);
+
+    for (const event of launch.events) {
+      await this.dependencies.eventStore.append(event);
+    }
+
+    return resumedExecution;
+  }
+
+  async cancelRun(input: CancelRunInput): Promise<Execution> {
+    const execution = await this.requireRun(input.runId);
+
+    if (!execution.sessionRef) {
+      throw new Error(`Run is missing sessionRef: ${input.runId}`);
+    }
+
+    const cancellationEvent = await this.dependencies.executor.cancel({
+      executionId: execution.id,
+      sessionRef: execution.sessionRef,
+      workspacePath: execution.workspacePath,
+      profile: execution.profile,
+    });
+
+    const cancelledExecution: Execution = {
+      ...execution,
+      status: "cancelled",
+      finishedAt: this.now(),
+    };
+
+    await this.dependencies.executionRepository.update(cancelledExecution);
+    await this.dependencies.eventStore.append(cancellationEvent);
+
+    return cancelledExecution;
+  }
+
   getRun(runId: string): Promise<Execution | null> {
     return this.dependencies.executionRepository.getById(runId);
   }
 
   listRunEvents(runId: string): Promise<ExecutionEvent[]> {
     return this.dependencies.eventStore.listByExecution(runId);
+  }
+
+  private async requireRun(runId: string): Promise<Execution> {
+    const execution = await this.dependencies.executionRepository.getById(runId);
+
+    if (!execution) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    return execution;
   }
 
   private async ensureDefaultProject(): Promise<Project> {

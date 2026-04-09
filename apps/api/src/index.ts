@@ -29,10 +29,15 @@ interface RunRequestBody {
   profile?: string;
 }
 
+interface ResumeRunRequestBody {
+  prompt: string;
+}
+
 function createDependencies(dataDir: string): SpecRailServiceDependencies {
   const stateDir = path.join(dataDir, "state");
   const artifactRoot = path.join(dataDir, "artifacts");
   const workspaceRoot = path.join(dataDir, "workspaces");
+  const sessionsDir = path.join(dataDir, "sessions");
   const templateDir = path.resolve(process.cwd(), ".specrail-template");
 
   return {
@@ -55,7 +60,7 @@ function createDependencies(dataDir: string): SpecRailServiceDependencies {
         });
       },
     },
-    executor: new CodexAdapterStub(),
+    executor: new CodexAdapterStub({ sessionsDir }),
     defaultProject: {
       id: "project-default",
       name: "SpecRail",
@@ -131,6 +136,39 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
         const run = await deps.service.startRun(body);
         sendJson(response, 201, { run });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "runs" && segments[2] === "resume") {
+        const body = await readJson<ResumeRunRequestBody>(request);
+
+        if (!body.prompt) {
+          sendJson(response, 400, { error: "prompt is required" });
+          return;
+        }
+
+        const existingRun = await deps.service.getRun(segments[1] ?? "");
+
+        if (!existingRun) {
+          sendJson(response, 404, { error: "run not found" });
+          return;
+        }
+
+        const run = await deps.service.resumeRun({ runId: existingRun.id, prompt: body.prompt });
+        sendJson(response, 200, { run });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "runs" && segments[2] === "cancel") {
+        const existingRun = await deps.service.getRun(segments[1] ?? "");
+
+        if (!existingRun) {
+          sendJson(response, 404, { error: "run not found" });
+          return;
+        }
+
+        const run = await deps.service.cancelRun({ runId: existingRun.id });
+        sendJson(response, 200, { run });
         return;
       }
 
