@@ -16,6 +16,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@specrail/adapters": "workspace:*",
     "@specrail/config": "workspace:*",
     "@specrail/core": "workspace:*"
   },

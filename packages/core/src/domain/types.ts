@@ -42,6 +42,15 @@ export interface Track {
   updatedAt: string;
 }
 
+export interface CommandExecutionMetadata {
+  command: string;
+  args: string[];
+  cwd: string;
+  prompt: string;
+  resumeSessionRef?: string;
+  environment?: Record<string, string>;
+}
+
 export interface Execution {
   id: string;
   trackId: string;
@@ -50,6 +59,7 @@ export interface Execution {
   workspacePath: string;
   branchName: string;
   sessionRef?: string;
+  command?: CommandExecutionMetadata;
   status: ExecutionStatus;
   createdAt: string;
   startedAt?: string;

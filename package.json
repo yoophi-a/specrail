@@ -9,7 +9,7 @@
     "check": "pnpm -r check",
     "dev:api": "pnpm --filter @specrail/api dev",
     "lint": "pnpm -r lint",
-    "test": "tsx --tsconfig tsconfig.base.json --test packages/core/src/domain/__tests__/*.test.ts packages/core/src/services/__tests__/*.test.ts packages/config/src/__tests__/*.test.ts"
+    "test": "tsx --tsconfig tsconfig.base.json --test packages/core/src/domain/__tests__/*.test.ts packages/core/src/services/__tests__/*.test.ts packages/config/src/__tests__/*.test.ts packages/adapters/src/__tests__/*.test.ts apps/api/src/__tests__/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
