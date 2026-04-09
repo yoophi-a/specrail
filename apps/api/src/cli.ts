@@ -22,11 +22,14 @@ type OpenSpecImportField =
   | "artifacts.tasks";
 
 interface ParsedArgs {
-  command: "openspec-import" | "openspec-import-help" | null;
+  command: "openspec-export" | "openspec-import" | "openspec-import-help" | "openspec-imports" | null;
   path?: string;
+  trackId?: string;
+  overwrite: boolean;
   preview: boolean;
   apply: boolean;
   json: boolean;
+  limit?: number;
   conflictPolicy?: "reject" | "overwrite" | "resolve";
   preset?: OpenSpecImportResolutionPresetName;
   incoming: OpenSpecImportField[];
@@ -51,14 +54,18 @@ function printUsage(): void {
   console.log(`SpecRail admin CLI
 
 Usage:
+  specrail-admin openspec export --track-id <track-id> --path <bundle-dir> [--overwrite] [--json]
   specrail-admin openspec import --path <bundle-dir> [--preview] [--apply] [--preset <name>] [--conflict-policy <reject|overwrite|resolve>] [--incoming <field[,field...]>] [--existing <field[,field...]>] [--json]
   specrail-admin openspec import help [--preset <name>] [--json]
+  specrail-admin openspec imports [--track-id <track-id>] [--limit <count>] [--json]
 
 Examples:
+  specrail-admin openspec export --track-id track_123 --path ./bundle
   specrail-admin openspec import --path ./bundle --preview
   specrail-admin openspec import --path ./bundle --apply --preset policyDefaults
   specrail-admin openspec import --path ./bundle --apply --preset policyDefaults --existing artifacts.plan
   specrail-admin openspec import help --preset policyDefaults
+  specrail-admin openspec imports --track-id track_123 --limit 5
 `);
 }
 
@@ -102,12 +109,13 @@ function buildResolution(input: Pick<ParsedArgs, "incoming" | "existing">): Open
 
 function parseArgs(argv: string[]): ParsedArgs {
   if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
-    return { command: null, preview: false, apply: false, json: false, incoming: [], existing: [] };
+    return { command: null, overwrite: false, preview: false, apply: false, json: false, incoming: [], existing: [] };
   }
 
   const [group, action, subaction, ...rest] = argv;
   const args: ParsedArgs = {
     command: null,
+    overwrite: false,
     preview: false,
     apply: false,
     json: false,
@@ -115,10 +123,16 @@ function parseArgs(argv: string[]): ParsedArgs {
     existing: [],
   };
 
-  if (group === "openspec" && action === "import" && subaction === "help") {
+  if (group === "openspec" && action === "export") {
+    args.command = "openspec-export";
+    rest.unshift(subaction);
+  } else if (group === "openspec" && action === "import" && subaction === "help") {
     args.command = "openspec-import-help";
   } else if (group === "openspec" && action === "import") {
     args.command = "openspec-import";
+    rest.unshift(subaction);
+  } else if (group === "openspec" && action === "imports") {
+    args.command = "openspec-imports";
     rest.unshift(subaction);
   } else {
     throw new Error(`Unknown command: ${argv.join(" ")}`);
@@ -133,6 +147,12 @@ function parseArgs(argv: string[]): ParsedArgs {
     switch (token) {
       case "--path":
         args.path = rest[++index];
+        break;
+      case "--track-id":
+        args.trackId = rest[++index];
+        break;
+      case "--overwrite":
+        args.overwrite = true;
         break;
       case "--preview":
         args.preview = true;
@@ -157,6 +177,14 @@ function parseArgs(argv: string[]): ParsedArgs {
           throw new Error(`Unknown conflict policy: ${value ?? ""}`);
         }
         args.conflictPolicy = value;
+        break;
+      }
+      case "--limit": {
+        const value = Number.parseInt(rest[++index] ?? "", 10);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error(`Invalid limit: ${rest[index] ?? ""}`);
+        }
+        args.limit = value;
         break;
       }
       case "--incoming":
@@ -212,6 +240,30 @@ function formatNextCommand(args: ParsedArgs, result: { conflict: { hasConflict: 
   return tokens.join(" ");
 }
 
+function printExportSummary(result: Awaited<ReturnType<ReturnType<typeof createDefaultService>["exportTrackToOpenSpec"]>>): void {
+  console.log("Exported OpenSpec bundle");
+  console.log(`- track: ${result.package.track.id}`);
+  console.log(`- path: ${result.target.path}`);
+  console.log(`- exportedAt: ${result.package.metadata.exportedAt}`);
+}
+
+function printImportHistory(entries: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listOpenSpecImportHistory"]>>): void {
+  if (entries.length === 0) {
+    console.log("No OpenSpec import history found");
+    return;
+  }
+
+  console.log("OpenSpec import history");
+  for (const entry of entries) {
+    console.log(`- ${entry.provenance.importedAt} ${entry.trackId} (${entry.trackTitle})`);
+    console.log(`  - source: ${entry.provenance.source.path}`);
+    console.log(`  - conflictPolicy: ${entry.provenance.conflictPolicy}`);
+    if (entry.provenance.resolutionPreset) {
+      console.log(`  - preset: ${entry.provenance.resolutionPreset}`);
+    }
+  }
+}
+
 function printImportSummary(args: ParsedArgs, result: Awaited<ReturnType<ReturnType<typeof createDefaultService>["importTrackFromOpenSpec"]>>): void {
   console.log(`${result.applied ? "Applied" : "Previewed"} OpenSpec import`);
   console.log(`- track: ${result.track.id}`);
@@ -247,6 +299,28 @@ async function run(): Promise<void> {
 
   const service = createDefaultService();
 
+  if (args.command === "openspec-export") {
+    if (!args.path) {
+      throw new Error("Missing required option: --path");
+    }
+    if (!args.trackId) {
+      throw new Error("Missing required option: --track-id");
+    }
+
+    const result = await service.exportTrackToOpenSpec({
+      trackId: args.trackId,
+      target: { kind: "file", path: args.path, overwrite: args.overwrite },
+    });
+
+    if (args.json) {
+      console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+      return;
+    }
+
+    printExportSummary(result);
+    return;
+  }
+
   if (args.command === "openspec-import-help") {
     const operatorGuide = service.getOpenSpecImportHelp({ resolutionPreset: args.preset, resolution: buildResolution(args) });
     if (args.json) {
@@ -264,6 +338,18 @@ async function run(): Promise<void> {
     for (const example of operatorGuide.examples) {
       console.log(`  - ${example.id}: ${example.label}`);
     }
+    return;
+  }
+
+  if (args.command === "openspec-imports") {
+    const result = await service.listOpenSpecImportHistory({ trackId: args.trackId, limit: args.limit });
+
+    if (args.json) {
+      console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+      return;
+    }
+
+    printImportHistory(result);
     return;
   }
 

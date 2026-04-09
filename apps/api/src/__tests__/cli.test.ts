@@ -17,6 +17,53 @@ async function createService(rootDir: string): Promise<SpecRailService> {
   return new SpecRailService(dependencies.serviceDependencies);
 }
 
+test("CLI exports OpenSpec bundles and lists import history", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-openspec-export-"));
+  const service = await createService(rootDir);
+
+  const track = await service.createTrack({
+    title: "CLI export source",
+    description: "Source track for CLI export",
+  });
+
+  const bundleDir = path.join(rootDir, "bundle");
+  const exportResult = await execFileAsync("pnpm", ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "export", "--track-id", track.id, "--path", bundleDir, "--json"], {
+    cwd: path.resolve(import.meta.dirname, "../.."),
+    env: {
+      ...process.env,
+      SPECRAIL_DATA_DIR: path.join(rootDir, "data"),
+      SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "repo-visible"),
+    },
+  });
+  const exportPayload = JSON.parse(exportResult.stdout) as {
+    result: { target: { path: string }; package: { track: { id: string } } };
+  };
+  assert.equal(exportPayload.result.package.track.id, track.id);
+  assert.equal(exportPayload.result.target.path, bundleDir);
+
+  await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: bundleDir },
+    conflictPolicy: "resolve",
+    resolutionPreset: "policyDefaults",
+  });
+
+  const historyResult = await execFileAsync("pnpm", ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "imports", "--track-id", track.id, "--limit", "1", "--json"], {
+    cwd: path.resolve(import.meta.dirname, "../.."),
+    env: {
+      ...process.env,
+      SPECRAIL_DATA_DIR: path.join(rootDir, "data"),
+      SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "repo-visible"),
+    },
+  });
+  const historyPayload = JSON.parse(historyResult.stdout) as {
+    result: Array<{ trackId: string; provenance: { source: { path: string }; resolutionPreset?: string } }>;
+  };
+  assert.equal(historyPayload.result.length, 1);
+  assert.equal(historyPayload.result[0]?.trackId, track.id);
+  assert.equal(historyPayload.result[0]?.provenance.source.path, bundleDir);
+  assert.equal(historyPayload.result[0]?.provenance.resolutionPreset, "policyDefaults");
+});
+
 test("CLI previews and applies guided OpenSpec imports", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-openspec-"));
   const sourceService = await createService(path.join(rootDir, "source"));

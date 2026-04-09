@@ -16,8 +16,10 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "node --watch --import tsx src/index.ts",
+    "openspec:export": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec export",
     "openspec:import": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec import",
     "openspec:import:help": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec import help",
+    "openspec:imports": "tsx --tsconfig ../../tsconfig.base.json src/cli.ts openspec imports",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

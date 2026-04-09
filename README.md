@@ -114,9 +114,12 @@ Current endpoints in `apps/api/src/index.ts`:
   - now include OpenSpec import inspection data alongside track state and GitHub sync metadata
 
 ### Terminal admin wrapper
-A terminal wrapper now exposes the same guided OpenSpec import flow without needing the HTTP admin route first.
+A terminal wrapper now exposes the same guided OpenSpec admin flow without needing the HTTP admin routes first.
 
 ```bash
+# export a track bundle from the terminal
+pnpm --filter @specrail/api openspec:export -- --track-id track_123 --path ./bundle
+
 # preview with operator guidance
 pnpm --filter @specrail/api openspec:import -- --path ./bundle --preview
 
@@ -125,12 +128,17 @@ pnpm --filter @specrail/api openspec:import -- --path ./bundle --apply --preset 
 
 # inspect preset guidance from the terminal
 pnpm --filter @specrail/api openspec:import:help -- --preset policyDefaults
+
+# inspect persisted import history
+pnpm --filter @specrail/api openspec:imports -- --track-id track_123 --limit 10
 ```
 
 Notes:
+- export requires `--track-id` and `--path`; pass `--overwrite` to reuse an existing bundle directory
 - preview mode defaults to `dryRun=true` with `conflictPolicy=reject`
 - apply mode auto-selects `conflictPolicy=resolve` when a preset or explicit keep/take overrides are supplied
 - field overrides are available via `--existing track.status,artifacts.plan` and `--incoming track.title`
+- import history can be filtered with `--track-id` and truncated with `--limit`
 - JSON output is available with `--json` for scripting or operator tooling
 
 ### Runs
