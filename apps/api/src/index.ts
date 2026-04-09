@@ -2,7 +2,11 @@ import { watch } from "node:fs";
 import { open, readFile, stat } from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, "..", "..", "..");
 
 import { CodexAdapter } from "@specrail/adapters";
 import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
@@ -113,7 +117,7 @@ function createDependencies(dataDir: string): DefaultDependencies {
   const artifactRoot = path.join(dataDir, "artifacts");
   const workspaceRoot = path.join(dataDir, "workspaces");
   const sessionsDir = path.join(dataDir, "sessions");
-  const templateDir = path.resolve(process.cwd(), ".specrail-template");
+  const templateDir = path.resolve(PROJECT_ROOT, ".specrail-template");
 
   const eventStore = new JsonlEventStore(stateDir);
   const projectRepository = new FileProjectRepository(stateDir);
