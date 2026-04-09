@@ -11,6 +11,7 @@ import {
   FileProjectRepository,
   FileTrackRepository,
   JsonlEventStore,
+  NotFoundError,
   SpecRailService,
   TRACK_STATUSES,
   type ExecutionEvent,
@@ -49,6 +50,29 @@ interface ResumeRunRequestBody {
 interface DefaultDependencies {
   artifactRoot: string;
   serviceDependencies: SpecRailServiceDependencies;
+}
+
+interface ApiErrorDetail {
+  field: string;
+  message: string;
+}
+
+class BadRequestError extends Error {
+  readonly statusCode = 400;
+  readonly code = "bad_request";
+}
+
+class RequestValidationError extends Error {
+  readonly statusCode = 422;
+  readonly code = "validation_error";
+
+  constructor(
+    message: string,
+    readonly details: ApiErrorDetail[],
+  ) {
+    super(message);
+    this.name = "RequestValidationError";
+  }
 }
 
 function createDependencies(dataDir: string): DefaultDependencies {
@@ -101,12 +125,33 @@ async function readJson<T>(request: IncomingMessage): Promise<T> {
   }
 
   const raw = Buffer.concat(chunks).toString("utf8");
-  return (raw ? JSON.parse(raw) : {}) as T;
+
+  try {
+    return (raw ? JSON.parse(raw) : {}) as T;
+  } catch {
+    throw new BadRequestError("request body must be valid JSON");
+  }
 }
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
   response.end(`${JSON.stringify(body, null, 2)}\n`);
+}
+
+function sendError(
+  response: ServerResponse,
+  statusCode: number,
+  code: string,
+  message: string,
+  details?: ApiErrorDetail[],
+): void {
+  sendJson(response, statusCode, {
+    error: {
+      code,
+      message,
+      ...(details ? { details } : {}),
+    },
+  });
 }
 
 function getPathSegments(request: IncomingMessage): string[] {
@@ -127,6 +172,101 @@ function isTrackStatus(value: unknown): value is TrackStatus {
 
 function isApprovalStatus(value: unknown): value is ApprovalStatus {
   return typeof value === "string" && APPROVAL_STATUSES.includes(value as ApprovalStatus);
+}
+
+function getNonEmptyStringDetail(field: string, value: unknown): ApiErrorDetail | null {
+  if (typeof value !== "string") {
+    return { field, message: "must be a string" };
+  }
+
+  if (!value.trim()) {
+    return { field, message: "must not be empty" };
+  }
+
+  return null;
+}
+
+function assertValidTrackCreateBody(body: TrackRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  const titleDetail = getNonEmptyStringDetail("title", body.title);
+  if (titleDetail) {
+    details.push(titleDetail);
+  } else if (body.title.trim().length > 120) {
+    details.push({ field: "title", message: "must be 120 characters or fewer" });
+  }
+
+  const descriptionDetail = getNonEmptyStringDetail("description", body.description);
+  if (descriptionDetail) {
+    details.push(descriptionDetail);
+  } else if (body.description.trim().length > 4000) {
+    details.push({ field: "description", message: "must be 4000 characters or fewer" });
+  }
+
+  if (body.priority !== undefined && !["low", "medium", "high"].includes(body.priority)) {
+    details.push({ field: "priority", message: "must be one of low, medium, high" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidTrackUpdateBody(body: UpdateTrackRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (body.status === undefined && body.specStatus === undefined && body.planStatus === undefined) {
+    details.push({ field: "body", message: "at least one of status, specStatus, or planStatus is required" });
+  }
+
+  if (body.status !== undefined && !isTrackStatus(body.status)) {
+    details.push({ field: "status", message: "must be a valid track status" });
+  }
+
+  if (body.specStatus !== undefined && !isApprovalStatus(body.specStatus)) {
+    details.push({ field: "specStatus", message: "must be a valid approval status" });
+  }
+
+  if (body.planStatus !== undefined && !isApprovalStatus(body.planStatus)) {
+    details.push({ field: "planStatus", message: "must be a valid approval status" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidRunCreateBody(body: RunRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  const trackIdDetail = getNonEmptyStringDetail("trackId", body.trackId);
+  if (trackIdDetail) {
+    details.push(trackIdDetail);
+  }
+
+  const promptDetail = getNonEmptyStringDetail("prompt", body.prompt);
+  if (promptDetail) {
+    details.push(promptDetail);
+  }
+
+  if (body.profile !== undefined) {
+    const profileDetail = getNonEmptyStringDetail("profile", body.profile);
+    if (profileDetail) {
+      details.push(profileDetail);
+    }
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidResumeRunBody(body: ResumeRunRequestBody): void {
+  const promptDetail = getNonEmptyStringDetail("prompt", body.prompt);
+
+  if (promptDetail) {
+    throw new RequestValidationError("request validation failed", [promptDetail]);
+  }
 }
 
 async function streamRunEvents(
@@ -199,11 +339,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (method === "POST" && segments.length === 1 && segments[0] === "tracks") {
         const body = await readJson<TrackRequestBody>(request);
-
-        if (!body.title || !body.description) {
-          sendJson(response, 400, { error: "title and description are required" });
-          return;
-        }
+        assertValidTrackCreateBody(body);
 
         const track = await deps.service.createTrack(body);
         sendJson(response, 201, { track });
@@ -214,7 +350,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const track = await deps.service.getTrack(segments[1] ?? "");
 
         if (!track) {
-          sendJson(response, 404, { error: "track not found" });
+          sendError(response, 404, "not_found", "track not found");
           return;
         }
 
@@ -225,36 +361,10 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (method === "PATCH" && segments.length === 2 && segments[0] === "tracks") {
         const body = await readJson<UpdateTrackRequestBody>(request);
-
-        if (body.status === undefined && body.specStatus === undefined && body.planStatus === undefined) {
-          sendJson(response, 400, { error: "at least one track field is required" });
-          return;
-        }
-
-        if (body.status !== undefined && !isTrackStatus(body.status)) {
-          sendJson(response, 400, { error: `invalid status: ${String(body.status)}` });
-          return;
-        }
-
-        if (body.specStatus !== undefined && !isApprovalStatus(body.specStatus)) {
-          sendJson(response, 400, { error: `invalid specStatus: ${String(body.specStatus)}` });
-          return;
-        }
-
-        if (body.planStatus !== undefined && !isApprovalStatus(body.planStatus)) {
-          sendJson(response, 400, { error: `invalid planStatus: ${String(body.planStatus)}` });
-          return;
-        }
-
-        const existingTrack = await deps.service.getTrack(segments[1] ?? "");
-
-        if (!existingTrack) {
-          sendJson(response, 404, { error: "track not found" });
-          return;
-        }
+        assertValidTrackUpdateBody(body);
 
         const track = await deps.service.updateTrack({
-          trackId: existingTrack.id,
+          trackId: segments[1] ?? "",
           status: body.status,
           specStatus: body.specStatus,
           planStatus: body.planStatus,
@@ -265,11 +375,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (method === "POST" && segments.length === 1 && segments[0] === "runs") {
         const body = await readJson<RunRequestBody>(request);
-
-        if (!body.trackId || !body.prompt) {
-          sendJson(response, 400, { error: "trackId and prompt are required" });
-          return;
-        }
+        assertValidRunCreateBody(body);
 
         const run = await deps.service.startRun(body);
         sendJson(response, 201, { run });
@@ -278,33 +384,15 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (method === "POST" && segments.length === 3 && segments[0] === "runs" && segments[2] === "resume") {
         const body = await readJson<ResumeRunRequestBody>(request);
+        assertValidResumeRunBody(body);
 
-        if (!body.prompt) {
-          sendJson(response, 400, { error: "prompt is required" });
-          return;
-        }
-
-        const existingRun = await deps.service.getRun(segments[1] ?? "");
-
-        if (!existingRun) {
-          sendJson(response, 404, { error: "run not found" });
-          return;
-        }
-
-        const run = await deps.service.resumeRun({ runId: existingRun.id, prompt: body.prompt });
+        const run = await deps.service.resumeRun({ runId: segments[1] ?? "", prompt: body.prompt });
         sendJson(response, 200, { run });
         return;
       }
 
       if (method === "POST" && segments.length === 3 && segments[0] === "runs" && segments[2] === "cancel") {
-        const existingRun = await deps.service.getRun(segments[1] ?? "");
-
-        if (!existingRun) {
-          sendJson(response, 404, { error: "run not found" });
-          return;
-        }
-
-        const run = await deps.service.cancelRun({ runId: existingRun.id });
+        const run = await deps.service.cancelRun({ runId: segments[1] ?? "" });
         sendJson(response, 200, { run });
         return;
       }
@@ -313,7 +401,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const run = await deps.service.getRun(segments[1] ?? "");
 
         if (!run) {
-          sendJson(response, 404, { error: "run not found" });
+          sendError(response, 404, "not_found", "run not found");
           return;
         }
 
@@ -325,7 +413,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const run = await deps.service.getRun(segments[1] ?? "");
 
         if (!run) {
-          sendJson(response, 404, { error: "run not found" });
+          sendError(response, 404, "not_found", "run not found");
           return;
         }
 
@@ -337,7 +425,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const run = await deps.service.getRun(segments[1] ?? "");
 
         if (!run) {
-          sendJson(response, 404, { error: "run not found" });
+          sendError(response, 404, "not_found", "run not found");
           return;
         }
 
@@ -346,10 +434,25 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
-      sendJson(response, 404, { error: "not found" });
+      sendError(response, 404, "not_found", "not found");
     } catch (error) {
+      if (error instanceof RequestValidationError) {
+        sendError(response, error.statusCode, error.code, error.message, error.details);
+        return;
+      }
+
+      if (error instanceof BadRequestError) {
+        sendError(response, error.statusCode, error.code, error.message);
+        return;
+      }
+
+      if (error instanceof NotFoundError) {
+        sendError(response, 404, "not_found", error.message);
+        return;
+      }
+
       const message = error instanceof Error ? error.message : "unknown error";
-      sendJson(response, 500, { error: message });
+      sendError(response, 500, "internal_error", message);
     }
   });
 }

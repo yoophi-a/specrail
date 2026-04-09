@@ -336,34 +336,90 @@ test("API validates track updates and returns 404 for missing tracks", async () 
       body: JSON.stringify({ status: "review" }),
     });
     assert.equal(missingTrackResponse.status, 404);
+    const missingTrackPayload = (await missingTrackResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingTrackPayload.error.code, "not_found");
 
     const emptyBodyResponse = await fetch(`${baseUrl}/tracks/missing`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
     });
-    assert.equal(emptyBodyResponse.status, 400);
+    assert.equal(emptyBodyResponse.status, 422);
 
     const invalidStatusResponse = await fetch(`${baseUrl}/tracks/missing`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ status: "oops" }),
     });
-    assert.equal(invalidStatusResponse.status, 400);
+    assert.equal(invalidStatusResponse.status, 422);
 
     const invalidSpecStatusResponse = await fetch(`${baseUrl}/tracks/missing`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ specStatus: "oops" }),
     });
-    assert.equal(invalidSpecStatusResponse.status, 400);
+    assert.equal(invalidSpecStatusResponse.status, 422);
 
     const invalidPlanStatusResponse = await fetch(`${baseUrl}/tracks/missing`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ planStatus: "oops" }),
     });
-    assert.equal(invalidPlanStatusResponse.status, 400);
+    assert.equal(invalidPlanStatusResponse.status, 422);
+  });
+});
+
+test("API returns structured validation and bad-request errors", async () => {
+  await withServer(async (baseUrl) => {
+    const invalidTrackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "",
+        description: 123,
+        priority: "urgent",
+      }),
+    });
+    assert.equal(invalidTrackResponse.status, 422);
+    const invalidTrackPayload = (await invalidTrackResponse.json()) as {
+      error: { code: string; details: Array<{ field: string; message: string }> };
+    };
+    assert.equal(invalidTrackPayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidTrackPayload.error.details.map((detail) => detail.field),
+      ["title", "description", "priority"],
+    );
+
+    const invalidRunResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: "",
+        prompt: "",
+        profile: "",
+      }),
+    });
+    assert.equal(invalidRunResponse.status, 422);
+
+    const invalidResumeResponse = await fetch(`${baseUrl}/runs/run-1/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "" }),
+    });
+    assert.equal(invalidResumeResponse.status, 422);
+
+    const malformedJsonResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    });
+    assert.equal(malformedJsonResponse.status, 400);
+    const malformedJsonPayload = (await malformedJsonResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(malformedJsonPayload.error.code, "bad_request");
   });
 });
 
@@ -371,14 +427,20 @@ test("API returns 404s for unknown tracks and runs", async () => {
   await withServer(async (baseUrl) => {
     const missingTrack = await fetch(`${baseUrl}/tracks/missing`);
     assert.equal(missingTrack.status, 404);
+    const missingTrackPayload = (await missingTrack.json()) as { error: { code: string } };
+    assert.equal(missingTrackPayload.error.code, "not_found");
 
     const missingRun = await fetch(`${baseUrl}/runs/missing/events`);
     assert.equal(missingRun.status, 404);
+    const missingRunPayload = (await missingRun.json()) as { error: { code: string } };
+    assert.equal(missingRunPayload.error.code, "not_found");
 
     const missingStream = await fetch(`${baseUrl}/runs/missing/events/stream`, {
       headers: { accept: "text/event-stream" },
     });
     assert.equal(missingStream.status, 404);
+    const missingStreamPayload = (await missingStream.json()) as { error: { code: string } };
+    assert.equal(missingStreamPayload.error.code, "not_found");
 
     const missingResume = await fetch(`${baseUrl}/runs/missing/resume`, {
       method: "POST",
@@ -386,10 +448,14 @@ test("API returns 404s for unknown tracks and runs", async () => {
       body: JSON.stringify({ prompt: "nope" }),
     });
     assert.equal(missingResume.status, 404);
+    const missingResumePayload = (await missingResume.json()) as { error: { code: string } };
+    assert.equal(missingResumePayload.error.code, "not_found");
 
     const missingCancel = await fetch(`${baseUrl}/runs/missing/cancel`, {
       method: "POST",
     });
     assert.equal(missingCancel.status, 404);
+    const missingCancelPayload = (await missingCancel.json()) as { error: { code: string } };
+    assert.equal(missingCancelPayload.error.code, "not_found");
   });
 });

@@ -11,6 +11,7 @@ import {
   type TaskDocument,
 } from "../domain/artifacts.js";
 import type { ApprovalStatus, Execution, ExecutionEvent, Project, Track, TrackStatus } from "../domain/types.js";
+import { NotFoundError } from "../errors.js";
 import type { EventStore, ExecutionRepository, ProjectRepository, TrackRepository } from "./ports.js";
 
 export interface TrackArtifactWriterInput {
@@ -156,7 +157,7 @@ export class SpecRailService {
     const track = await this.dependencies.trackRepository.getById(input.trackId);
 
     if (!track) {
-      throw new Error(`Track not found: ${input.trackId}`);
+      throw new NotFoundError(`Track not found: ${input.trackId}`);
     }
 
     const nextTrack: Track = {
@@ -176,7 +177,7 @@ export class SpecRailService {
     const track = await this.dependencies.trackRepository.getById(input.trackId);
 
     if (!track) {
-      throw new Error(`Track not found: ${input.trackId}`);
+      throw new NotFoundError(`Track not found: ${input.trackId}`);
     }
 
     const executionId = `run-${this.idGenerator()}`;
@@ -288,7 +289,7 @@ export class SpecRailService {
     const execution = await this.dependencies.executionRepository.getById(runId);
 
     if (!execution) {
-      throw new Error(`Run not found: ${runId}`);
+      throw new NotFoundError(`Run not found: ${runId}`);
     }
 
     return execution;
