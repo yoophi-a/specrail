@@ -48,6 +48,52 @@ export interface TrackArtifactWriter {
   write(input: TrackArtifactWriterInput): Promise<void>;
 }
 
+export interface OpenSpecTrackArtifacts {
+  spec: string;
+  plan: string;
+  tasks: string;
+}
+
+export interface OpenSpecImportSource {
+  kind: "file";
+  path: string;
+}
+
+export interface OpenSpecExportTarget {
+  kind: "file";
+  path: string;
+  overwrite?: boolean;
+}
+
+export interface OpenSpecTrackPackage {
+  metadata: {
+    version: 1;
+    format: "specrail.openspec.bundle";
+    exportedAt: string;
+    generatedBy: "specrail";
+  };
+  track: Track;
+  artifacts: OpenSpecTrackArtifacts;
+  files: {
+    spec: string;
+    plan: string;
+    tasks: string;
+  };
+}
+
+export interface OpenSpecAdapter {
+  readonly name: string;
+  importPackage(input: { source: OpenSpecImportSource }): Promise<{ package: OpenSpecTrackPackage }>;
+  exportPackage(input: { package: OpenSpecTrackPackage; target: OpenSpecExportTarget }): Promise<{
+    package: OpenSpecTrackPackage;
+    target: OpenSpecExportTarget;
+  }>;
+}
+
+export interface TrackArtifactReader {
+  read(trackId: string): Promise<OpenSpecTrackArtifacts>;
+}
+
 export interface ExecutorLaunchResult {
   sessionRef: string;
   command: Execution["command"];
@@ -83,7 +129,9 @@ export interface SpecRailServiceDependencies {
   executionRepository: ExecutionRepository;
   eventStore: EventStore;
   artifactWriter: TrackArtifactWriter;
+  artifactReader?: TrackArtifactReader;
   executor: ExecutionBackend;
+  openSpecAdapter?: OpenSpecAdapter;
   defaultProject: {
     id: string;
     name: string;
@@ -128,6 +176,15 @@ export interface ResumeRunInput {
 
 export interface CancelRunInput {
   runId: string;
+}
+
+export interface ExportTrackToOpenSpecInput {
+  trackId: string;
+  target: OpenSpecExportTarget;
+}
+
+export interface ImportTrackFromOpenSpecInput {
+  source: OpenSpecImportSource;
 }
 
 export type SortOrder = "asc" | "desc";
@@ -454,6 +511,76 @@ export class SpecRailService {
     await this.dependencies.trackRepository.update(nextTrack);
 
     return nextTrack;
+  }
+
+  async exportTrackToOpenSpec(input: ExportTrackToOpenSpecInput) {
+    const adapter = this.requireOpenSpecAdapter();
+    const artifactReader = this.requireTrackArtifactReader();
+    const track = await this.dependencies.trackRepository.getById(input.trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${input.trackId}`);
+    }
+
+    const artifacts = await artifactReader.read(track.id);
+
+    return adapter.exportPackage({
+      package: {
+        metadata: {
+          version: 1,
+          format: "specrail.openspec.bundle",
+          exportedAt: this.now(),
+          generatedBy: "specrail",
+        },
+        track,
+        artifacts,
+        files: {
+          spec: "spec.md",
+          plan: "plan.md",
+          tasks: "tasks.md",
+        },
+      },
+      target: input.target,
+    });
+  }
+
+  async importTrackFromOpenSpec(input: ImportTrackFromOpenSpecInput): Promise<{ track: Track; action: "created" | "updated" }> {
+    const adapter = this.requireOpenSpecAdapter();
+    const project = await this.ensureDefaultProject();
+    const imported = await adapter.importPackage({ source: input.source });
+    const timestamp = this.now();
+    const importedTrack = imported.package.track;
+    const existingTrack = await this.dependencies.trackRepository.getById(importedTrack.id);
+
+    const track: Track = {
+      ...importedTrack,
+      projectId: existingTrack?.projectId ?? importedTrack.projectId ?? project.id,
+      title: normalizeRequiredString(importedTrack.title),
+      description: normalizeRequiredString(importedTrack.description),
+      githubIssue: normalizeGitHubReference(importedTrack.githubIssue),
+      githubPullRequest: normalizeGitHubReference(importedTrack.githubPullRequest),
+      updatedAt: timestamp,
+      createdAt: existingTrack?.createdAt ?? importedTrack.createdAt ?? timestamp,
+    };
+
+    if (existingTrack) {
+      await this.dependencies.trackRepository.update(track);
+    } else {
+      await this.dependencies.trackRepository.create(track);
+    }
+
+    await this.dependencies.artifactWriter.write({
+      track,
+      project,
+      specContent: imported.package.artifacts.spec,
+      planContent: imported.package.artifacts.plan,
+      tasksContent: imported.package.artifacts.tasks,
+    });
+
+    return {
+      track,
+      action: existingTrack ? "updated" : "created",
+    };
   }
 
   async startRun(input: StartRunInput): Promise<Execution> {
@@ -812,6 +939,22 @@ export class SpecRailService {
 
     await this.dependencies.projectRepository.create(project);
     return project;
+  }
+
+  private requireOpenSpecAdapter(): OpenSpecAdapter {
+    if (!this.dependencies.openSpecAdapter) {
+      throw new Error("OpenSpec adapter is not configured");
+    }
+
+    return this.dependencies.openSpecAdapter;
+  }
+
+  private requireTrackArtifactReader(): TrackArtifactReader {
+    if (!this.dependencies.artifactReader) {
+      throw new Error("Track artifact reader is not configured");
+    }
+
+    return this.dependencies.artifactReader;
   }
 
   private renderDefaultSpec(track: Track): string {

@@ -34,7 +34,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - resume and cancel a run
 - expose run events through JSON and SSE APIs
 - list tracks and runs with filtering, pagination, and sorting
-- import/export track artifact bundles through a first OpenSpec file adapter boundary
+- import/export track artifact bundles through a service-wired OpenSpec file adapter flow
 
 ## Current MVP status
 
@@ -48,7 +48,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - SSE event streaming for run events
 - request validation and structured API errors
 - automated API/config/adapter tests
-- file-based OpenSpec bundle import/export scaffold in `@specrail/adapters`
+- file-based OpenSpec bundle import/export scaffold in `@specrail/adapters`, wired into service and admin API flows
 
 ### Not implemented yet
 - authentication and multi-user access control
@@ -87,6 +87,14 @@ Current endpoints in `apps/api/src/index.ts`:
 - `PATCH /tracks/:trackId`
   - update workflow state
   - body: any of `{ status, specStatus, planStatus, githubIssue, githubPullRequest }`
+
+### Admin OpenSpec
+- `POST /admin/openspec/export`
+  - export a track into an OpenSpec file bundle
+  - body: `{ trackId, path, overwrite? }`
+- `POST /admin/openspec/import`
+  - import an OpenSpec bundle and create/update the referenced track plus artifacts
+  - body: `{ path }`
 
 ### Runs
 - `POST /runs`
@@ -266,7 +274,7 @@ Manifest example:
 Notes:
 - the bundle stores full `Track` metadata in `openspec.json`
 - markdown artifacts stay as separate files so they remain reviewable and diff-friendly
-- this is an adapter boundary and scaffold, not yet wired into API routes or sync automation
+- the file adapter is now wired into `SpecRailService` and exposed through admin API import/export routes
 
 ## Verification source of truth
 

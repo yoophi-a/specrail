@@ -311,8 +311,8 @@ That avoids hard-to-debug bidirectional sync too early.
 ### Phase 4. OpenSpec import/export
 - [x] define OpenSpec adapter boundary
 - [x] add first file-bundle scaffold for import/export of track + `spec.md`/`plan.md`/`tasks.md`
-- [ ] import OpenSpec package -> create/update track
-- [ ] export track artifacts -> OpenSpec package via API/service wiring
+- [x] import OpenSpec package -> create/update track
+- [x] export track artifacts -> OpenSpec package via API/service wiring
 - conflict reporting and provenance metadata
 
 ### Phase 5. Round-trip and policy hardening

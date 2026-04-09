@@ -524,6 +524,63 @@ test("API supports creating tracks, starting runs, and listing run events", asyn
   });
 });
 
+test("API exports and imports OpenSpec bundles through admin routes", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "OpenSpec track",
+        description: "Export and re-import OpenSpec bundles.",
+      }),
+    });
+    assert.equal(trackResponse.status, 201);
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const bundleDir = await mkdtemp(path.join(os.tmpdir(), "specrail-api-openspec-bundle-"));
+    const exportResponse = await fetch(`${baseUrl}/admin/openspec/export`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        path: bundleDir,
+        overwrite: true,
+      }),
+    });
+    assert.equal(exportResponse.status, 200);
+
+    const exported = (await exportResponse.json()) as {
+      package: { track: { id: string } };
+      target: { path: string; overwrite: boolean };
+    };
+    assert.equal(exported.package.track.id, trackPayload.track.id);
+    assert.equal(exported.target.path, bundleDir);
+    assert.equal(exported.target.overwrite, true);
+
+    const manifest = JSON.parse(await readFile(path.join(bundleDir, "openspec.json"), "utf8")) as {
+      track: { id: string };
+    };
+    assert.equal(manifest.track.id, trackPayload.track.id);
+
+    await writeFile(path.join(bundleDir, "spec.md"), "# Imported spec\n", "utf8");
+
+    const importResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: bundleDir }),
+    });
+    assert.equal(importResponse.status, 200);
+
+    const imported = (await importResponse.json()) as { action: string; track: { id: string } };
+    assert.equal(imported.action, "updated");
+    assert.equal(imported.track.id, trackPayload.track.id);
+
+    const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
+    const getTrackPayload = (await getTrackResponse.json()) as { artifacts: { spec: string } };
+    assert.equal(getTrackPayload.artifacts.spec, "# Imported spec\n");
+  });
+});
+
 test("API supports streaming run events over SSE", async () => {
   await withServer(async (baseUrl) => {
     const trackResponse = await fetch(`${baseUrl}/tracks`, {
@@ -1036,6 +1093,20 @@ test("API returns structured validation and bad-request errors", async () => {
       error: { code: string; message: string };
     };
     assert.equal(malformedJsonPayload.error.code, "bad_request");
+
+    const invalidOpenSpecExportResponse = await fetch(`${baseUrl}/admin/openspec/export`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ trackId: "", path: 123, overwrite: "yes" }),
+    });
+    assert.equal(invalidOpenSpecExportResponse.status, 422);
+
+    const invalidOpenSpecImportResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "" }),
+    });
+    assert.equal(invalidOpenSpecImportResponse.status, 422);
   });
 });
 

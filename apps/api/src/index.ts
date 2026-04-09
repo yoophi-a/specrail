@@ -4,7 +4,7 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { CodexAdapter, GitHubRunCommentGhPublisher } from "@specrail/adapters";
+import { CodexAdapter, FileOpenSpecAdapter, GitHubRunCommentGhPublisher } from "@specrail/adapters";
 import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
 import {
   APPROVAL_STATUSES,
@@ -56,6 +56,16 @@ interface UpdateTrackRequestBody {
 
 interface ResumeRunRequestBody {
   prompt: string;
+}
+
+interface OpenSpecExportRequestBody {
+  trackId: string;
+  path: string;
+  overwrite?: boolean;
+}
+
+interface OpenSpecImportRequestBody {
+  path: string;
 }
 
 interface TrackListQuery {
@@ -151,6 +161,11 @@ function createDependencies(dataDir: string, repoArtifactRoot: string, githubPub
         });
       },
     },
+    artifactReader: {
+      async read(trackId) {
+        return readTrackArtifacts(artifactRoot, trackId);
+      },
+    },
     executor: new CodexAdapter({
       sessionsDir,
       onEvent: async (event) => {
@@ -170,6 +185,7 @@ function createDependencies(dataDir: string, repoArtifactRoot: string, githubPub
       defaultWorkflowPolicy: "artifact-first-mvp",
     },
     workspaceRoot,
+    openSpecAdapter: new FileOpenSpecAdapter(),
     githubRunCommentPublisher: githubPublishEnabled ? new GitHubRunCommentGhPublisher() : undefined,
     githubRunCommentSyncStore,
   };
@@ -418,6 +434,36 @@ function assertValidResumeRunBody(body: ResumeRunRequestBody): void {
 
   if (promptDetail) {
     throw new RequestValidationError("request validation failed", [promptDetail]);
+  }
+}
+
+function assertValidOpenSpecExportBody(body: OpenSpecExportRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  const trackIdDetail = getNonEmptyStringDetail("trackId", body.trackId);
+  if (trackIdDetail) {
+    details.push(trackIdDetail);
+  }
+
+  const pathDetail = getNonEmptyStringDetail("path", body.path);
+  if (pathDetail) {
+    details.push(pathDetail);
+  }
+
+  if (body.overwrite !== undefined && typeof body.overwrite !== "boolean") {
+    details.push({ field: "overwrite", message: "must be a boolean" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidOpenSpecImportBody(body: OpenSpecImportRequestBody): void {
+  const pathDetail = getNonEmptyStringDetail("path", body.path);
+
+  if (pathDetail) {
+    throw new RequestValidationError("request validation failed", [pathDetail]);
   }
 }
 
@@ -701,6 +747,36 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
         const run = await deps.service.startRun(body);
         sendJson(response, 201, { run });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "admin" && segments[1] === "openspec" && segments[2] === "export") {
+        const body = await readJson<OpenSpecExportRequestBody>(request);
+        assertValidOpenSpecExportBody(body);
+
+        const result = await deps.service.exportTrackToOpenSpec({
+          trackId: body.trackId,
+          target: {
+            kind: "file",
+            path: body.path,
+            overwrite: body.overwrite,
+          },
+        });
+        sendJson(response, 200, result);
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "admin" && segments[1] === "openspec" && segments[2] === "import") {
+        const body = await readJson<OpenSpecImportRequestBody>(request);
+        assertValidOpenSpecImportBody(body);
+
+        const result = await deps.service.importTrackFromOpenSpec({
+          source: {
+            kind: "file",
+            path: body.path,
+          },
+        });
+        sendJson(response, 200, result);
         return;
       }
 

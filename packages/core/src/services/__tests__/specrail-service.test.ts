@@ -1527,3 +1527,197 @@ test("SpecRailService records failed GitHub run summary sync attempts", async ()
     ],
   });
 });
+
+test("SpecRailService exports a track through the OpenSpec adapter", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-openspec-export-"));
+  const exportCalls: Array<{ trackId: string; targetPath: string; overwrite?: boolean; spec: string }> = [];
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    artifactReader: {
+      async read(trackId) {
+        return {
+          spec: `# Spec for ${trackId}`,
+          plan: "# Plan",
+          tasks: "# Tasks",
+        };
+      },
+    },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("should not be called");
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    openSpecAdapter: {
+      name: "openspec-file",
+      async importPackage() {
+        throw new Error("should not be called");
+      },
+      async exportPackage(input) {
+        exportCalls.push({
+          trackId: input.package.track.id,
+          targetPath: input.target.path,
+          overwrite: input.target.overwrite,
+          spec: input.package.artifacts.spec,
+        });
+
+        return input;
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => "2026-04-10T04:00:00.000Z",
+    idGenerator: () => "track-openspec-export",
+  });
+
+  const track = await service.createTrack({
+    title: "Export OpenSpec bundle",
+    description: "Package track artifacts for external exchange.",
+  });
+
+  const result = await service.exportTrackToOpenSpec({
+    trackId: track.id,
+    target: { kind: "file", path: path.join(rootDir, "bundle"), overwrite: true },
+  });
+
+  assert.equal(result.package.track.id, track.id);
+  assert.deepEqual(exportCalls, [
+    {
+      trackId: track.id,
+      targetPath: path.join(rootDir, "bundle"),
+      overwrite: true,
+      spec: `# Spec for ${track.id}`,
+    },
+  ]);
+});
+
+test("SpecRailService imports OpenSpec bundles into created and existing tracks", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-openspec-import-"));
+  const writes: Array<{ trackId: string; spec: string; plan: string; tasks: string }> = [];
+  const importedTrack = {
+    id: "track-openspec-import",
+    projectId: "project-foreign",
+    title: "  Imported track  ",
+    description: "  Imported description  ",
+    status: "ready" as const,
+    specStatus: "approved" as const,
+    planStatus: "pending" as const,
+    priority: "high" as const,
+    githubIssue: { number: 36, url: "https://github.com/yoophi-a/specrail/issues/36" },
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:00:00.000Z",
+  };
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: {
+      async write(input) {
+        writes.push({
+          trackId: input.track.id,
+          spec: input.specContent,
+          plan: input.planContent,
+          tasks: input.tasksContent,
+        });
+      },
+    },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("should not be called");
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    openSpecAdapter: {
+      name: "openspec-file",
+      async importPackage() {
+        return {
+          package: {
+            metadata: {
+              version: 1,
+              format: "specrail.openspec.bundle",
+              exportedAt: "2026-04-10T04:00:00.000Z",
+              generatedBy: "specrail",
+            },
+            track: importedTrack,
+            artifacts: {
+              spec: "# Imported spec",
+              plan: "# Imported plan",
+              tasks: "# Imported tasks",
+            },
+            files: {
+              spec: "spec.md",
+              plan: "plan.md",
+              tasks: "tasks.md",
+            },
+          },
+        };
+      },
+      async exportPackage() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = ["2026-04-10T04:00:00.000Z", "2026-04-10T04:05:00.000Z", "2026-04-10T04:10:00.000Z"];
+      return () => values.shift() ?? "2026-04-10T04:10:00.000Z";
+    })(),
+  });
+
+  const created = await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: path.join(rootDir, "bundle") },
+  });
+  assert.equal(created.action, "created");
+  assert.equal(created.track.id, importedTrack.id);
+  assert.equal(created.track.projectId, importedTrack.projectId);
+  assert.equal(created.track.title, "Imported track");
+  assert.equal(created.track.description, "Imported description");
+  assert.equal(created.track.updatedAt, "2026-04-10T04:05:00.000Z");
+
+  const updated = await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: path.join(rootDir, "bundle") },
+  });
+  assert.equal(updated.action, "updated");
+  assert.equal(updated.track.createdAt, "2026-04-09T00:00:00.000Z");
+  assert.equal(updated.track.updatedAt, "2026-04-10T04:10:00.000Z");
+
+  assert.deepEqual(writes, [
+    {
+      trackId: importedTrack.id,
+      spec: "# Imported spec",
+      plan: "# Imported plan",
+      tasks: "# Imported tasks",
+    },
+    {
+      trackId: importedTrack.id,
+      spec: "# Imported spec",
+      plan: "# Imported plan",
+      tasks: "# Imported tasks",
+    },
+  ]);
+});
