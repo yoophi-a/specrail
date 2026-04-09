@@ -29,8 +29,15 @@ interface ParsedArgs {
   preview: boolean;
   apply: boolean;
   json: boolean;
-  limit?: number;
+  page?: number;
+  pageSize?: number;
+  sourcePath?: string;
+  targetPath?: string;
+  after?: string;
+  before?: string;
   conflictPolicy?: "reject" | "overwrite" | "resolve";
+  filterConflictPolicy?: "reject" | "overwrite" | "resolve";
+  overwriteFilter?: boolean;
   preset?: OpenSpecImportResolutionPresetName;
   incoming: OpenSpecImportField[];
   existing: OpenSpecImportField[];
@@ -57,8 +64,8 @@ Usage:
   specrail-admin openspec export --track-id <track-id> --path <bundle-dir> [--overwrite] [--json]
   specrail-admin openspec import --path <bundle-dir> [--preview] [--apply] [--preset <name>] [--conflict-policy <reject|overwrite|resolve>] [--incoming <field[,field...]>] [--existing <field[,field...]>] [--json]
   specrail-admin openspec import help [--preset <name>] [--json]
-  specrail-admin openspec imports [--track-id <track-id>] [--limit <count>] [--json]
-  specrail-admin openspec exports [--track-id <track-id>] [--limit <count>] [--json]
+  specrail-admin openspec imports [--track-id <track-id>] [--page <n>] [--page-size <count>] [--source-path <text>] [--after <iso>] [--before <iso>] [--filter-conflict-policy <reject|overwrite|resolve>] [--json]
+  specrail-admin openspec exports [--track-id <track-id>] [--page <n>] [--page-size <count>] [--target-path <text>] [--after <iso>] [--before <iso>] [--overwrite-only | --no-overwrite-only] [--json]
 
 Examples:
   specrail-admin openspec export --track-id track_123 --path ./bundle
@@ -66,9 +73,21 @@ Examples:
   specrail-admin openspec import --path ./bundle --apply --preset policyDefaults
   specrail-admin openspec import --path ./bundle --apply --preset policyDefaults --existing artifacts.plan
   specrail-admin openspec import help --preset policyDefaults
-  specrail-admin openspec imports --track-id track_123 --limit 5
-  specrail-admin openspec exports --track-id track_123 --limit 5
+  specrail-admin openspec imports --track-id track_123 --page-size 5 --filter-conflict-policy resolve
+  specrail-admin openspec exports --track-id track_123 --page-size 5 --overwrite-only
 `);
+}
+
+function parseIsoDateOption(name: string, value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (Number.isNaN(Date.parse(value))) {
+    throw new Error(`Invalid ${name}: ${value}`);
+  }
+
+  return value;
 }
 
 function parseFieldList(raw: string): OpenSpecImportField[] {
@@ -189,9 +208,51 @@ function parseArgs(argv: string[]): ParsedArgs {
         if (!Number.isInteger(value) || value < 1) {
           throw new Error(`Invalid limit: ${rest[index] ?? ""}`);
         }
-        args.limit = value;
+        args.pageSize = value;
         break;
       }
+      case "--page": {
+        const value = Number.parseInt(rest[++index] ?? "", 10);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error(`Invalid page: ${rest[index] ?? ""}`);
+        }
+        args.page = value;
+        break;
+      }
+      case "--page-size": {
+        const value = Number.parseInt(rest[++index] ?? "", 10);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error(`Invalid page size: ${rest[index] ?? ""}`);
+        }
+        args.pageSize = value;
+        break;
+      }
+      case "--source-path":
+        args.sourcePath = rest[++index];
+        break;
+      case "--target-path":
+        args.targetPath = rest[++index];
+        break;
+      case "--after":
+        args.after = parseIsoDateOption("after", rest[++index]);
+        break;
+      case "--before":
+        args.before = parseIsoDateOption("before", rest[++index]);
+        break;
+      case "--filter-conflict-policy": {
+        const value = rest[++index];
+        if (value !== "reject" && value !== "overwrite" && value !== "resolve") {
+          throw new Error(`Unknown filter conflict policy: ${value ?? ""}`);
+        }
+        args.filterConflictPolicy = value;
+        break;
+      }
+      case "--overwrite-only":
+        args.overwriteFilter = true;
+        break;
+      case "--no-overwrite-only":
+        args.overwriteFilter = false;
+        break;
       case "--incoming":
         args.incoming.push(...parseFieldList(rest[++index] ?? ""));
         break;
@@ -208,14 +269,14 @@ function parseArgs(argv: string[]): ParsedArgs {
   return args;
 }
 
-function printExportHistory(entries: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listOpenSpecExportHistory"]>>): void {
-  if (entries.length === 0) {
+function printExportHistory(result: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listOpenSpecExportHistoryPage"]>>, args: ParsedArgs): void {
+  if (result.items.length === 0) {
     console.log("No OpenSpec export history found");
     return;
   }
 
-  console.log("OpenSpec export history");
-  for (const entry of entries) {
+  console.log(`OpenSpec export history (page ${args.page ?? 1}/${result.meta.totalPages || 1}, total ${result.meta.total})`);
+  for (const entry of result.items) {
     console.log(`- ${entry.exportRecord.exportedAt} ${entry.trackId} (${entry.trackTitle})`);
     console.log(`  - target: ${entry.exportRecord.target.path}`);
     console.log(`  - overwrite: ${entry.exportRecord.target.overwrite ? "true" : "false"}`);
@@ -266,14 +327,14 @@ function printExportSummary(result: Awaited<ReturnType<ReturnType<typeof createD
   console.log(`- exportedAt: ${result.package.metadata.exportedAt}`);
 }
 
-function printImportHistory(entries: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listOpenSpecImportHistory"]>>): void {
-  if (entries.length === 0) {
+function printImportHistory(result: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listOpenSpecImportHistoryPage"]>>, args: ParsedArgs): void {
+  if (result.items.length === 0) {
     console.log("No OpenSpec import history found");
     return;
   }
 
-  console.log("OpenSpec import history");
-  for (const entry of entries) {
+  console.log(`OpenSpec import history (page ${args.page ?? 1}/${result.meta.totalPages || 1}, total ${result.meta.total})`);
+  for (const entry of result.items) {
     console.log(`- ${entry.provenance.importedAt} ${entry.trackId} (${entry.trackTitle})`);
     console.log(`  - source: ${entry.provenance.source.path}`);
     console.log(`  - conflictPolicy: ${entry.provenance.conflictPolicy}`);
@@ -361,26 +422,42 @@ async function run(): Promise<void> {
   }
 
   if (args.command === "openspec-imports") {
-    const result = await service.listOpenSpecImportHistory({ trackId: args.trackId, limit: args.limit });
+    const result = await service.listOpenSpecImportHistoryPage({
+      trackId: args.trackId,
+      page: args.page,
+      pageSize: args.pageSize,
+      sourcePath: args.sourcePath,
+      importedAfter: args.after,
+      importedBefore: args.before,
+      conflictPolicy: args.filterConflictPolicy,
+    });
 
     if (args.json) {
-      console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+      console.log(JSON.stringify({ config: loadConfig(), result: { ...result, meta: { page: args.page ?? 1, pageSize: args.pageSize ?? 20, ...result.meta } } }, null, 2));
       return;
     }
 
-    printImportHistory(result);
+    printImportHistory(result, args);
     return;
   }
 
   if (args.command === "openspec-exports") {
-    const result = await service.listOpenSpecExportHistory({ trackId: args.trackId, limit: args.limit });
+    const result = await service.listOpenSpecExportHistoryPage({
+      trackId: args.trackId,
+      page: args.page,
+      pageSize: args.pageSize,
+      targetPath: args.targetPath,
+      exportedAfter: args.after,
+      exportedBefore: args.before,
+      overwrite: args.overwriteFilter,
+    });
 
     if (args.json) {
-      console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+      console.log(JSON.stringify({ config: loadConfig(), result: { ...result, meta: { page: args.page ?? 1, pageSize: args.pageSize ?? 20, ...result.meta } } }, null, 2));
       return;
     }
 
-    printExportHistory(result);
+    printExportHistory(result, args);
     return;
   }
 

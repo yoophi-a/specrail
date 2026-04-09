@@ -199,6 +199,15 @@ test("SpecRailService throws when starting a run for a missing track", async () 
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: { async write() {} },
+    artifactReader: {
+      async read(trackId) {
+        return {
+          spec: `# Spec for ${trackId}`,
+          plan: `# Plan for ${trackId}`,
+          tasks: `# Tasks for ${trackId}`,
+        };
+      },
+    },
     executor: {
       name: "codex",
       async spawn() {
@@ -247,6 +256,15 @@ test("SpecRailService applies explicit sorting and pagination for track and run 
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: { async write() {} },
+    artifactReader: {
+      async read(trackId) {
+        return {
+          spec: `# Spec for ${trackId}`,
+          plan: `# Plan for ${trackId}`,
+          tasks: `# Tasks for ${trackId}`,
+        };
+      },
+    },
     executor: {
       name: "codex",
       async spawn(input) {
@@ -471,6 +489,15 @@ test("SpecRailService updates track workflow and approval state", async () => {
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: { async write() {} },
+    artifactReader: {
+      async read(trackId) {
+        return {
+          spec: `# Spec for ${trackId}`,
+          plan: `# Plan for ${trackId}`,
+          tasks: `# Tasks for ${trackId}`,
+        };
+      },
+    },
     executor: {
       name: "codex",
       async spawn() {
@@ -2083,4 +2110,148 @@ test("SpecRailService resolves OpenSpec conflicts with field-level keep-existing
   const adminHistory = await service.listOpenSpecImportHistory();
   assert.equal(adminHistory.length, 1);
   assert.equal(adminHistory[0]?.trackId, created.id);
+});
+
+test("SpecRailService paginates and filters OpenSpec audit history", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-openspec-history-page-"));
+  const timestamps = [
+    "2026-04-10T01:00:00.000Z",
+    "2026-04-10T02:00:00.000Z",
+    "2026-04-10T03:00:00.000Z",
+    "2026-04-10T04:00:00.000Z",
+    "2026-04-10T05:00:00.000Z",
+    "2026-04-10T06:00:00.000Z",
+  ];
+  let timestampIndex = 0;
+  let importCount = 0;
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    artifactReader: {
+      async read(trackId) {
+        return {
+          spec: `# Spec for ${trackId}`,
+          plan: `# Plan for ${trackId}`,
+          tasks: `# Tasks for ${trackId}`,
+        };
+      },
+    },
+    executor: {
+      name: "codex",
+      async spawn() { throw new Error("should not be called"); },
+      async resume() { throw new Error("should not be called"); },
+      async cancel() { throw new Error("should not be called"); },
+    },
+    openSpecAdapter: {
+      name: "openspec-file",
+      async importPackage() {
+        importCount += 1;
+        return {
+          package: {
+            metadata: {
+              version: 1,
+              format: "specrail.openspec.bundle",
+              exportedAt: timestamps[Math.min(importCount - 1, timestamps.length - 1)] ?? timestamps.at(-1)!,
+              generatedBy: "specrail",
+            },
+            track: {
+              id: `track-import-${importCount}`,
+              projectId: "project-foreign",
+              title: `Imported ${importCount}`,
+              description: `Imported description ${importCount}`,
+              status: "ready",
+              specStatus: "approved",
+              planStatus: "approved",
+              priority: "medium",
+              createdAt: "2026-04-09T00:00:00.000Z",
+              updatedAt: "2026-04-09T00:00:00.000Z",
+            },
+            artifacts: {
+              spec: `# Spec ${importCount}\n`,
+              plan: `# Plan ${importCount}\n`,
+              tasks: `# Tasks ${importCount}\n`,
+            },
+            files: { spec: "spec.md", plan: "plan.md", tasks: "tasks.md" },
+          },
+        };
+      },
+      async exportPackage(input) {
+        return input;
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => timestamps[timestampIndex++] ?? timestamps.at(-1)!,
+    idGenerator: () => `generated-${timestampIndex}`,
+  });
+
+  const exportTrackA = await service.createTrack({ title: "Export A", description: "A" });
+  const exportTrackB = await service.createTrack({ title: "Export B", description: "B" });
+
+  await service.exportTrackToOpenSpec({
+    trackId: exportTrackA.id,
+    target: { kind: "file", path: path.join(rootDir, "bundle-a"), overwrite: false },
+  });
+  await service.exportTrackToOpenSpec({
+    trackId: exportTrackB.id,
+    target: { kind: "file", path: path.join(rootDir, "bundle-b"), overwrite: true },
+  });
+
+  await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: path.join(rootDir, "imports", "alpha") },
+    conflictPolicy: "reject",
+  });
+  await service.importTrackFromOpenSpec({
+    source: { kind: "file", path: path.join(rootDir, "imports", "beta") },
+    conflictPolicy: "resolve",
+    resolutionPreset: "policyDefaults",
+  });
+
+  const importPage = await service.listOpenSpecImportHistoryPage({ page: 1, pageSize: 1 });
+  assert.equal(importPage.items.length, 1);
+  assert.ok([path.join(rootDir, "imports", "alpha"), path.join(rootDir, "imports", "beta")].includes(importPage.items[0]?.provenance.source.path ?? ""));
+  assert.deepEqual(importPage.meta, {
+    total: 2,
+    totalPages: 2,
+    hasNextPage: true,
+    hasPrevPage: false,
+  });
+
+  const filteredImports = await service.listOpenSpecImportHistoryPage({
+    sourcePath: "beta",
+    conflictPolicy: "resolve",
+    importedAfter: "2026-04-10T03:30:00.000Z",
+    page: 1,
+    pageSize: 5,
+  });
+  assert.equal(filteredImports.items.length, 1);
+  assert.equal(filteredImports.items[0]?.provenance.source.path, path.join(rootDir, "imports", "beta"));
+  assert.equal(filteredImports.meta.total, 1);
+
+  const exportPage = await service.listOpenSpecExportHistoryPage({ page: 2, pageSize: 1 });
+  assert.equal(exportPage.items.length, 1);
+  assert.equal(exportPage.items[0]?.exportRecord.target.path, path.join(rootDir, "bundle-a"));
+  assert.deepEqual(exportPage.meta, {
+    total: 2,
+    totalPages: 2,
+    hasNextPage: false,
+    hasPrevPage: true,
+  });
+
+  const filteredExports = await service.listOpenSpecExportHistoryPage({
+    targetPath: "bundle-b",
+    overwrite: true,
+    exportedAfter: "2026-04-10T01:30:00.000Z",
+    page: 1,
+    pageSize: 5,
+  });
+  assert.equal(filteredExports.items.length, 1);
+  assert.equal(filteredExports.items[0]?.trackId, exportTrackB.id);
+  assert.equal(filteredExports.meta.total, 1);
 });

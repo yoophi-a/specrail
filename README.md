@@ -106,11 +106,13 @@ Current endpoints in `apps/api/src/index.ts`:
   - query: `resolutionPreset?=policyDefaults|preferIncomingArtifacts|preserveWorkflowState|preferIncomingAll`
   - response includes `operatorGuide.recommendedFlow`, conflict-policy descriptions, example request payloads, and a human-friendly `selectedPreset`/`effectiveChoices` breakdown for the requested preset
 - `GET /admin/openspec/imports`
-  - list persisted OpenSpec import history across tracks
-  - query: `trackId?`, `limit?`
+  - list persisted OpenSpec import history across tracks with pagination metadata
+  - query: `trackId?`, `page?=1`, `pageSize?=20`, `sourcePath?`, `conflictPolicy?=reject|overwrite|resolve`, `importedAfter?`, `importedBefore?`
+  - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /admin/openspec/exports`
-  - list persisted OpenSpec export history across tracks
-  - query: `trackId?`, `limit?`
+  - list persisted OpenSpec export history across tracks with pagination metadata
+  - query: `trackId?`, `page?=1`, `pageSize?=20`, `targetPath?`, `overwrite?=true|false`, `exportedAfter?`, `exportedBefore?`
+  - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /tracks/:trackId/openspec/imports`
   - return the latest OpenSpec import/export provenance and persisted history for a single track
 - `GET /tracks/:trackId` and `GET /tracks/:trackId/integrations`
@@ -133,10 +135,10 @@ pnpm --filter @specrail/api openspec:import -- --path ./bundle --apply --preset 
 pnpm --filter @specrail/api openspec:import:help -- --preset policyDefaults
 
 # inspect persisted import history
-pnpm --filter @specrail/api openspec:imports -- --track-id track_123 --limit 10
+pnpm --filter @specrail/api openspec:imports -- --track-id track_123 --page-size 10 --filter-conflict-policy resolve
 
 # inspect persisted export history
-pnpm --filter @specrail/api openspec:exports -- --track-id track_123 --limit 10
+pnpm --filter @specrail/api openspec:exports -- --track-id track_123 --page-size 10 --overwrite-only
 ```
 
 Notes:
@@ -144,8 +146,8 @@ Notes:
 - preview mode defaults to `dryRun=true` with `conflictPolicy=reject`
 - apply mode auto-selects `conflictPolicy=resolve` when a preset or explicit keep/take overrides are supplied
 - field overrides are available via `--existing track.status,artifacts.plan` and `--incoming track.title`
-- import history can be filtered with `--track-id` and truncated with `--limit`
-- export history can be filtered with `--track-id` and truncated with `--limit`
+- import history supports `--page`/`--page-size` plus `--track-id`, `--source-path`, `--filter-conflict-policy`, `--after`, and `--before`
+- export history supports `--page`/`--page-size` plus `--track-id`, `--target-path`, `--overwrite-only`/`--no-overwrite-only`, `--after`, and `--before`
 - JSON output is available with `--json` for scripting or operator tooling
 
 ### Runs

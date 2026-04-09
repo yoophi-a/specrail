@@ -41,7 +41,7 @@ test("CLI exports OpenSpec bundles and lists import/export history", async () =>
   assert.equal(exportPayload.result.package.track.id, track.id);
   assert.equal(exportPayload.result.target.path, bundleDir);
 
-  const exportHistoryResult = await execFileAsync("pnpm", ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "exports", "--track-id", track.id, "--limit", "1", "--json"], {
+  const exportHistoryResult = await execFileAsync("pnpm", ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "exports", "--track-id", track.id, "--page-size", "1", "--json"], {
     cwd: path.resolve(import.meta.dirname, "../.."),
     env: {
       ...process.env,
@@ -50,11 +50,13 @@ test("CLI exports OpenSpec bundles and lists import/export history", async () =>
     },
   });
   const exportHistoryPayload = JSON.parse(exportHistoryResult.stdout) as {
-    result: Array<{ trackId: string; exportRecord: { target: { path: string } } }>;
+    result: { items: Array<{ trackId: string; exportRecord: { target: { path: string } } }>; meta: { total: number; pageSize: number } };
   };
-  assert.equal(exportHistoryPayload.result.length, 1);
-  assert.equal(exportHistoryPayload.result[0]?.trackId, track.id);
-  assert.equal(exportHistoryPayload.result[0]?.exportRecord.target.path, bundleDir);
+  assert.equal(exportHistoryPayload.result.items.length, 1);
+  assert.equal(exportHistoryPayload.result.items[0]?.trackId, track.id);
+  assert.equal(exportHistoryPayload.result.items[0]?.exportRecord.target.path, bundleDir);
+  assert.equal(exportHistoryPayload.result.meta.total, 1);
+  assert.equal(exportHistoryPayload.result.meta.pageSize, 1);
 
   await service.importTrackFromOpenSpec({
     source: { kind: "file", path: bundleDir },
@@ -62,7 +64,7 @@ test("CLI exports OpenSpec bundles and lists import/export history", async () =>
     resolutionPreset: "policyDefaults",
   });
 
-  const historyResult = await execFileAsync("pnpm", ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "imports", "--track-id", track.id, "--limit", "1", "--json"], {
+  const historyResult = await execFileAsync("pnpm", ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "imports", "--track-id", track.id, "--page-size", "1", "--filter-conflict-policy", "resolve", "--json"], {
     cwd: path.resolve(import.meta.dirname, "../.."),
     env: {
       ...process.env,
@@ -71,12 +73,17 @@ test("CLI exports OpenSpec bundles and lists import/export history", async () =>
     },
   });
   const historyPayload = JSON.parse(historyResult.stdout) as {
-    result: Array<{ trackId: string; provenance: { source: { path: string }; resolutionPreset?: string } }>;
+    result: {
+      items: Array<{ trackId: string; provenance: { source: { path: string }; resolutionPreset?: string } }>;
+      meta: { total: number; pageSize: number };
+    };
   };
-  assert.equal(historyPayload.result.length, 1);
-  assert.equal(historyPayload.result[0]?.trackId, track.id);
-  assert.equal(historyPayload.result[0]?.provenance.source.path, bundleDir);
-  assert.equal(historyPayload.result[0]?.provenance.resolutionPreset, "policyDefaults");
+  assert.equal(historyPayload.result.items.length, 1);
+  assert.equal(historyPayload.result.items[0]?.trackId, track.id);
+  assert.equal(historyPayload.result.items[0]?.provenance.source.path, bundleDir);
+  assert.equal(historyPayload.result.items[0]?.provenance.resolutionPreset, "policyDefaults");
+  assert.equal(historyPayload.result.meta.total, 1);
+  assert.equal(historyPayload.result.meta.pageSize, 1);
 });
 
 test("CLI previews and applies guided OpenSpec imports", async () => {

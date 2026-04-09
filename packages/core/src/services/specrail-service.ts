@@ -479,7 +479,12 @@ export interface ImportTrackFromOpenSpecResult {
 
 export interface OpenSpecImportHistoryListInput {
   trackId?: string;
-  limit?: number;
+  sourcePath?: string;
+  conflictPolicy?: OpenSpecImportConflictPolicy;
+  importedAfter?: string;
+  importedBefore?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface OpenSpecImportHistoryEntry {
@@ -490,7 +495,12 @@ export interface OpenSpecImportHistoryEntry {
 
 export interface OpenSpecExportHistoryListInput {
   trackId?: string;
-  limit?: number;
+  targetPath?: string;
+  overwrite?: boolean;
+  exportedAfter?: string;
+  exportedBefore?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface OpenSpecExportHistoryEntry {
@@ -931,6 +941,11 @@ export class SpecRailService {
   }
 
   async listOpenSpecImportHistory(input: OpenSpecImportHistoryListInput = {}): Promise<OpenSpecImportHistoryEntry[]> {
+    const result = await this.listOpenSpecImportHistoryPage(input);
+    return result.items;
+  }
+
+  async listOpenSpecImportHistoryPage(input: OpenSpecImportHistoryListInput = {}): Promise<ListPageResult<OpenSpecImportHistoryEntry>> {
     const tracks = input.trackId
       ? [await this.dependencies.trackRepository.getById(input.trackId)].filter((track): track is Track => track !== null)
       : await this.dependencies.trackRepository.list();
@@ -943,11 +958,36 @@ export class SpecRailService {
       })),
     );
 
-    entries.sort((left, right) => right.provenance.importedAt.localeCompare(left.provenance.importedAt));
-    return entries.slice(0, input.limit ?? entries.length);
+    const filtered = entries
+      .filter((entry) => (input.sourcePath ? entry.provenance.source.path.includes(input.sourcePath) : true))
+      .filter((entry) => (input.conflictPolicy ? entry.provenance.conflictPolicy === input.conflictPolicy : true))
+      .filter((entry) => (input.importedAfter ? entry.provenance.importedAt >= input.importedAfter : true))
+      .filter((entry) => (input.importedBefore ? entry.provenance.importedAt <= input.importedBefore : true))
+      .sort((left, right) => right.provenance.importedAt.localeCompare(left.provenance.importedAt));
+
+    const page = input.page ?? 1;
+    const pageSize = input.pageSize ?? 20;
+    const total = filtered.length;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+    const startIndex = (page - 1) * pageSize;
+
+    return {
+      items: filtered.slice(startIndex, startIndex + pageSize),
+      meta: {
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1 && totalPages > 0,
+      },
+    };
   }
 
   async listOpenSpecExportHistory(input: OpenSpecExportHistoryListInput = {}): Promise<OpenSpecExportHistoryEntry[]> {
+    const result = await this.listOpenSpecExportHistoryPage(input);
+    return result.items;
+  }
+
+  async listOpenSpecExportHistoryPage(input: OpenSpecExportHistoryListInput = {}): Promise<ListPageResult<OpenSpecExportHistoryEntry>> {
     const tracks = input.trackId
       ? [await this.dependencies.trackRepository.getById(input.trackId)].filter((track): track is Track => track !== null)
       : await this.dependencies.trackRepository.list();
@@ -960,8 +1000,28 @@ export class SpecRailService {
       })),
     );
 
-    entries.sort((left, right) => right.exportRecord.exportedAt.localeCompare(left.exportRecord.exportedAt));
-    return entries.slice(0, input.limit ?? entries.length);
+    const filtered = entries
+      .filter((entry) => (input.targetPath ? entry.exportRecord.target.path.includes(input.targetPath) : true))
+      .filter((entry) => (input.overwrite !== undefined ? (entry.exportRecord.target.overwrite ?? false) === input.overwrite : true))
+      .filter((entry) => (input.exportedAfter ? entry.exportRecord.exportedAt >= input.exportedAfter : true))
+      .filter((entry) => (input.exportedBefore ? entry.exportRecord.exportedAt <= input.exportedBefore : true))
+      .sort((left, right) => right.exportRecord.exportedAt.localeCompare(left.exportRecord.exportedAt));
+
+    const page = input.page ?? 1;
+    const pageSize = input.pageSize ?? 20;
+    const total = filtered.length;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+    const startIndex = (page - 1) * pageSize;
+
+    return {
+      items: filtered.slice(startIndex, startIndex + pageSize),
+      meta: {
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1 && totalPages > 0,
+      },
+    };
   }
 
   async listTracks(input: ListTracksInput = {}): Promise<Track[]> {

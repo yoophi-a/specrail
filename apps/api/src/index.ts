@@ -199,6 +199,30 @@ function parsePositiveInteger(value: string | null): number | undefined {
   return Number.parseInt(value, 10);
 }
 
+function parseBoolean(value: string | null): boolean | undefined {
+  if (value === null) {
+    return undefined;
+  }
+
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  return undefined;
+}
+
+function parseIsoDate(value: string | null): string | undefined {
+  if (value === null) {
+    return undefined;
+  }
+
+  return Number.isNaN(Date.parse(value)) ? undefined : value;
+}
+
 function buildListMeta(
   query: { page?: number; pageSize?: number; sortBy?: string; sortOrder?: "asc" | "desc" },
   defaults: {
@@ -774,9 +798,16 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       if (method === "GET" && segments.length === 3 && segments[0] === "admin" && segments[1] === "openspec" && segments[2] === "imports") {
         const searchParams = getSearchParams(request);
         const trackId = searchParams.get("trackId") ?? undefined;
-        const limit = parsePositiveInteger(searchParams.get("limit"));
+        const page = parsePositiveInteger(searchParams.get("page"));
+        const pageSize = parsePositiveInteger(searchParams.get("pageSize") ?? searchParams.get("limit"));
+        const sourcePath = searchParams.get("sourcePath") ?? undefined;
+        const conflictPolicy = (searchParams.get("conflictPolicy") ?? undefined) as "reject" | "overwrite" | "resolve" | undefined;
+        const importedAfter = parseIsoDate(searchParams.get("importedAfter") ?? searchParams.get("after"));
+        const importedBefore = parseIsoDate(searchParams.get("importedBefore") ?? searchParams.get("before"));
+        const result = await deps.service.listOpenSpecImportHistoryPage({ trackId, page, pageSize, sourcePath, conflictPolicy, importedAfter, importedBefore });
         sendJson(response, 200, {
-          imports: await deps.service.listOpenSpecImportHistory({ trackId, limit }),
+          imports: result.items,
+          meta: buildListMeta({ page, pageSize }, { sortBy: "importedAt", sortOrder: "desc" }, result.meta),
         });
         return;
       }
@@ -784,9 +815,16 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       if (method === "GET" && segments.length === 3 && segments[0] === "admin" && segments[1] === "openspec" && segments[2] === "exports") {
         const searchParams = getSearchParams(request);
         const trackId = searchParams.get("trackId") ?? undefined;
-        const limit = parsePositiveInteger(searchParams.get("limit"));
+        const page = parsePositiveInteger(searchParams.get("page"));
+        const pageSize = parsePositiveInteger(searchParams.get("pageSize") ?? searchParams.get("limit"));
+        const targetPath = searchParams.get("targetPath") ?? undefined;
+        const overwrite = parseBoolean(searchParams.get("overwrite"));
+        const exportedAfter = parseIsoDate(searchParams.get("exportedAfter") ?? searchParams.get("after"));
+        const exportedBefore = parseIsoDate(searchParams.get("exportedBefore") ?? searchParams.get("before"));
+        const result = await deps.service.listOpenSpecExportHistoryPage({ trackId, page, pageSize, targetPath, overwrite, exportedAfter, exportedBefore });
         sendJson(response, 200, {
-          exports: await deps.service.listOpenSpecExportHistory({ trackId, limit }),
+          exports: result.items,
+          meta: buildListMeta({ page, pageSize }, { sortBy: "exportedAt", sortOrder: "desc" }, result.meta),
         });
         return;
       }
