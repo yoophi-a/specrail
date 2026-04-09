@@ -34,6 +34,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - resume and cancel a run
 - expose run events through JSON and SSE APIs
 - list tracks and runs with filtering, pagination, and sorting
+- import/export track artifact bundles through a first OpenSpec file adapter boundary
 
 ## Current MVP status
 
@@ -47,6 +48,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - SSE event streaming for run events
 - request validation and structured API errors
 - automated API/config/adapter tests
+- file-based OpenSpec bundle import/export scaffold in `@specrail/adapters`
 
 ### Not implemented yet
 - authentication and multi-user access control
@@ -226,6 +228,46 @@ curl -X POST http://127.0.0.1:3000/tracks \
   -d '{"title":"Executor MVP","description":"Persist command metadata and launch runs.","priority":"high"}'
 ```
 
+## OpenSpec adapter boundary
+
+`@specrail/adapters` now exposes a transport-neutral `OpenSpecAdapter` contract plus a first `FileOpenSpecAdapter` implementation.
+
+Current file bundle shape:
+
+```text
+<bundle-dir>/
+  openspec.json
+  spec.md
+  plan.md
+  tasks.md
+```
+
+Manifest example:
+
+```json
+{
+  "metadata": {
+    "version": 1,
+    "format": "specrail.openspec.bundle",
+    "exportedAt": "2026-04-10T01:02:03.000Z",
+    "generatedBy": "specrail"
+  },
+  "track": {
+    "id": "track-openspec-1"
+  },
+  "files": {
+    "spec": "spec.md",
+    "plan": "plan.md",
+    "tasks": "tasks.md"
+  }
+}
+```
+
+Notes:
+- the bundle stores full `Track` metadata in `openspec.json`
+- markdown artifacts stay as separate files so they remain reviewable and diff-friendly
+- this is an adapter boundary and scaffold, not yet wired into API routes or sync automation
+
 ## Verification source of truth
 
 The docs above are aligned to the current MVP implementation and tests in:
@@ -234,6 +276,7 @@ The docs above are aligned to the current MVP implementation and tests in:
 - `packages/core/src/services/specrail-service.ts`
 - `packages/config/src/artifacts.ts`
 - `packages/adapters/src/providers/codex-adapter.stub.ts`
+- `packages/adapters/src/providers/file-openspec-adapter.ts`
 
 ## Related research
 
