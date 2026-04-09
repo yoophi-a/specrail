@@ -21,6 +21,10 @@ import type {
   OpenSpecImportResolution,
   OpenSpecImportResolutionChoice,
   OpenSpecImportResolutionGuide,
+  OpenSpecImportOperatorGuide,
+  OpenSpecImportOperatorChoiceSummary,
+  OpenSpecImportOperatorExample,
+  OpenSpecImportPresetSummary,
   OpenSpecImportResolutionPreset,
   OpenSpecImportResolutionPresetName,
   OpenSpecImportTrackResolutionField,
@@ -116,6 +120,38 @@ export const OPENSPEC_RESOLUTION_PRESETS: OpenSpecImportResolutionPreset[] = [
   },
 ];
 
+const OPENSPEC_CONFLICT_POLICY_GUIDANCE: OpenSpecImportOperatorGuide["conflictPolicies"] = [
+  {
+    name: "reject",
+    label: "Preview first",
+    description: "Safe default. Use dryRun=true to inspect conflicts before writing anything.",
+  },
+  {
+    name: "overwrite",
+    label: "Replace everything",
+    description: "Apply the imported bundle directly when you trust it as the new source of truth.",
+  },
+  {
+    name: "resolve",
+    label: "Preset + overrides",
+    description: "Start from a named preset, then keep specific existing fields or artifacts when needed.",
+  },
+];
+
+const OPENSPEC_FIELD_LABELS: Record<string, string> = {
+  title: "Track title",
+  description: "Track description",
+  status: "Workflow status",
+  specStatus: "Spec approval",
+  planStatus: "Plan approval",
+  priority: "Priority",
+  githubIssue: "GitHub issue link",
+  githubPullRequest: "GitHub pull request link",
+  spec: "Spec artifact",
+  plan: "Plan artifact",
+  tasks: "Tasks artifact",
+};
+
 function cloneResolution(resolution?: OpenSpecImportResolution): OpenSpecImportResolution {
   return {
     ...(resolution?.track ? { track: { ...resolution.track } } : {}),
@@ -158,6 +194,109 @@ function buildOpenSpecResolutionGuide(
     policies: OPENSPEC_SOURCE_OF_TRUTH_POLICIES.map((policy) => ({ ...policy })),
     presets: OPENSPEC_RESOLUTION_PRESETS.map((candidate) => ({ ...candidate, resolution: cloneResolution(candidate.resolution) })),
   };
+}
+
+function getEffectiveResolutionChoice(
+  guide: OpenSpecImportResolutionGuide,
+  policy: OpenSpecSourceOfTruthPolicy,
+): OpenSpecImportResolutionChoice {
+  const groupResolution = guide.effectiveResolution[policy.group];
+  const choice = groupResolution?.[policy.field as keyof typeof groupResolution];
+  return choice ?? policy.defaultChoice;
+}
+
+function buildOperatorChoiceSummaries(guide: OpenSpecImportResolutionGuide): OpenSpecImportOperatorChoiceSummary[] {
+  return guide.policies.map((policy) => ({
+    group: policy.group,
+    field: policy.field,
+    label: OPENSPEC_FIELD_LABELS[policy.field] ?? policy.field,
+    choice: getEffectiveResolutionChoice(guide, policy),
+    sourceOfTruth: policy.sourceOfTruth,
+    rationale: policy.rationale,
+  }));
+}
+
+function summarizePreset(preset: OpenSpecImportResolutionPreset, guide: OpenSpecImportResolutionGuide): OpenSpecImportPresetSummary {
+  const presetGuide = buildOpenSpecResolutionGuide(preset.name);
+  const choices = buildOperatorChoiceSummaries(presetGuide);
+  return {
+    name: preset.name,
+    label: preset.label,
+    description: preset.description,
+    highlights: [
+      `${preset.label} keeps ${choices.filter((choice) => choice.choice === "existing").length} fields/artifacts from SpecRail.`,
+      `${preset.label} takes ${choices.filter((choice) => choice.choice === "incoming").length} fields/artifacts from the imported bundle.`,
+      guide.presetApplied === preset.name ? "Currently selected for this import request." : "Available as an import preset.",
+    ],
+    choices,
+  };
+}
+
+function buildOpenSpecOperatorExamples(): OpenSpecImportOperatorExample[] {
+  return [
+    {
+      id: "reject-preview",
+      label: "Preview before applying",
+      description: "Inspect the bundle and conflict details without writing track state or artifacts.",
+      request: { dryRun: true, conflictPolicy: "reject" },
+      explanation: [
+        "Use this first when operators need to see what will change.",
+        "If conflicts appear, keep the same path and retry with overwrite or resolve.",
+      ],
+    },
+    {
+      id: "overwrite-apply",
+      label: "Apply the bundle as-is",
+      description: "Replace the current track/artifacts with the imported bundle when the incoming package should win.",
+      request: { conflictPolicy: "overwrite", resolutionPreset: "preferIncomingAll" },
+      explanation: [
+        "This is the fastest apply flow once preview looks correct.",
+        "Useful for restoring or syncing a track from a trusted OpenSpec export.",
+      ],
+    },
+    {
+      id: "policy-defaults-resolve",
+      label: "Use policy defaults",
+      description: "Keep SpecRail workflow metadata while taking imported descriptive fields and artifacts.",
+      request: { conflictPolicy: "resolve", resolutionPreset: "policyDefaults" },
+      explanation: [
+        "Good operator default when importing work into an active SpecRail track.",
+        "Statuses, priority, and GitHub links stay local unless you explicitly override them.",
+      ],
+    },
+    {
+      id: "preset-with-override",
+      label: "Start from a preset, then override one field",
+      description: "Combine a named preset with explicit exceptions for the fields that should stay local.",
+      request: { conflictPolicy: "resolve", resolutionPreset: "policyDefaults", resolution: { artifacts: { plan: "existing" } } },
+      explanation: [
+        "Operators can reuse a preset instead of building a full resolution map every time.",
+        "Explicit resolution entries override the preset only where needed.",
+      ],
+    },
+  ];
+}
+
+function buildOpenSpecImportOperatorGuide(guide: OpenSpecImportResolutionGuide): OpenSpecImportOperatorGuide {
+  return {
+    recommendedFlow: [
+      "Preview with dryRun=true first.",
+      "Pick a named preset that matches the workflow you want.",
+      "Add explicit resolution overrides only for the fields that should behave differently.",
+      "Retry with conflictPolicy=resolve or overwrite once the preview looks right.",
+    ],
+    conflictPolicies: OPENSPEC_CONFLICT_POLICY_GUIDANCE.map((policy) => ({ ...policy })),
+    selectedPreset: guide.presetApplied ? summarizePreset(getResolutionPreset(guide.presetApplied) ?? OPENSPEC_RESOLUTION_PRESETS[0], guide) : null,
+    effectiveChoices: buildOperatorChoiceSummaries(guide),
+    examples: buildOpenSpecOperatorExamples(),
+  };
+}
+
+export function getOpenSpecImportOperatorGuide(input?: {
+  resolutionPreset?: OpenSpecImportResolutionPresetName;
+  resolution?: OpenSpecImportResolution;
+}): OpenSpecImportOperatorGuide {
+  return buildOpenSpecImportOperatorGuide(buildOpenSpecResolutionGuide(input?.resolutionPreset, input?.resolution));
 }
 
 export interface TrackArtifactWriterInput {
@@ -324,6 +463,7 @@ export interface ImportTrackFromOpenSpecResult {
   importHistory: OpenSpecImportRecord[];
   resolvedArtifacts: OpenSpecTrackArtifacts;
   resolutionGuide: OpenSpecImportResolutionGuide;
+  operatorGuide: OpenSpecImportOperatorGuide;
   conflict: {
     hasConflict: boolean;
     reason: "track_id_exists" | null;
@@ -761,6 +901,13 @@ export class SpecRailService {
     };
   }
 
+  getOpenSpecImportHelp(input?: {
+    resolutionPreset?: OpenSpecImportResolutionPresetName;
+    resolution?: OpenSpecImportResolution;
+  }): OpenSpecImportOperatorGuide {
+    return getOpenSpecImportOperatorGuide(input);
+  }
+
   async listOpenSpecImportHistory(input: OpenSpecImportHistoryListInput = {}): Promise<OpenSpecImportHistoryEntry[]> {
     const tracks = input.trackId
       ? [await this.dependencies.trackRepository.getById(input.trackId)].filter((track): track is Track => track !== null)
@@ -882,6 +1029,7 @@ export class SpecRailService {
     const conflictPolicy = input.conflictPolicy ?? "reject";
     const action = existingTrack ? "updated" : "created";
     const resolutionGuide = buildOpenSpecResolutionGuide(input.resolutionPreset, input.resolution);
+    const operatorGuide = buildOpenSpecImportOperatorGuide(resolutionGuide);
     const provenance: OpenSpecImportRecord = {
       id: `openspec-import-${this.idGenerator()}`,
       source: input.source,
@@ -911,6 +1059,7 @@ export class SpecRailService {
           importHistory: track.openSpecImportHistory ?? [],
           resolvedArtifacts,
           resolutionGuide,
+          operatorGuide,
           conflict,
         };
       }
@@ -931,6 +1080,7 @@ export class SpecRailService {
         importHistory: track.openSpecImportHistory ?? [],
         resolvedArtifacts,
         resolutionGuide,
+        operatorGuide,
         conflict,
       };
     }
@@ -958,6 +1108,7 @@ export class SpecRailService {
       importHistory: track.openSpecImportHistory ?? [],
       resolvedArtifacts,
       resolutionGuide,
+      operatorGuide,
       conflict,
     };
   }

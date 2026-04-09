@@ -113,6 +113,48 @@ export interface OpenSpecImportResolutionGuide {
   presets: OpenSpecImportResolutionPreset[];
 }
 
+export interface OpenSpecImportOperatorChoiceSummary {
+  group: OpenSpecImportResolutionFieldGroup;
+  field: OpenSpecImportTrackResolutionField | OpenSpecImportArtifactResolutionField;
+  label: string;
+  choice: OpenSpecImportResolutionChoice;
+  sourceOfTruth: "openspec" | "specrail";
+  rationale: string;
+}
+
+export interface OpenSpecImportPresetSummary {
+  name: OpenSpecImportResolutionPresetName;
+  label: string;
+  description: string;
+  highlights: string[];
+  choices: OpenSpecImportOperatorChoiceSummary[];
+}
+
+export interface OpenSpecImportOperatorExample {
+  id: "reject-preview" | "overwrite-apply" | "policy-defaults-resolve" | "preset-with-override";
+  label: string;
+  description: string;
+  request: {
+    dryRun?: boolean;
+    conflictPolicy?: OpenSpecImportConflictPolicy;
+    resolutionPreset?: OpenSpecImportResolutionPresetName;
+    resolution?: OpenSpecImportResolution;
+  };
+  explanation: string[];
+}
+
+export interface OpenSpecImportOperatorGuide {
+  recommendedFlow: string[];
+  conflictPolicies: Array<{
+    name: OpenSpecImportConflictPolicy;
+    label: string;
+    description: string;
+  }>;
+  selectedPreset: OpenSpecImportPresetSummary | null;
+  effectiveChoices: OpenSpecImportOperatorChoiceSummary[];
+  examples: OpenSpecImportOperatorExample[];
+}
+
 export interface OpenSpecImportRecord {
   id: string;
   source: {

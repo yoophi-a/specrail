@@ -1893,7 +1893,41 @@ test("SpecRailService previews OpenSpec imports and rejects collisions unless ov
   assert.equal(collisionPreview.conflict.reason, "track_id_exists");
   assert.ok(collisionPreview.conflict.details.some((detail) => detail.field === "artifacts.spec"));
   assert.equal(collisionPreview.provenance.source.path, path.join(rootDir, "bundle"));
+  assert.equal(collisionPreview.operatorGuide.selectedPreset, null);
+  assert.ok(collisionPreview.operatorGuide.examples.some((example) => example.id === "policy-defaults-resolve"));
   assert.equal(writes.length, 1);
+});
+
+test("SpecRailService exposes operator-facing OpenSpec import help for preset selection", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-openspec-help-"));
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() { throw new Error("should not be called"); } },
+    executor: {
+      name: "codex",
+      async spawn() { throw new Error("should not be called"); },
+      async resume() { throw new Error("should not be called"); },
+      async cancel() { throw new Error("should not be called"); },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+  });
+
+  const help = service.getOpenSpecImportHelp({ resolutionPreset: "policyDefaults" });
+  assert.deepEqual(help.recommendedFlow.slice(0, 2), [
+    "Preview with dryRun=true first.",
+    "Pick a named preset that matches the workflow you want.",
+  ]);
+  assert.equal(help.selectedPreset?.name, "policyDefaults");
+  assert.ok(help.selectedPreset?.choices.some((choice) => choice.field === "status" && choice.choice === "existing"));
+  assert.ok(help.examples.some((example) => example.id === "preset-with-override"));
+  assert.ok(help.conflictPolicies.some((policy) => policy.name === "overwrite"));
 });
 
 test("SpecRailService resolves OpenSpec conflicts with field-level keep-existing choices and lists import history", async () => {
@@ -2025,6 +2059,8 @@ test("SpecRailService resolves OpenSpec conflicts with field-level keep-existing
   assert.equal(result.resolutionGuide.effectiveResolution.artifacts?.plan, "incoming");
   assert.ok(result.resolutionGuide.policies.some((policy) => policy.field === "status" && policy.defaultChoice === "existing"));
   assert.ok(result.resolutionGuide.presets.some((preset) => preset.name === "preferIncomingArtifacts"));
+  assert.equal(result.operatorGuide.selectedPreset?.name, "policyDefaults");
+  assert.ok(result.operatorGuide.effectiveChoices.some((choice) => choice.field === "plan" && choice.choice === "incoming"));
 
   const importInspection = await service.getTrackOpenSpecImports(created.id);
   assert.ok(importInspection);

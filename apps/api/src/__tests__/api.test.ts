@@ -656,6 +656,7 @@ test("API previews OpenSpec imports and reports collisions before overwrite", as
       applied: boolean;
       conflictPolicy: string;
       provenance: { source: { path: string } };
+      operatorGuide: { examples: Array<{ id: string }> };
       conflict: { hasConflict: boolean; reason: string | null; details: Array<{ field: string }> };
     };
     assert.equal(preview.action, "updated");
@@ -665,6 +666,7 @@ test("API previews OpenSpec imports and reports collisions before overwrite", as
     assert.equal(preview.conflict.hasConflict, true);
     assert.equal(preview.conflict.reason, "track_id_exists");
     assert.ok(preview.conflict.details.some((detail) => detail.field === "artifacts.spec"));
+    assert.ok(preview.operatorGuide.examples.some((example) => example.id === "reject-preview"));
 
     const conflictResponse = await fetch(`${baseUrl}/admin/openspec/import`, {
       method: "POST",
@@ -678,6 +680,25 @@ test("API previews OpenSpec imports and reports collisions before overwrite", as
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     const getTrackPayload = (await getTrackResponse.json()) as { artifacts: { spec: string } };
     assert.notEqual(getTrackPayload.artifacts.spec, "# Preview only\n");
+  });
+});
+
+test("API exposes OpenSpec import help for preset discovery", async () => {
+  await withServer(async (baseUrl) => {
+    const helpResponse = await fetch(`${baseUrl}/admin/openspec/import/help?resolutionPreset=policyDefaults`);
+    assert.equal(helpResponse.status, 200);
+    const help = (await helpResponse.json()) as {
+      operatorGuide: {
+        selectedPreset: { name: string; choices: Array<{ field: string; choice: string }> } | null;
+        recommendedFlow: string[];
+        examples: Array<{ id: string }>;
+      };
+    };
+
+    assert.equal(help.operatorGuide.selectedPreset?.name, "policyDefaults");
+    assert.ok(help.operatorGuide.selectedPreset?.choices.some((choice) => choice.field === "status" && choice.choice === "existing"));
+    assert.ok(help.operatorGuide.recommendedFlow.includes("Preview with dryRun=true first."));
+    assert.ok(help.operatorGuide.examples.some((example) => example.id === "preset-with-override"));
   });
 });
 
@@ -731,6 +752,7 @@ test("API resolves OpenSpec conflicts with selective keep-existing choices", asy
       };
       resolvedArtifacts: { spec: string; plan: string };
       resolutionGuide: { presetApplied: string; effectiveResolution: { track: { status: string } }; policies: Array<{ field: string }>; presets: Array<{ name: string }> };
+      operatorGuide: { selectedPreset: { name: string } | null; effectiveChoices: Array<{ field: string; choice: string }> };
     };
     assert.equal(resolved.track.title, "Existing resolve track");
     assert.equal(resolved.track.description, "Incoming description");
@@ -742,6 +764,8 @@ test("API resolves OpenSpec conflicts with selective keep-existing choices", asy
     assert.equal(resolved.resolutionGuide.effectiveResolution.track.status, "existing");
     assert.ok(resolved.resolutionGuide.policies.some((policy) => policy.field === "status"));
     assert.ok(resolved.resolutionGuide.presets.some((preset) => preset.name === "preserveWorkflowState"));
+    assert.equal(resolved.operatorGuide.selectedPreset?.name, "policyDefaults");
+    assert.ok(resolved.operatorGuide.effectiveChoices.some((choice) => choice.field === "plan" && choice.choice === "incoming"));
     assert.notEqual(resolved.resolvedArtifacts.spec, "# Keep existing spec\n");
     assert.equal(resolved.resolvedArtifacts.plan, "# Incoming plan\n");
 

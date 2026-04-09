@@ -77,6 +77,10 @@ interface OpenSpecImportRequestBody {
   };
 }
 
+interface OpenSpecImportHelpQuery {
+  resolutionPreset?: OpenSpecImportResolutionPresetName;
+}
+
 interface TrackListQuery {
   status?: TrackStatus;
   priority?: TrackRequestBody["priority"];
@@ -835,6 +839,22 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           resolution: body.resolution,
         });
         sendJson(response, 200, result);
+        return;
+      }
+
+      if (method === "GET" && segments.length === 4 && segments[0] === "admin" && segments[1] === "openspec" && segments[2] === "import" && segments[3] === "help") {
+        const searchParams = getSearchParams(request);
+        const resolutionPreset = (searchParams.get("resolutionPreset") ?? undefined) as OpenSpecImportHelpQuery["resolutionPreset"];
+
+        if (resolutionPreset !== undefined && !OPENSPEC_RESOLUTION_PRESETS.some((preset) => preset.name === resolutionPreset)) {
+          throw new RequestValidationError("request validation failed", [
+            { field: "resolutionPreset", message: `must be one of ${OPENSPEC_RESOLUTION_PRESETS.map((preset) => preset.name).join(", ")}` },
+          ]);
+        }
+
+        sendJson(response, 200, {
+          operatorGuide: deps.service.getOpenSpecImportHelp({ resolutionPreset }),
+        });
         return;
       }
 
