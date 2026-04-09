@@ -51,6 +51,12 @@ export interface CommandExecutionMetadata {
   environment?: Record<string, string>;
 }
 
+export interface ExecutionSummary {
+  eventCount: number;
+  lastEventSummary?: string;
+  lastEventAt?: string;
+}
+
 export interface Execution {
   id: string;
   trackId: string;
@@ -60,6 +66,7 @@ export interface Execution {
   branchName: string;
   sessionRef?: string;
   command?: CommandExecutionMetadata;
+  summary?: ExecutionSummary;
   status: ExecutionStatus;
   createdAt: string;
   startedAt?: string;

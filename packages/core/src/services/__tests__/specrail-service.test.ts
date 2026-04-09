@@ -144,6 +144,11 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(run.sessionRef, "session:run-run-a");
   assert.equal(run.command?.command, "codex");
   assert.equal(run.status, "running");
+  assert.deepEqual(run.summary, {
+    eventCount: 2,
+    lastEventSummary: "Prepared Codex command",
+    lastEventAt: "2026-04-09T03:00:00.000Z",
+  });
 
   const resumedRun = await service.resumeRun({
     runId: run.id,
@@ -152,10 +157,20 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(resumedRun.command?.resumeSessionRef, "session:run-run-a");
   assert.equal(resumedRun.command?.prompt, "Continue with verification");
   assert.equal(resumedRun.status, "running");
+  assert.deepEqual(resumedRun.summary, {
+    eventCount: 3,
+    lastEventSummary: "Run resumed",
+    lastEventAt: "2026-04-09T03:05:00.000Z",
+  });
 
   const cancelledRun = await service.cancelRun({ runId: run.id });
   assert.equal(cancelledRun.status, "cancelled");
   assert.equal(cancelledRun.finishedAt, "2026-04-09T03:10:00.000Z");
+  assert.deepEqual(cancelledRun.summary, {
+    eventCount: 4,
+    lastEventSummary: "Run cancelled",
+    lastEventAt: "2026-04-09T03:10:00.000Z",
+  });
 
   const persistedRun = await service.getRun(run.id);
   assert.deepEqual(persistedRun, cancelledRun);

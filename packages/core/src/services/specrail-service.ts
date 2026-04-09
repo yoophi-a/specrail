@@ -94,6 +94,16 @@ export interface CancelRunInput {
   runId: string;
 }
 
+function buildExecutionSummary(events: ExecutionEvent[]): Execution["summary"] {
+  const lastEvent = events.at(-1);
+
+  return {
+    eventCount: events.length,
+    lastEventSummary: lastEvent?.summary,
+    lastEventAt: lastEvent?.timestamp,
+  };
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -163,6 +173,7 @@ export class SpecRailService {
       branchName: `specrail/${executionId}`,
       sessionRef: launch.sessionRef,
       command: launch.command,
+      summary: buildExecutionSummary(launch.events),
       status: "running",
       createdAt,
       startedAt: createdAt,
@@ -192,9 +203,11 @@ export class SpecRailService {
       profile: execution.profile,
     });
 
+    const nextEvents = [...(await this.dependencies.eventStore.listByExecution(execution.id)), ...launch.events];
     const resumedExecution: Execution = {
       ...execution,
       command: launch.command,
+      summary: buildExecutionSummary(nextEvents),
       status: "running",
       startedAt: execution.startedAt ?? this.now(),
     };
@@ -222,8 +235,10 @@ export class SpecRailService {
       profile: execution.profile,
     });
 
+    const nextEvents = [...(await this.dependencies.eventStore.listByExecution(execution.id)), cancellationEvent];
     const cancelledExecution: Execution = {
       ...execution,
+      summary: buildExecutionSummary(nextEvents),
       status: "cancelled",
       finishedAt: this.now(),
     };

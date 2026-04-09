@@ -243,21 +243,36 @@ test("API supports resuming and cancelling a run", async () => {
 
     assert.equal(resumeResponse.status, 200);
     const resumedPayload = (await resumeResponse.json()) as {
-      run: { id: string; status: string; command?: { prompt?: string; resumeSessionRef?: string } };
+      run: {
+        id: string;
+        status: string;
+        command?: { prompt?: string; resumeSessionRef?: string };
+        summary?: { eventCount: number; lastEventSummary?: string };
+      };
     };
     assert.equal(resumedPayload.run.id, runPayload.run.id);
     assert.equal(resumedPayload.run.status, "running");
     assert.equal(resumedPayload.run.command?.prompt, "Continue with verification");
     assert.ok(resumedPayload.run.command?.resumeSessionRef);
+    assert.equal(resumedPayload.run.summary?.eventCount, 3);
+    assert.match(resumedPayload.run.summary?.lastEventSummary ?? "", /Resumed Codex session/);
 
     const cancelResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/cancel`, {
       method: "POST",
     });
 
     assert.equal(cancelResponse.status, 200);
-    const cancelledPayload = (await cancelResponse.json()) as { run: { status: string; finishedAt?: string } };
+    const cancelledPayload = (await cancelResponse.json()) as {
+      run: {
+        status: string;
+        finishedAt?: string;
+        summary?: { eventCount: number; lastEventSummary?: string; lastEventAt?: string };
+      };
+    };
     assert.equal(cancelledPayload.run.status, "cancelled");
     assert.ok(cancelledPayload.run.finishedAt);
+    assert.equal(cancelledPayload.run.summary?.eventCount, 4);
+    assert.equal(cancelledPayload.run.summary?.lastEventSummary, `Cancelled Codex session ${runPayload.run.id}-codex`);
 
     const eventsResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
     const eventsPayload = (await eventsResponse.json()) as { events: Array<{ type: string; summary: string }> };
