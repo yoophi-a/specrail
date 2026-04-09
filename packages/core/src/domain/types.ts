@@ -62,6 +62,24 @@ export interface TrackInspection {
   githubRunCommentSync: GitHubRunCommentSyncState | null;
 }
 
+export interface GitHubIntegrationSummary {
+  linkedTargetCount: number;
+  syncedTargetCount: number;
+  lastPublishedAt?: string;
+  lastSyncStatus?: "success" | "failed" | "mixed";
+  lastSyncError?: string;
+}
+
+export interface TrackIntegrationsInspection {
+  trackId: string;
+  github: {
+    issue?: GitHubIssueReference;
+    pullRequest?: GitHubPullRequestReference;
+    runCommentSync: GitHubRunCommentSyncState | null;
+    summary: GitHubIntegrationSummary;
+  };
+}
+
 export interface RunInspection {
   run: Execution;
   githubRunCommentSync: GitHubRunCommentSyncState | null;

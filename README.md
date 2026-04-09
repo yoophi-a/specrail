@@ -75,6 +75,9 @@ Current endpoints in `apps/api/src/index.ts`:
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
   - also returns `githubRunCommentSync`, when present, with persisted target comment ids, last sync status, last sync error, and last published run info
+- `GET /tracks/:trackId/integrations`
+  - lightweight integration inspection route for polling/debug tooling without artifact payloads
+  - returns linked GitHub issue/PR references, raw `runCommentSync`, and summary fields like `linkedTargetCount`, `syncedTargetCount`, `lastPublishedAt`, `lastSyncStatus`, and `lastSyncError`
 - `PATCH /tracks/:trackId`
   - update workflow state
   - body: any of `{ status, specStatus, planStatus, githubIssue, githubPullRequest }`

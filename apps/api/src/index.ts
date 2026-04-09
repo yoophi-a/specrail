@@ -628,6 +628,18 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "GET" && segments.length === 3 && segments[0] === "tracks" && segments[2] === "integrations") {
+        const inspection = await deps.service.getTrackIntegrationsInspection(segments[1] ?? "");
+
+        if (!inspection) {
+          sendError(response, 404, "not_found", "track not found");
+          return;
+        }
+
+        sendJson(response, 200, inspection);
+        return;
+      }
+
       if (method === "GET" && segments.length === 2 && segments[0] === "tracks") {
         const inspection = await deps.service.getTrackInspection(segments[1] ?? "");
 

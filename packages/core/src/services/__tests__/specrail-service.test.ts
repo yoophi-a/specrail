@@ -1153,6 +1153,85 @@ test("SpecRailService exposes track and run inspections with persisted GitHub sy
       lastSyncStatus: "success",
     },
   ]);
+
+  const integrationsInspection = await service.getTrackIntegrationsInspection(track.id);
+  assert.equal(integrationsInspection?.trackId, track.id);
+  assert.deepEqual(integrationsInspection?.github.issue, {
+    number: 32,
+    url: "https://github.com/yoophi-a/specrail/issues/32",
+  });
+  assert.equal(integrationsInspection?.github.pullRequest, undefined);
+  assert.deepEqual(integrationsInspection?.github.runCommentSync, {
+        id: track.id,
+        trackId: track.id,
+        updatedAt: "2026-04-10T00:30:00.000Z",
+        comments: [
+          {
+            target: { kind: "issue", number: 32, url: "https://github.com/yoophi-a/specrail/issues/32" },
+            commentId: 3201,
+            lastRunId: run.id,
+            lastRunStatus: "running",
+            lastPublishedAt: "2026-04-10T00:25:00.000Z",
+            lastSyncStatus: "success",
+          },
+        ],
+      });
+  assert.deepEqual(integrationsInspection?.github.summary, {
+    linkedTargetCount: 1,
+    syncedTargetCount: 1,
+    lastPublishedAt: "2026-04-10T00:25:00.000Z",
+    lastSyncStatus: "success",
+  });
+});
+
+test("SpecRailService exposes empty GitHub integration inspection summaries without sync state", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-integrations-empty-"));
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("should not be called");
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => "2026-04-10T00:00:00.000Z",
+    idGenerator: () => "track-empty-integrations",
+  });
+
+  const track = await service.createTrack({
+    title: "Inspect empty integration state",
+    description: "Surface linked GitHub references without sync metadata.",
+    githubIssue: { number: 33, url: "https://github.com/yoophi-a/specrail/issues/33" },
+    githubPullRequest: { number: 34, url: "https://github.com/yoophi-a/specrail/pull/34" },
+  });
+
+  assert.deepEqual(await service.getTrackIntegrationsInspection(track.id), {
+    trackId: track.id,
+    github: {
+      issue: { number: 33, url: "https://github.com/yoophi-a/specrail/issues/33" },
+      pullRequest: { number: 34, url: "https://github.com/yoophi-a/specrail/pull/34" },
+      runCommentSync: null,
+      summary: {
+        linkedTargetCount: 2,
+        syncedTargetCount: 0,
+      },
+    },
+  });
 });
 
 test("SpecRailService persists GitHub run comment sync metadata and passes it back on republish", async () => {

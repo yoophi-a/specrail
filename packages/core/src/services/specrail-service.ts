@@ -22,6 +22,7 @@ import type {
   RunInspection,
   Track,
   TrackInspection,
+  TrackIntegrationsInspection,
   TrackStatus,
 } from "../domain/types.js";
 import { NotFoundError } from "../errors.js";
@@ -295,6 +296,31 @@ function listGitHubRunCommentTargets(track: Pick<Track, "githubIssue" | "githubP
   );
 }
 
+function summarizeGitHubIntegration(
+  track: Pick<Track, "githubIssue" | "githubPullRequest">,
+  syncState: GitHubRunCommentSyncState | null,
+): TrackIntegrationsInspection["github"]["summary"] {
+  const linkedTargetCount = listGitHubRunCommentTargets(track).length;
+  const syncedTargetCount = syncState?.comments.length ?? 0;
+
+  if (!syncState || syncState.comments.length === 0) {
+    return { linkedTargetCount, syncedTargetCount };
+  }
+
+  const sortedComments = [...syncState.comments].sort((left, right) => right.lastPublishedAt.localeCompare(left.lastPublishedAt));
+  const lastComment = sortedComments[0];
+  const statuses = new Set(syncState.comments.map((comment) => comment.lastSyncStatus));
+  const lastErrorComment = sortedComments.find((comment) => comment.lastSyncError);
+
+  return {
+    linkedTargetCount,
+    syncedTargetCount,
+    lastPublishedAt: lastComment?.lastPublishedAt,
+    lastSyncStatus: statuses.size > 1 ? "mixed" : lastComment?.lastSyncStatus,
+    ...(lastErrorComment?.lastSyncError ? { lastSyncError: lastErrorComment.lastSyncError } : {}),
+  };
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -347,6 +373,25 @@ export class SpecRailService {
     return {
       track,
       githubRunCommentSync: (await this.dependencies.githubRunCommentSyncStore?.getByTrackId(track.id)) ?? null,
+    };
+  }
+
+  async getTrackIntegrationsInspection(trackId: string): Promise<TrackIntegrationsInspection | null> {
+    const track = await this.dependencies.trackRepository.getById(trackId);
+    if (!track) {
+      return null;
+    }
+
+    const githubRunCommentSync = (await this.dependencies.githubRunCommentSyncStore?.getByTrackId(track.id)) ?? null;
+
+    return {
+      trackId: track.id,
+      github: {
+        issue: track.githubIssue,
+        pullRequest: track.githubPullRequest,
+        runCommentSync: githubRunCommentSync,
+        summary: summarizeGitHubIntegration(track, githubRunCommentSync),
+      },
     };
   }
 

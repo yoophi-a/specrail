@@ -137,6 +137,23 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
     assert.equal(trackResponse.status, 201);
     const trackPayload = (await trackResponse.json()) as { track: { id: string } };
 
+    const emptyIntegrationsResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/integrations`);
+    assert.equal(emptyIntegrationsResponse.status, 200);
+    assert.deepEqual(await emptyIntegrationsResponse.json(), {
+      trackId: trackPayload.track.id,
+      github: {
+        issue: {
+          number: 32,
+          url: "https://github.com/yoophi-a/specrail/issues/32",
+        },
+        runCommentSync: null,
+        summary: {
+          linkedTargetCount: 1,
+          syncedTargetCount: 0,
+        },
+      },
+    });
+
     const runResponse = await fetch(`${baseUrl}/runs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -178,6 +195,45 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
       )}\n`,
       "utf8",
     );
+
+    const integrationsResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/integrations`);
+    assert.equal(integrationsResponse.status, 200);
+    assert.deepEqual(await integrationsResponse.json(), {
+      trackId: trackPayload.track.id,
+      github: {
+        issue: {
+          number: 32,
+          url: "https://github.com/yoophi-a/specrail/issues/32",
+        },
+        runCommentSync: {
+          id: trackPayload.track.id,
+          trackId: trackPayload.track.id,
+          updatedAt: "2026-04-10T03:00:00.000Z",
+          comments: [
+            {
+              target: {
+                kind: "issue",
+                number: 32,
+                url: "https://github.com/yoophi-a/specrail/issues/32",
+              },
+              commentId: 3201,
+              lastRunId: runPayload.run.id,
+              lastRunStatus: "running",
+              lastPublishedAt: "2026-04-10T02:59:30.000Z",
+              lastSyncStatus: "failed",
+              lastSyncError: "GitHub temporarily unavailable",
+            },
+          ],
+        },
+        summary: {
+          linkedTargetCount: 1,
+          syncedTargetCount: 1,
+          lastPublishedAt: "2026-04-10T02:59:30.000Z",
+          lastSyncStatus: "failed",
+          lastSyncError: "GitHub temporarily unavailable",
+        },
+      },
+    });
 
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     assert.equal(getTrackResponse.status, 200);
