@@ -110,14 +110,24 @@ export interface CancelRunInput {
   runId: string;
 }
 
+export type SortOrder = "asc" | "desc";
+
 export interface ListTracksInput {
   status?: TrackStatus;
   priority?: Track["priority"];
+  page?: number;
+  pageSize?: number;
+  sortBy?: "updatedAt" | "createdAt" | "title" | "priority" | "status";
+  sortOrder?: SortOrder;
 }
 
 export interface ListRunsInput {
   trackId?: string;
   status?: ExecutionStatus;
+  page?: number;
+  pageSize?: number;
+  sortBy?: "createdAt" | "startedAt" | "finishedAt" | "status";
+  sortOrder?: SortOrder;
 }
 
 function buildExecutionSummary(events: ExecutionEvent[]): Execution["summary"] {
@@ -185,6 +195,18 @@ function mapTrackStatusFromExecution(status: ExecutionStatus): TrackStatus | nul
   }
 }
 
+function compareValues(left: string | undefined, right: string | undefined, sortOrder: SortOrder): number {
+  const leftValue = left ?? "";
+  const rightValue = right ?? "";
+  const compared = leftValue.localeCompare(rightValue);
+  return sortOrder === "asc" ? compared : -compared;
+}
+
+function paginateItems<T>(items: T[], page: number, pageSize: number): T[] {
+  const start = (page - 1) * pageSize;
+  return items.slice(start, start + pageSize);
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -228,11 +250,35 @@ export class SpecRailService {
 
   async listTracks(input: ListTracksInput = {}): Promise<Track[]> {
     const tracks = await this.dependencies.trackRepository.list();
+    const page = input.page ?? 1;
+    const pageSize = input.pageSize ?? 20;
+    const sortBy = input.sortBy ?? "updatedAt";
+    const sortOrder = input.sortOrder ?? "desc";
 
-    return tracks
+    const sorted = tracks
       .filter((track) => (input.status ? track.status === input.status : true))
       .filter((track) => (input.priority ? track.priority === input.priority : true))
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt));
+      .sort((left, right) => {
+        const primary = (() => {
+          switch (sortBy) {
+            case "createdAt":
+              return compareValues(left.createdAt, right.createdAt, sortOrder);
+            case "title":
+              return compareValues(left.title, right.title, sortOrder);
+            case "priority":
+              return compareValues(left.priority, right.priority, sortOrder);
+            case "status":
+              return compareValues(left.status, right.status, sortOrder);
+            case "updatedAt":
+            default:
+              return compareValues(left.updatedAt, right.updatedAt, sortOrder);
+          }
+        })();
+
+        return primary || compareValues(left.createdAt, right.createdAt, "desc") || compareValues(left.id, right.id, "desc");
+      });
+
+    return paginateItems(sorted, page, pageSize);
   }
 
   async updateTrack(input: UpdateTrackInput): Promise<Track> {
@@ -375,16 +421,33 @@ export class SpecRailService {
 
   async listRuns(input: ListRunsInput = {}): Promise<Execution[]> {
     const executions = await this.dependencies.executionRepository.list();
+    const page = input.page ?? 1;
+    const pageSize = input.pageSize ?? 20;
+    const sortBy = input.sortBy ?? "createdAt";
+    const sortOrder = input.sortOrder ?? "desc";
 
-    return executions
+    const sorted = executions
       .filter((execution) => (input.trackId ? execution.trackId === input.trackId : true))
       .filter((execution) => (input.status ? execution.status === input.status : true))
-      .sort(
-        (left, right) =>
-          right.createdAt.localeCompare(left.createdAt) ||
-          (right.startedAt ?? "").localeCompare(left.startedAt ?? "") ||
-          right.id.localeCompare(left.id),
-      );
+      .sort((left, right) => {
+        const primary = (() => {
+          switch (sortBy) {
+            case "startedAt":
+              return compareValues(left.startedAt, right.startedAt, sortOrder);
+            case "finishedAt":
+              return compareValues(left.finishedAt, right.finishedAt, sortOrder);
+            case "status":
+              return compareValues(left.status, right.status, sortOrder);
+            case "createdAt":
+            default:
+              return compareValues(left.createdAt, right.createdAt, sortOrder);
+          }
+        })();
+
+        return primary || compareValues(left.startedAt, right.startedAt, "desc") || compareValues(left.id, right.id, "desc");
+      });
+
+    return paginateItems(sorted, page, pageSize);
   }
 
   listRunEvents(runId: string): Promise<ExecutionEvent[]> {

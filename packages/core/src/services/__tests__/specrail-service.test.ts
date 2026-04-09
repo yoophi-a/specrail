@@ -220,6 +220,103 @@ test("SpecRailService throws when starting a run for a missing track", async () 
   await assert.rejects(() => service.cancelRun({ runId: "missing-run" }), /Run not found/);
 });
 
+test("SpecRailService applies explicit sorting and pagination for track and run listings", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-listing-"));
+
+  const nowValues = [
+    "2026-04-09T01:00:00.000Z",
+    "2026-04-09T01:00:00.000Z",
+    "2026-04-09T01:00:01.000Z",
+    "2026-04-09T01:00:01.000Z",
+    "2026-04-09T01:00:02.000Z",
+    "2026-04-09T01:00:02.000Z",
+    "2026-04-09T01:00:03.000Z",
+    "2026-04-09T01:00:04.000Z",
+    "2026-04-09T01:00:05.000Z",
+    "2026-04-09T01:00:06.000Z",
+    "2026-04-09T01:00:07.000Z",
+    "2026-04-09T01:00:08.000Z",
+  ];
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [
+            {
+              id: `${input.executionId}:started`,
+              executionId: input.executionId,
+              type: "task_status_changed",
+              timestamp: "2026-04-09T02:00:00.000Z",
+              source: "codex",
+              summary: "Run started",
+              payload: { status: "running" },
+            },
+          ],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => nowValues.shift() ?? "2026-04-09T01:00:05.000Z",
+    idGenerator: (() => {
+      const values = ["track-a", "track-b", "track-c", "run-a", "run-b", "run-c"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const trackC = await service.createTrack({ title: "Charlie", description: "C" });
+  const trackA = await service.createTrack({ title: "Alpha", description: "A" });
+  const trackB = await service.createTrack({ title: "Bravo", description: "B" });
+
+  const pagedTracks = await service.listTracks({ page: 2, pageSize: 1, sortBy: "title", sortOrder: "asc" });
+  assert.deepEqual(pagedTracks.map((track) => track.id), [trackB.id]);
+
+  const runA = await service.startRun({ trackId: trackC.id, prompt: "Run 1" });
+  const runB = await service.startRun({ trackId: trackC.id, prompt: "Run 2" });
+  const runC = await service.startRun({ trackId: trackC.id, prompt: "Run 3" });
+
+  const sortedRuns = await service.listRuns({
+    trackId: trackC.id,
+    sortBy: "createdAt",
+    sortOrder: "asc",
+  });
+  const pagedRuns = await service.listRuns({
+    trackId: trackC.id,
+    page: 2,
+    pageSize: 1,
+    sortBy: "createdAt",
+    sortOrder: "asc",
+  });
+  assert.deepEqual(pagedRuns.map((run) => run.id), [sortedRuns[1]?.id]);
+  assert.equal(runA.status, "running");
+  assert.equal(runB.status, "running");
+  assert.equal(runC.status, "running");
+  assert.equal(trackA.title, "Alpha");
+});
+
 test("SpecRailService reconciles execution records from adapter terminal events and track status", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-runtime-event-"));
 

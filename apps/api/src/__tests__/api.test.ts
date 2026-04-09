@@ -413,6 +413,87 @@ test("API lists tracks and runs with basic filters", async () => {
   });
 });
 
+test("API paginates track listings and returns sort metadata", async () => {
+  await withServer(async (baseUrl) => {
+    const titles = ["Charlie", "Alpha", "Bravo"];
+
+    for (const title of titles) {
+      const response = await fetch(`${baseUrl}/tracks`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description: `${title} description`,
+        }),
+      });
+
+      assert.equal(response.status, 201);
+    }
+
+    const listResponse = await fetch(`${baseUrl}/tracks?page=2&pageSize=1&sortBy=title&sortOrder=asc`);
+    assert.equal(listResponse.status, 200);
+
+    const listPayload = (await listResponse.json()) as {
+      tracks: Array<{ title: string }>;
+      meta: { page: number; pageSize: number; sortBy: string; sortOrder: string };
+    };
+
+    assert.deepEqual(listPayload.tracks.map((track) => track.title), ["Bravo"]);
+    assert.deepEqual(listPayload.meta, {
+      page: 2,
+      pageSize: 1,
+      sortBy: "title",
+      sortOrder: "asc",
+    });
+  });
+});
+
+test("API paginates run listings with explicit sort order", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Run pagination track",
+        description: "Exercise run pagination",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const runIds: string[] = [];
+    for (const prompt of ["Run 1", "Run 2", "Run 3"]) {
+      const runResponse = await fetch(`${baseUrl}/runs`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          trackId: trackPayload.track.id,
+          prompt,
+        }),
+      });
+
+      assert.equal(runResponse.status, 201);
+      const runPayload = (await runResponse.json()) as { run: { id: string } };
+      runIds.push(runPayload.run.id);
+    }
+
+    const listResponse = await fetch(`${baseUrl}/runs?trackId=${trackPayload.track.id}&page=2&pageSize=1&sortBy=createdAt&sortOrder=asc`);
+    assert.equal(listResponse.status, 200);
+
+    const listPayload = (await listResponse.json()) as {
+      runs: Array<{ id: string }>;
+      meta: { page: number; pageSize: number; sortBy: string; sortOrder: string };
+    };
+
+    assert.deepEqual(listPayload.runs.map((run) => run.id), [runIds[1]]);
+    assert.deepEqual(listPayload.meta, {
+      page: 2,
+      pageSize: 1,
+      sortBy: "createdAt",
+      sortOrder: "asc",
+    });
+  });
+});
+
 test("API validates track updates and returns 404 for missing tracks", async () => {
   await withServer(async (baseUrl) => {
     const missingTrackResponse = await fetch(`${baseUrl}/tracks/missing`, {
@@ -498,8 +579,14 @@ test("API returns structured validation and bad-request errors", async () => {
     const invalidTrackListResponse = await fetch(`${baseUrl}/tracks?priority=urgent&status=wat`);
     assert.equal(invalidTrackListResponse.status, 422);
 
+    const invalidTrackPaginationResponse = await fetch(`${baseUrl}/tracks?page=0&pageSize=101&sortBy=nope&sortOrder=sideways`);
+    assert.equal(invalidTrackPaginationResponse.status, 422);
+
     const invalidRunListResponse = await fetch(`${baseUrl}/runs?trackId=&status=wat`);
     assert.equal(invalidRunListResponse.status, 422);
+
+    const invalidRunPaginationResponse = await fetch(`${baseUrl}/runs?page=abc&pageSize=0&sortBy=nope&sortOrder=sideways`);
+    assert.equal(invalidRunPaginationResponse.status, 422);
 
     const malformedJsonResponse = await fetch(`${baseUrl}/tracks`, {
       method: "POST",

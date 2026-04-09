@@ -41,8 +41,10 @@ Current endpoints in `apps/api/src/index.ts`:
   - create a track
   - body: `{ title, description, priority? }`
 - `GET /tracks`
-  - list tracks ordered by most recently updated first
-  - query: `status?`, `priority?`
+  - list tracks with pagination and explicit sorting
+  - default sort: `sortBy=updatedAt&sortOrder=desc`
+  - query: `status?`, `priority?`, `page?=1`, `pageSize?=20`, `sortBy?=updatedAt|createdAt|title|priority|status`, `sortOrder?=asc|desc`
+  - response includes `meta: { page, pageSize, sortBy, sortOrder }`
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
 - `PATCH /tracks/:trackId`
@@ -54,8 +56,10 @@ Current endpoints in `apps/api/src/index.ts`:
   - start a run for a track
   - body: `{ trackId, prompt, profile? }`
 - `GET /runs`
-  - list runs ordered by newest first
-  - query: `trackId?`, `status?`
+  - list runs with pagination and explicit sorting
+  - default sort: `sortBy=createdAt&sortOrder=desc`
+  - query: `trackId?`, `status?`, `page?=1`, `pageSize?=20`, `sortBy?=createdAt|startedAt|finishedAt|status`, `sortOrder?=asc|desc`
+  - response includes `meta: { page, pageSize, sortBy, sortOrder }`
 - `GET /runs/:runId`
   - return persisted run metadata
 - `POST /runs/:runId/resume`
@@ -72,6 +76,7 @@ Current endpoints in `apps/api/src/index.ts`:
 - `400` for malformed JSON
 - `404` for missing tracks/runs
 - `422` for validation failures
+  - includes invalid pagination/sort params
 - `500` for unexpected server errors
 
 ## Artifact and state layout

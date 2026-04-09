@@ -53,11 +53,26 @@ interface ResumeRunRequestBody {
 interface TrackListQuery {
   status?: TrackStatus;
   priority?: TrackRequestBody["priority"];
+  page?: number;
+  pageSize?: number;
+  sortBy?: "updatedAt" | "createdAt" | "title" | "priority" | "status";
+  sortOrder?: "asc" | "desc";
 }
 
 interface RunListQuery {
   trackId?: string;
   status?: "created" | "queued" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
+  page?: number;
+  pageSize?: number;
+  sortBy?: "createdAt" | "startedAt" | "finishedAt" | "status";
+  sortOrder?: "asc" | "desc";
+}
+
+interface ListMeta {
+  page: number;
+  pageSize: number;
+  sortBy: string;
+  sortOrder: "asc" | "desc";
 }
 
 interface DefaultDependencies {
@@ -213,6 +228,30 @@ function isApprovalStatus(value: unknown): value is ApprovalStatus {
   return typeof value === "string" && APPROVAL_STATUSES.includes(value as ApprovalStatus);
 }
 
+function parsePositiveInteger(value: string | null): number | undefined {
+  if (value === null) {
+    return undefined;
+  }
+
+  if (!/^\d+$/.test(value)) {
+    return Number.NaN;
+  }
+
+  return Number.parseInt(value, 10);
+}
+
+function buildListMeta(query: { page?: number; pageSize?: number; sortBy?: string; sortOrder?: "asc" | "desc" }, defaults: {
+  sortBy: string;
+  sortOrder: "asc" | "desc";
+}): ListMeta {
+  return {
+    page: query.page ?? 1,
+    pageSize: query.pageSize ?? 20,
+    sortBy: query.sortBy ?? defaults.sortBy,
+    sortOrder: query.sortOrder ?? defaults.sortOrder,
+  };
+}
+
 function getNonEmptyStringDetail(field: string, value: unknown): ApiErrorDetail | null {
   if (typeof value !== "string") {
     return { field, message: "must be a string" };
@@ -319,6 +358,22 @@ function assertValidTrackListQuery(query: TrackListQuery): void {
     details.push({ field: "priority", message: "must be one of low, medium, high" });
   }
 
+  if (query.page !== undefined && (!Number.isInteger(query.page) || query.page < 1)) {
+    details.push({ field: "page", message: "must be an integer greater than or equal to 1" });
+  }
+
+  if (query.pageSize !== undefined && (!Number.isInteger(query.pageSize) || query.pageSize < 1 || query.pageSize > 100)) {
+    details.push({ field: "pageSize", message: "must be an integer between 1 and 100" });
+  }
+
+  if (query.sortBy !== undefined && !["updatedAt", "createdAt", "title", "priority", "status"].includes(query.sortBy)) {
+    details.push({ field: "sortBy", message: "must be one of updatedAt, createdAt, title, priority, status" });
+  }
+
+  if (query.sortOrder !== undefined && !["asc", "desc"].includes(query.sortOrder)) {
+    details.push({ field: "sortOrder", message: "must be one of asc, desc" });
+  }
+
   if (details.length > 0) {
     throw new RequestValidationError("request validation failed", details);
   }
@@ -336,6 +391,22 @@ function assertValidRunListQuery(query: RunListQuery): void {
     !["created", "queued", "running", "waiting_approval", "completed", "failed", "cancelled"].includes(query.status)
   ) {
     details.push({ field: "status", message: "must be a valid run status" });
+  }
+
+  if (query.page !== undefined && (!Number.isInteger(query.page) || query.page < 1)) {
+    details.push({ field: "page", message: "must be an integer greater than or equal to 1" });
+  }
+
+  if (query.pageSize !== undefined && (!Number.isInteger(query.pageSize) || query.pageSize < 1 || query.pageSize > 100)) {
+    details.push({ field: "pageSize", message: "must be an integer between 1 and 100" });
+  }
+
+  if (query.sortBy !== undefined && !["createdAt", "startedAt", "finishedAt", "status"].includes(query.sortBy)) {
+    details.push({ field: "sortBy", message: "must be one of createdAt, startedAt, finishedAt, status" });
+  }
+
+  if (query.sortOrder !== undefined && !["asc", "desc"].includes(query.sortOrder)) {
+    details.push({ field: "sortOrder", message: "must be one of asc, desc" });
   }
 
   if (details.length > 0) {
@@ -469,11 +540,15 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const query: TrackListQuery = {
           status: (searchParams.get("status") ?? undefined) as TrackStatus | undefined,
           priority: (searchParams.get("priority") ?? undefined) as TrackRequestBody["priority"] | undefined,
+          page: parsePositiveInteger(searchParams.get("page")),
+          pageSize: parsePositiveInteger(searchParams.get("pageSize")),
+          sortBy: (searchParams.get("sortBy") ?? undefined) as TrackListQuery["sortBy"],
+          sortOrder: (searchParams.get("sortOrder") ?? undefined) as TrackListQuery["sortOrder"],
         };
         assertValidTrackListQuery(query);
 
         const tracks = await deps.service.listTracks(query);
-        sendJson(response, 200, { tracks });
+        sendJson(response, 200, { tracks, meta: buildListMeta(query, { sortBy: "updatedAt", sortOrder: "desc" }) });
         return;
       }
 
@@ -518,11 +593,15 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const query: RunListQuery = {
           trackId: searchParams.get("trackId") ?? undefined,
           status: (searchParams.get("status") ?? undefined) as RunListQuery["status"],
+          page: parsePositiveInteger(searchParams.get("page")),
+          pageSize: parsePositiveInteger(searchParams.get("pageSize")),
+          sortBy: (searchParams.get("sortBy") ?? undefined) as RunListQuery["sortBy"],
+          sortOrder: (searchParams.get("sortOrder") ?? undefined) as RunListQuery["sortOrder"],
         };
         assertValidRunListQuery(query);
 
         const runs = await deps.service.listRuns(query);
-        sendJson(response, 200, { runs });
+        sendJson(response, 200, { runs, meta: buildListMeta(query, { sortBy: "createdAt", sortOrder: "desc" }) });
         return;
       }
 
