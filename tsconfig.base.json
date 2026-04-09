@@ -3,6 +3,12 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@specrail/core": ["packages/core/src/index.ts"],
+      "@specrail/config": ["packages/config/src/index.ts"],
+      "@specrail/adapters": ["packages/adapters/src/index.ts"]
+    },
     "strict": true,
     "declaration": true,
     "esModuleInterop": true,

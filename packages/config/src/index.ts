@@ -1,3 +1,5 @@
+export * from "./artifacts.js";
+
 export interface SpecRailConfig {
   port: number;
   dataDir: string;
