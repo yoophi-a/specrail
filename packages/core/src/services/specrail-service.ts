@@ -153,21 +153,27 @@ function buildExecutionSummary(events: ExecutionEvent[]): Execution["summary"] {
 }
 
 function readExecutionStatus(event: ExecutionEvent): ExecutionStatus | null {
-  if (event.type !== "task_status_changed") {
-    return null;
+  if (event.type === "approval_requested") {
+    return "waiting_approval";
   }
 
-  const status = event.payload?.status;
-  if (
-    status === "created" ||
-    status === "queued" ||
-    status === "running" ||
-    status === "waiting_approval" ||
-    status === "completed" ||
-    status === "failed" ||
-    status === "cancelled"
-  ) {
-    return status;
+  if (event.type === "approval_resolved") {
+    return "running";
+  }
+
+  if (event.type === "task_status_changed") {
+    const status = event.payload?.status;
+    if (
+      status === "created" ||
+      status === "queued" ||
+      status === "running" ||
+      status === "waiting_approval" ||
+      status === "completed" ||
+      status === "failed" ||
+      status === "cancelled"
+    ) {
+      return status;
+    }
   }
 
   return null;
@@ -234,6 +240,15 @@ function buildListPageResult<T>(items: T[], page: number, pageSize: number): Lis
   };
 }
 
+function normalizeRequiredString(value: string): string {
+  return value.trim();
+}
+
+function normalizeProfile(value: string | undefined): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : "default";
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -249,8 +264,8 @@ export class SpecRailService {
     const track: Track = {
       id: `track-${this.idGenerator()}`,
       projectId: project.id,
-      title: input.title,
-      description: input.description,
+      title: normalizeRequiredString(input.title),
+      description: normalizeRequiredString(input.description),
       status: "new",
       specStatus: "draft",
       planStatus: "draft",
@@ -343,20 +358,22 @@ export class SpecRailService {
     const executionId = `run-${this.idGenerator()}`;
     const createdAt = this.now();
     const workspacePath = path.join(this.dependencies.workspaceRoot, executionId);
+    const prompt = normalizeRequiredString(input.prompt);
+    const profile = normalizeProfile(input.profile);
     await mkdir(workspacePath, { recursive: true });
 
     const launch = await this.dependencies.executor.spawn({
       executionId,
-      prompt: input.prompt,
+      prompt,
       workspacePath,
-      profile: input.profile ?? "default",
+      profile,
     });
 
     const initialExecution: Execution = {
       id: executionId,
       trackId: track.id,
       backend: this.dependencies.executor.name,
-      profile: input.profile ?? "default",
+      profile,
       workspacePath,
       branchName: `specrail/${executionId}`,
       sessionRef: launch.sessionRef,
@@ -392,7 +409,7 @@ export class SpecRailService {
     const launch = await this.dependencies.executor.resume({
       executionId: execution.id,
       sessionRef: execution.sessionRef,
-      prompt: input.prompt,
+      prompt: normalizeRequiredString(input.prompt),
       workspacePath: execution.workspacePath,
       profile: execution.profile,
     });
