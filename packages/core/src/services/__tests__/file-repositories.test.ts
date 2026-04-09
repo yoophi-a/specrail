@@ -34,6 +34,8 @@ test("file repositories persist and reload project/track/execution state", async
     projectId: project.id,
     title: "Persist run state",
     description: "Add file-backed repositories.",
+    githubIssue: { number: 28, url: "https://github.com/yoophi-a/specrail/issues/28" },
+    githubPullRequest: { number: 29, url: "https://github.com/yoophi-a/specrail/pull/29" },
     status: "planned",
     specStatus: "approved",
     planStatus: "approved",

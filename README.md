@@ -65,7 +65,7 @@ Current endpoints in `apps/api/src/index.ts`:
 ### Tracks
 - `POST /tracks`
   - create a track
-  - body: `{ title, description, priority? }`
+  - body: `{ title, description, priority?, githubIssue?, githubPullRequest? }`
 - `GET /tracks`
   - list tracks with pagination and explicit sorting
   - default sort: `sortBy=updatedAt&sortOrder=desc`
@@ -75,7 +75,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
 - `PATCH /tracks/:trackId`
   - update workflow state
-  - body: any of `{ status, specStatus, planStatus }`
+  - body: any of `{ status, specStatus, planStatus, githubIssue, githubPullRequest }`
 
 ### Runs
 - `POST /runs`
@@ -149,6 +149,7 @@ Notes:
 ### Track
 - lifecycle status: `new | planned | ready | in_progress | blocked | review | done | failed`
 - approval status fields: `specStatus`, `planStatus`
+- optional GitHub linkage fields: `githubIssue`, `githubPullRequest` with `{ number, url }`
 - priority: `low | medium | high`
 
 ### Run

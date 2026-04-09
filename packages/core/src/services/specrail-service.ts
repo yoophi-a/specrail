@@ -15,6 +15,8 @@ import type {
   Execution,
   ExecutionEvent,
   ExecutionStatus,
+  GitHubIssueReference,
+  GitHubPullRequestReference,
   Project,
   Track,
   TrackStatus,
@@ -86,6 +88,8 @@ export interface CreateTrackInput {
   title: string;
   description: string;
   priority?: Track["priority"];
+  githubIssue?: GitHubIssueReference;
+  githubPullRequest?: GitHubPullRequestReference;
 }
 
 export interface StartRunInput {
@@ -99,6 +103,8 @@ export interface UpdateTrackInput {
   status?: TrackStatus;
   specStatus?: ApprovalStatus;
   planStatus?: ApprovalStatus;
+  githubIssue?: GitHubIssueReference;
+  githubPullRequest?: GitHubPullRequestReference;
 }
 
 export interface ResumeRunInput {
@@ -249,6 +255,17 @@ function normalizeProfile(value: string | undefined): string {
   return trimmed ? trimmed : "default";
 }
 
+function normalizeGitHubReference<T extends GitHubIssueReference | GitHubPullRequestReference>(value: T | undefined): T | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return {
+    ...value,
+    url: value.url.trim(),
+  };
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -266,6 +283,8 @@ export class SpecRailService {
       projectId: project.id,
       title: normalizeRequiredString(input.title),
       description: normalizeRequiredString(input.description),
+      githubIssue: normalizeGitHubReference(input.githubIssue),
+      githubPullRequest: normalizeGitHubReference(input.githubPullRequest),
       status: "new",
       specStatus: "draft",
       planStatus: "draft",
@@ -340,6 +359,9 @@ export class SpecRailService {
       status: input.status ?? track.status,
       specStatus: input.specStatus ?? track.specStatus,
       planStatus: input.planStatus ?? track.planStatus,
+      githubIssue: input.githubIssue === undefined ? track.githubIssue : normalizeGitHubReference(input.githubIssue),
+      githubPullRequest:
+        input.githubPullRequest === undefined ? track.githubPullRequest : normalizeGitHubReference(input.githubPullRequest),
       updatedAt: this.now(),
     };
 

@@ -126,10 +126,12 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
     title: "Build executor MVP",
     description: "Create enough state and artifacts to start a run.",
     priority: "high",
+    githubIssue: { number: 28, url: "https://github.com/yoophi-a/specrail/issues/28" },
   });
 
   assert.equal(track.id, "track-track-a");
   assert.equal(track.projectId, "project-default");
+  assert.deepEqual(track.githubIssue, { number: 28, url: "https://github.com/yoophi-a/specrail/issues/28" });
 
   const specContent = await readFile(path.join(artifactRoot, track.id, "spec.md"), "utf8");
   assert.match(specContent, /# Spec — Build executor MVP/);
@@ -502,11 +504,15 @@ test("SpecRailService updates track workflow and approval state", async () => {
     status: "review",
     specStatus: "approved",
     planStatus: "pending",
+    githubIssue: { number: 28, url: "https://github.com/yoophi-a/specrail/issues/28" },
+    githubPullRequest: { number: 30, url: "https://github.com/yoophi-a/specrail/pull/30" },
   });
 
   assert.equal(updated.status, "review");
   assert.equal(updated.specStatus, "approved");
   assert.equal(updated.planStatus, "pending");
+  assert.deepEqual(updated.githubIssue, { number: 28, url: "https://github.com/yoophi-a/specrail/issues/28" });
+  assert.deepEqual(updated.githubPullRequest, { number: 30, url: "https://github.com/yoophi-a/specrail/pull/30" });
   assert.equal(updated.updatedAt, "2026-04-09T04:05:00.000Z");
 
   const persisted = await service.getTrack(track.id);

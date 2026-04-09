@@ -18,6 +18,8 @@ import {
   TRACK_STATUSES,
   type ExecutionEvent,
   type ApprovalStatus,
+  type GitHubIssueReference,
+  type GitHubPullRequestReference,
   type SpecRailServiceDependencies,
   type TrackStatus,
 } from "@specrail/core";
@@ -32,6 +34,8 @@ interface TrackRequestBody {
   title: string;
   description: string;
   priority?: "low" | "medium" | "high";
+  githubIssue?: GitHubIssueReference;
+  githubPullRequest?: GitHubPullRequestReference;
 }
 
 interface RunRequestBody {
@@ -44,6 +48,8 @@ interface UpdateTrackRequestBody {
   status?: TrackStatus;
   specStatus?: ApprovalStatus;
   planStatus?: ApprovalStatus;
+  githubIssue?: GitHubIssueReference;
+  githubPullRequest?: GitHubPullRequestReference;
 }
 
 interface ResumeRunRequestBody {
@@ -274,6 +280,34 @@ function getNonEmptyStringDetail(field: string, value: unknown): ApiErrorDetail 
   return null;
 }
 
+function getGitHubReferenceDetails(
+  field: string,
+  value: unknown,
+): ApiErrorDetail[] {
+  const details: ApiErrorDetail[] = [];
+
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return [{ field, message: "must be an object" }];
+  }
+
+  const numberValue = (value as { number?: unknown }).number;
+  if (!Number.isInteger(numberValue) || (numberValue as number) < 1) {
+    details.push({ field: `${field}.number`, message: "must be an integer greater than or equal to 1" });
+  }
+
+  const urlDetail = getNonEmptyStringDetail(`${field}.url`, (value as { url?: unknown }).url);
+  if (urlDetail) {
+    details.push(urlDetail);
+  } else {
+    const url = String((value as { url: string }).url).trim();
+    if (!/^https:\/\/github\.com\/.+\/(issues|pull)\/\d+$/u.test(url)) {
+      details.push({ field: `${field}.url`, message: "must be a valid GitHub issue or pull request URL" });
+    }
+  }
+
+  return details;
+}
+
 function assertValidTrackCreateBody(body: TrackRequestBody): void {
   const details: ApiErrorDetail[] = [];
 
@@ -295,6 +329,14 @@ function assertValidTrackCreateBody(body: TrackRequestBody): void {
     details.push({ field: "priority", message: "must be one of low, medium, high" });
   }
 
+  if (body.githubIssue !== undefined) {
+    details.push(...getGitHubReferenceDetails("githubIssue", body.githubIssue));
+  }
+
+  if (body.githubPullRequest !== undefined) {
+    details.push(...getGitHubReferenceDetails("githubPullRequest", body.githubPullRequest));
+  }
+
   if (details.length > 0) {
     throw new RequestValidationError("request validation failed", details);
   }
@@ -303,8 +345,17 @@ function assertValidTrackCreateBody(body: TrackRequestBody): void {
 function assertValidTrackUpdateBody(body: UpdateTrackRequestBody): void {
   const details: ApiErrorDetail[] = [];
 
-  if (body.status === undefined && body.specStatus === undefined && body.planStatus === undefined) {
-    details.push({ field: "body", message: "at least one of status, specStatus, or planStatus is required" });
+  if (
+    body.status === undefined &&
+    body.specStatus === undefined &&
+    body.planStatus === undefined &&
+    body.githubIssue === undefined &&
+    body.githubPullRequest === undefined
+  ) {
+    details.push({
+      field: "body",
+      message: "at least one of status, specStatus, planStatus, githubIssue, or githubPullRequest is required",
+    });
   }
 
   if (body.status !== undefined && !isTrackStatus(body.status)) {
@@ -317,6 +368,14 @@ function assertValidTrackUpdateBody(body: UpdateTrackRequestBody): void {
 
   if (body.planStatus !== undefined && !isApprovalStatus(body.planStatus)) {
     details.push({ field: "planStatus", message: "must be a valid approval status" });
+  }
+
+  if (body.githubIssue !== undefined) {
+    details.push(...getGitHubReferenceDetails("githubIssue", body.githubIssue));
+  }
+
+  if (body.githubPullRequest !== undefined) {
+    details.push(...getGitHubReferenceDetails("githubPullRequest", body.githubPullRequest));
   }
 
   if (details.length > 0) {
@@ -587,6 +646,8 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           status: body.status,
           specStatus: body.specStatus,
           planStatus: body.planStatus,
+          githubIssue: body.githubIssue,
+          githubPullRequest: body.githubPullRequest,
         });
         sendJson(response, 200, { track });
         return;

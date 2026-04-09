@@ -314,11 +314,26 @@ test("API supports updating track workflow and approval state", async () => {
       body: JSON.stringify({
         title: "Approval workflow",
         description: "Exercise PATCH /tracks/:trackId.",
+        githubIssue: {
+          number: 28,
+          url: "https://github.com/yoophi-a/specrail/issues/28",
+        },
       }),
     });
     const trackPayload = (await trackResponse.json()) as {
-      track: { id: string; status: string; specStatus: string; planStatus: string; updatedAt: string };
+      track: {
+        id: string;
+        status: string;
+        specStatus: string;
+        planStatus: string;
+        updatedAt: string;
+        githubIssue?: { number: number; url: string };
+      };
     };
+    assert.deepEqual(trackPayload.track.githubIssue, {
+      number: 28,
+      url: "https://github.com/yoophi-a/specrail/issues/28",
+    });
 
     const patchResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`, {
       method: "PATCH",
@@ -327,26 +342,60 @@ test("API supports updating track workflow and approval state", async () => {
         status: "review",
         specStatus: "approved",
         planStatus: "pending",
+        githubPullRequest: {
+          number: 31,
+          url: "https://github.com/yoophi-a/specrail/pull/31",
+        },
       }),
     });
 
     assert.equal(patchResponse.status, 200);
     const patchPayload = (await patchResponse.json()) as {
-      track: { id: string; status: string; specStatus: string; planStatus: string; updatedAt: string };
+      track: {
+        id: string;
+        status: string;
+        specStatus: string;
+        planStatus: string;
+        updatedAt: string;
+        githubIssue?: { number: number; url: string };
+        githubPullRequest?: { number: number; url: string };
+      };
     };
     assert.equal(patchPayload.track.id, trackPayload.track.id);
     assert.equal(patchPayload.track.status, "review");
     assert.equal(patchPayload.track.specStatus, "approved");
     assert.equal(patchPayload.track.planStatus, "pending");
+    assert.deepEqual(patchPayload.track.githubIssue, {
+      number: 28,
+      url: "https://github.com/yoophi-a/specrail/issues/28",
+    });
+    assert.deepEqual(patchPayload.track.githubPullRequest, {
+      number: 31,
+      url: "https://github.com/yoophi-a/specrail/pull/31",
+    });
     assert.notEqual(patchPayload.track.updatedAt, trackPayload.track.updatedAt);
 
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     const getTrackPayload = (await getTrackResponse.json()) as {
-      track: { status: string; specStatus: string; planStatus: string };
+      track: {
+        status: string;
+        specStatus: string;
+        planStatus: string;
+        githubIssue?: { number: number; url: string };
+        githubPullRequest?: { number: number; url: string };
+      };
     };
     assert.equal(getTrackPayload.track.status, "review");
     assert.equal(getTrackPayload.track.specStatus, "approved");
     assert.equal(getTrackPayload.track.planStatus, "pending");
+    assert.deepEqual(getTrackPayload.track.githubIssue, {
+      number: 28,
+      url: "https://github.com/yoophi-a/specrail/issues/28",
+    });
+    assert.deepEqual(getTrackPayload.track.githubPullRequest, {
+      number: 31,
+      url: "https://github.com/yoophi-a/specrail/pull/31",
+    });
   });
 });
 
@@ -572,6 +621,13 @@ test("API validates track updates and returns 404 for missing tracks", async () 
       body: JSON.stringify({ planStatus: "oops" }),
     });
     assert.equal(invalidPlanStatusResponse.status, 422);
+
+    const invalidGitHubIssueResponse = await fetch(`${baseUrl}/tracks/missing`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ githubIssue: { number: 0, url: "https://example.com/not-github" } }),
+    });
+    assert.equal(invalidGitHubIssueResponse.status, 422);
   });
 });
 
@@ -584,6 +640,7 @@ test("API returns structured validation and bad-request errors", async () => {
         title: "",
         description: 123,
         priority: "urgent",
+        githubPullRequest: { number: -1, url: "wat" },
       }),
     });
     assert.equal(invalidTrackResponse.status, 422);
@@ -593,7 +650,7 @@ test("API returns structured validation and bad-request errors", async () => {
     assert.equal(invalidTrackPayload.error.code, "validation_error");
     assert.deepEqual(
       invalidTrackPayload.error.details.map((detail) => detail.field),
-      ["title", "description", "priority"],
+      ["title", "description", "priority", "githubPullRequest.number", "githubPullRequest.url"],
     );
 
     const invalidRunResponse = await fetch(`${baseUrl}/runs`, {

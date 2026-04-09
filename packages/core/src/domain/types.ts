@@ -23,6 +23,16 @@ export const APPROVAL_STATUSES = ["draft", "pending", "approved", "rejected"] as
 
 export type ApprovalStatus = "draft" | "pending" | "approved" | "rejected";
 
+export interface GitHubIssueReference {
+  number: number;
+  url: string;
+}
+
+export interface GitHubPullRequestReference {
+  number: number;
+  url: string;
+}
+
 export type ExecutionStatus =
   | "created"
   | "queued"
@@ -47,6 +57,8 @@ export interface Track {
   projectId: string;
   title: string;
   description: string;
+  githubIssue?: GitHubIssueReference;
+  githubPullRequest?: GitHubPullRequestReference;
   status: TrackStatus;
   specStatus: ApprovalStatus;
   planStatus: ApprovalStatus;
