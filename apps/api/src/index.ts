@@ -6,13 +6,17 @@ import { pathToFileURL } from "node:url";
 import { CodexAdapterStub } from "@specrail/adapters";
 import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
 import {
+  APPROVAL_STATUSES,
   FileExecutionRepository,
   FileProjectRepository,
   FileTrackRepository,
   JsonlEventStore,
   SpecRailService,
+  TRACK_STATUSES,
   type ExecutionEvent,
+  type ApprovalStatus,
   type SpecRailServiceDependencies,
+  type TrackStatus,
 } from "@specrail/core";
 
 interface ApiDeps {
@@ -30,6 +34,12 @@ interface RunRequestBody {
   trackId: string;
   prompt: string;
   profile?: string;
+}
+
+interface UpdateTrackRequestBody {
+  status?: TrackStatus;
+  specStatus?: ApprovalStatus;
+  planStatus?: ApprovalStatus;
 }
 
 interface ResumeRunRequestBody {
@@ -109,6 +119,14 @@ function getPathSegments(request: IncomingMessage): string[] {
 function writeSseEvent(response: ServerResponse, event: ExecutionEvent): void {
   response.write(`event: execution-event\n`);
   response.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+function isTrackStatus(value: unknown): value is TrackStatus {
+  return typeof value === "string" && TRACK_STATUSES.includes(value as TrackStatus);
+}
+
+function isApprovalStatus(value: unknown): value is ApprovalStatus {
+  return typeof value === "string" && APPROVAL_STATUSES.includes(value as ApprovalStatus);
 }
 
 async function streamRunEvents(
@@ -202,6 +220,46 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
         const artifacts = await readTrackArtifacts(deps.artifactRoot, track.id);
         sendJson(response, 200, { track, artifacts });
+        return;
+      }
+
+      if (method === "PATCH" && segments.length === 2 && segments[0] === "tracks") {
+        const body = await readJson<UpdateTrackRequestBody>(request);
+
+        if (body.status === undefined && body.specStatus === undefined && body.planStatus === undefined) {
+          sendJson(response, 400, { error: "at least one track field is required" });
+          return;
+        }
+
+        if (body.status !== undefined && !isTrackStatus(body.status)) {
+          sendJson(response, 400, { error: `invalid status: ${String(body.status)}` });
+          return;
+        }
+
+        if (body.specStatus !== undefined && !isApprovalStatus(body.specStatus)) {
+          sendJson(response, 400, { error: `invalid specStatus: ${String(body.specStatus)}` });
+          return;
+        }
+
+        if (body.planStatus !== undefined && !isApprovalStatus(body.planStatus)) {
+          sendJson(response, 400, { error: `invalid planStatus: ${String(body.planStatus)}` });
+          return;
+        }
+
+        const existingTrack = await deps.service.getTrack(segments[1] ?? "");
+
+        if (!existingTrack) {
+          sendJson(response, 404, { error: "track not found" });
+          return;
+        }
+
+        const track = await deps.service.updateTrack({
+          trackId: existingTrack.id,
+          status: body.status,
+          specStatus: body.specStatus,
+          planStatus: body.planStatus,
+        });
+        sendJson(response, 200, { track });
         return;
       }
 

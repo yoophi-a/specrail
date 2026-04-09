@@ -284,6 +284,89 @@ test("API supports resuming and cancelling a run", async () => {
   });
 });
 
+test("API supports updating track workflow and approval state", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Approval workflow",
+        description: "Exercise PATCH /tracks/:trackId.",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as {
+      track: { id: string; status: string; specStatus: string; planStatus: string; updatedAt: string };
+    };
+
+    const patchResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        status: "review",
+        specStatus: "approved",
+        planStatus: "pending",
+      }),
+    });
+
+    assert.equal(patchResponse.status, 200);
+    const patchPayload = (await patchResponse.json()) as {
+      track: { id: string; status: string; specStatus: string; planStatus: string; updatedAt: string };
+    };
+    assert.equal(patchPayload.track.id, trackPayload.track.id);
+    assert.equal(patchPayload.track.status, "review");
+    assert.equal(patchPayload.track.specStatus, "approved");
+    assert.equal(patchPayload.track.planStatus, "pending");
+    assert.notEqual(patchPayload.track.updatedAt, trackPayload.track.updatedAt);
+
+    const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
+    const getTrackPayload = (await getTrackResponse.json()) as {
+      track: { status: string; specStatus: string; planStatus: string };
+    };
+    assert.equal(getTrackPayload.track.status, "review");
+    assert.equal(getTrackPayload.track.specStatus, "approved");
+    assert.equal(getTrackPayload.track.planStatus, "pending");
+  });
+});
+
+test("API validates track updates and returns 404 for missing tracks", async () => {
+  await withServer(async (baseUrl) => {
+    const missingTrackResponse = await fetch(`${baseUrl}/tracks/missing`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "review" }),
+    });
+    assert.equal(missingTrackResponse.status, 404);
+
+    const emptyBodyResponse = await fetch(`${baseUrl}/tracks/missing`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(emptyBodyResponse.status, 400);
+
+    const invalidStatusResponse = await fetch(`${baseUrl}/tracks/missing`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "oops" }),
+    });
+    assert.equal(invalidStatusResponse.status, 400);
+
+    const invalidSpecStatusResponse = await fetch(`${baseUrl}/tracks/missing`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ specStatus: "oops" }),
+    });
+    assert.equal(invalidSpecStatusResponse.status, 400);
+
+    const invalidPlanStatusResponse = await fetch(`${baseUrl}/tracks/missing`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ planStatus: "oops" }),
+    });
+    assert.equal(invalidPlanStatusResponse.status, 400);
+  });
+});
+
 test("API returns 404s for unknown tracks and runs", async () => {
   await withServer(async (baseUrl) => {
     const missingTrack = await fetch(`${baseUrl}/tracks/missing`);

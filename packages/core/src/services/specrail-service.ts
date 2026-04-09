@@ -10,7 +10,7 @@ import {
   type SpecDocument,
   type TaskDocument,
 } from "../domain/artifacts.js";
-import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.js";
+import type { ApprovalStatus, Execution, ExecutionEvent, Project, Track, TrackStatus } from "../domain/types.js";
 import type { EventStore, ExecutionRepository, ProjectRepository, TrackRepository } from "./ports.js";
 
 export interface TrackArtifactWriterInput {
@@ -85,6 +85,13 @@ export interface StartRunInput {
   profile?: string;
 }
 
+export interface UpdateTrackInput {
+  trackId: string;
+  status?: TrackStatus;
+  specStatus?: ApprovalStatus;
+  planStatus?: ApprovalStatus;
+}
+
 export interface ResumeRunInput {
   runId: string;
   prompt: string;
@@ -143,6 +150,26 @@ export class SpecRailService {
 
   getTrack(trackId: string): Promise<Track | null> {
     return this.dependencies.trackRepository.getById(trackId);
+  }
+
+  async updateTrack(input: UpdateTrackInput): Promise<Track> {
+    const track = await this.dependencies.trackRepository.getById(input.trackId);
+
+    if (!track) {
+      throw new Error(`Track not found: ${input.trackId}`);
+    }
+
+    const nextTrack: Track = {
+      ...track,
+      status: input.status ?? track.status,
+      specStatus: input.specStatus ?? track.specStatus,
+      planStatus: input.planStatus ?? track.planStatus,
+      updatedAt: this.now(),
+    };
+
+    await this.dependencies.trackRepository.update(nextTrack);
+
+    return nextTrack;
   }
 
   async startRun(input: StartRunInput): Promise<Execution> {

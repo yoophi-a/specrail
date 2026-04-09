@@ -215,3 +215,62 @@ test("SpecRailService throws when starting a run for a missing track", async () 
   await assert.rejects(() => service.resumeRun({ runId: "missing-run", prompt: "nope" }), /Run not found/);
   await assert.rejects(() => service.cancelRun({ runId: "missing-run" }), /Run not found/);
 });
+
+test("SpecRailService updates track workflow and approval state", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-update-track-"));
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("should not be called");
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = ["2026-04-09T04:00:00.000Z", "2026-04-09T04:05:00.000Z"];
+      return () => values.shift() ?? "2026-04-09T04:05:00.000Z";
+    })(),
+    idGenerator: () => "track-update",
+  });
+
+  const track = await service.createTrack({
+    title: "Approval workflow",
+    description: "Update track workflow state through the service.",
+  });
+
+  const updated = await service.updateTrack({
+    trackId: track.id,
+    status: "review",
+    specStatus: "approved",
+    planStatus: "pending",
+  });
+
+  assert.equal(updated.status, "review");
+  assert.equal(updated.specStatus, "approved");
+  assert.equal(updated.planStatus, "pending");
+  assert.equal(updated.updatedAt, "2026-04-09T04:05:00.000Z");
+
+  const persisted = await service.getTrack(track.id);
+  assert.deepEqual(persisted, updated);
+
+  await assert.rejects(
+    () => service.updateTrack({ trackId: "missing-track", status: "blocked" }),
+    /Track not found/,
+  );
+});

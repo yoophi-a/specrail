@@ -1,3 +1,14 @@
+export const TRACK_STATUSES = [
+  "new",
+  "planned",
+  "ready",
+  "in_progress",
+  "blocked",
+  "review",
+  "done",
+  "failed",
+] as const;
+
 export type TrackStatus =
   | "new"
   | "planned"
@@ -7,6 +18,8 @@ export type TrackStatus =
   | "review"
   | "done"
   | "failed";
+
+export const APPROVAL_STATUSES = ["draft", "pending", "approved", "rejected"] as const;
 
 export type ApprovalStatus = "draft" | "pending" | "approved" | "rejected";
 
