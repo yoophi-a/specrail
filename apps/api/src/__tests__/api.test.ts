@@ -262,6 +262,8 @@ test("API retries failed GitHub run comment syncs from the integrations route", 
         openSpec: {
           latestImport: null,
           importHistory: [],
+          latestExport: null,
+          exportHistory: [],
         },
         github: {
           issue: { number: 34, url: "https://github.com/yoophi-a/specrail/issues/34" },
@@ -321,6 +323,8 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
       openSpec: {
         latestImport: null,
         importHistory: [],
+        latestExport: null,
+        exportHistory: [],
       },
       github: {
         issue: {
@@ -384,6 +388,8 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
       openSpec: {
         latestImport: null,
         importHistory: [],
+        latestExport: null,
+        exportHistory: [],
       },
       github: {
         issue: {
@@ -562,7 +568,7 @@ test("API exports and imports OpenSpec bundles through admin routes", async () =
     assert.equal(exportResponse.status, 200);
 
     const exported = (await exportResponse.json()) as {
-      package: { track: { id: string } };
+      package: { metadata: { exportedAt: string }; track: { id: string } };
       target: { path: string; overwrite: boolean };
     };
     assert.equal(exported.package.track.id, trackPayload.track.id);
@@ -600,11 +606,19 @@ test("API exports and imports OpenSpec bundles through admin routes", async () =
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     const getTrackPayload = (await getTrackResponse.json()) as {
       artifacts: { spec: string };
-      openSpecImports: { latestImport: { source: { path: string } }; importHistory: Array<unknown> };
+      openSpecImports: {
+        latestImport: { source: { path: string } };
+        importHistory: Array<unknown>;
+        latestExport: { target: { path: string }; exportedAt: string };
+        exportHistory: Array<unknown>;
+      };
     };
     assert.equal(getTrackPayload.artifacts.spec, "# Imported spec\n");
     assert.equal(getTrackPayload.openSpecImports.latestImport.source.path, bundleDir);
     assert.equal(getTrackPayload.openSpecImports.importHistory.length, 1);
+    assert.equal(getTrackPayload.openSpecImports.latestExport.target.path, bundleDir);
+    assert.equal(getTrackPayload.openSpecImports.latestExport.exportedAt, exported.package.metadata.exportedAt);
+    assert.equal(getTrackPayload.openSpecImports.exportHistory.length, 1);
 
     const trackImportsResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/openspec/imports`);
     assert.equal(trackImportsResponse.status, 200);
@@ -616,6 +630,12 @@ test("API exports and imports OpenSpec bundles through admin routes", async () =
     const adminImports = (await adminImportsResponse.json()) as { imports: Array<{ provenance: { source: { path: string } } }> };
     assert.equal(adminImports.imports.length, 1);
     assert.equal(adminImports.imports[0]?.provenance.source.path, bundleDir);
+
+    const adminExportsResponse = await fetch(`${baseUrl}/admin/openspec/exports?trackId=${trackPayload.track.id}`);
+    assert.equal(adminExportsResponse.status, 200);
+    const adminExports = (await adminExportsResponse.json()) as { exports: Array<{ exportRecord: { target: { path: string } } }> };
+    assert.equal(adminExports.exports.length, 1);
+    assert.equal(adminExports.exports[0]?.exportRecord.target.path, bundleDir);
   });
 });
 

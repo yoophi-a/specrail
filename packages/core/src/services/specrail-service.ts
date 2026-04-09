@@ -17,6 +17,7 @@ import type {
   ExecutionStatus,
   OpenSpecImportArtifactResolutionField,
   OpenSpecImportConflictPolicy,
+  OpenSpecExportRecord,
   OpenSpecImportRecord,
   OpenSpecImportResolution,
   OpenSpecImportResolutionChoice,
@@ -487,6 +488,17 @@ export interface OpenSpecImportHistoryEntry {
   provenance: OpenSpecImportRecord;
 }
 
+export interface OpenSpecExportHistoryListInput {
+  trackId?: string;
+  limit?: number;
+}
+
+export interface OpenSpecExportHistoryEntry {
+  trackId: string;
+  trackTitle: string;
+  exportRecord: OpenSpecExportRecord;
+}
+
 export type SortOrder = "asc" | "desc";
 
 export interface ListTracksInput {
@@ -878,6 +890,8 @@ export class SpecRailService {
       openSpec: {
         latestImport: track.openSpecImport ?? null,
         importHistory: [...(track.openSpecImportHistory ?? [])].sort((left, right) => right.importedAt.localeCompare(left.importedAt)),
+        latestExport: track.openSpecExport ?? null,
+        exportHistory: [...(track.openSpecExportHistory ?? [])].sort((left, right) => right.exportedAt.localeCompare(left.exportedAt)),
       },
       github: {
         issue: track.githubIssue,
@@ -888,7 +902,13 @@ export class SpecRailService {
     };
   }
 
-  async getTrackOpenSpecImports(trackId: string): Promise<{ trackId: string; latestImport: OpenSpecImportRecord | null; importHistory: OpenSpecImportRecord[] } | null> {
+  async getTrackOpenSpecImports(trackId: string): Promise<{
+    trackId: string;
+    latestImport: OpenSpecImportRecord | null;
+    importHistory: OpenSpecImportRecord[];
+    latestExport: OpenSpecExportRecord | null;
+    exportHistory: OpenSpecExportRecord[];
+  } | null> {
     const track = await this.dependencies.trackRepository.getById(trackId);
     if (!track) {
       return null;
@@ -898,6 +918,8 @@ export class SpecRailService {
       trackId: track.id,
       latestImport: track.openSpecImport ?? null,
       importHistory: [...(track.openSpecImportHistory ?? [])].sort((left, right) => right.importedAt.localeCompare(left.importedAt)),
+      latestExport: track.openSpecExport ?? null,
+      exportHistory: [...(track.openSpecExportHistory ?? [])].sort((left, right) => right.exportedAt.localeCompare(left.exportedAt)),
     };
   }
 
@@ -922,6 +944,23 @@ export class SpecRailService {
     );
 
     entries.sort((left, right) => right.provenance.importedAt.localeCompare(left.provenance.importedAt));
+    return entries.slice(0, input.limit ?? entries.length);
+  }
+
+  async listOpenSpecExportHistory(input: OpenSpecExportHistoryListInput = {}): Promise<OpenSpecExportHistoryEntry[]> {
+    const tracks = input.trackId
+      ? [await this.dependencies.trackRepository.getById(input.trackId)].filter((track): track is Track => track !== null)
+      : await this.dependencies.trackRepository.list();
+
+    const entries = tracks.flatMap((track) =>
+      (track.openSpecExportHistory ?? []).map((exportRecord) => ({
+        trackId: track.id,
+        trackTitle: track.title,
+        exportRecord,
+      })),
+    );
+
+    entries.sort((left, right) => right.exportRecord.exportedAt.localeCompare(left.exportRecord.exportedAt));
     return entries.slice(0, input.limit ?? entries.length);
   }
 
@@ -996,13 +1035,14 @@ export class SpecRailService {
     }
 
     const artifacts = await artifactReader.read(track.id);
+    const exportTimestamp = this.now();
 
-    return adapter.exportPackage({
+    const result = await adapter.exportPackage({
       package: {
         metadata: {
           version: 1,
           format: "specrail.openspec.bundle",
-          exportedAt: this.now(),
+          exportedAt: exportTimestamp,
           generatedBy: "specrail",
         },
         track,
@@ -1015,6 +1055,33 @@ export class SpecRailService {
       },
       target: input.target,
     });
+
+    const exportRecord: OpenSpecExportRecord = {
+      id: `openspec-export-${this.idGenerator()}`,
+      target: result.target,
+      exportedAt: exportTimestamp,
+      bundle: result.package.metadata,
+    };
+
+    const updatedTrack: Track = {
+      ...track,
+      openSpecExport: exportRecord,
+      openSpecExportHistory: [...(track.openSpecExportHistory ?? []), exportRecord],
+      updatedAt: exportTimestamp,
+    };
+
+    await this.dependencies.trackRepository.update(updatedTrack);
+
+    const project = (await this.dependencies.projectRepository.getById(updatedTrack.projectId)) ?? (await this.ensureDefaultProject());
+    await this.dependencies.artifactWriter.write({
+      track: updatedTrack,
+      project,
+      specContent: artifacts.spec,
+      planContent: artifacts.plan,
+      tasksContent: artifacts.tasks,
+    });
+
+    return result;
   }
 
   async importTrackFromOpenSpec(input: ImportTrackFromOpenSpecInput): Promise<ImportTrackFromOpenSpecResult> {

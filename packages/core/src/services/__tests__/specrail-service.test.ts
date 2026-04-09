@@ -1225,6 +1225,8 @@ test("SpecRailService exposes empty GitHub integration inspection summaries with
     openSpec: {
       latestImport: null,
       importHistory: [],
+      latestExport: null,
+      exportHistory: [],
     },
     github: {
       issue: { number: 33, url: "https://github.com/yoophi-a/specrail/issues/33" },
@@ -1607,6 +1609,15 @@ test("SpecRailService exports a track through the OpenSpec adapter", async () =>
       spec: `# Spec for ${track.id}`,
     },
   ]);
+
+  const exportInspection = await service.getTrackOpenSpecImports(track.id);
+  assert.ok(exportInspection);
+  assert.equal(exportInspection.latestExport?.target.path, path.join(rootDir, "bundle"));
+  assert.equal(exportInspection.exportHistory.length, 1);
+
+  const exportHistory = await service.listOpenSpecExportHistory({ trackId: track.id });
+  assert.equal(exportHistory.length, 1);
+  assert.equal(exportHistory[0]?.exportRecord.target.path, path.join(rootDir, "bundle"));
 });
 
 test("SpecRailService imports OpenSpec bundles into created and existing tracks", async () => {
@@ -2066,6 +2077,8 @@ test("SpecRailService resolves OpenSpec conflicts with field-level keep-existing
   assert.ok(importInspection);
   assert.equal(importInspection.latestImport?.conflictPolicy, "resolve");
   assert.equal(importInspection.importHistory.length, 1);
+  assert.equal(importInspection.latestExport, null);
+  assert.equal(importInspection.exportHistory.length, 0);
 
   const adminHistory = await service.listOpenSpecImportHistory();
   assert.equal(adminHistory.length, 1);

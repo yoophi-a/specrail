@@ -22,7 +22,7 @@ type OpenSpecImportField =
   | "artifacts.tasks";
 
 interface ParsedArgs {
-  command: "openspec-export" | "openspec-import" | "openspec-import-help" | "openspec-imports" | null;
+  command: "openspec-export" | "openspec-import" | "openspec-import-help" | "openspec-imports" | "openspec-exports" | null;
   path?: string;
   trackId?: string;
   overwrite: boolean;
@@ -58,6 +58,7 @@ Usage:
   specrail-admin openspec import --path <bundle-dir> [--preview] [--apply] [--preset <name>] [--conflict-policy <reject|overwrite|resolve>] [--incoming <field[,field...]>] [--existing <field[,field...]>] [--json]
   specrail-admin openspec import help [--preset <name>] [--json]
   specrail-admin openspec imports [--track-id <track-id>] [--limit <count>] [--json]
+  specrail-admin openspec exports [--track-id <track-id>] [--limit <count>] [--json]
 
 Examples:
   specrail-admin openspec export --track-id track_123 --path ./bundle
@@ -66,6 +67,7 @@ Examples:
   specrail-admin openspec import --path ./bundle --apply --preset policyDefaults --existing artifacts.plan
   specrail-admin openspec import help --preset policyDefaults
   specrail-admin openspec imports --track-id track_123 --limit 5
+  specrail-admin openspec exports --track-id track_123 --limit 5
 `);
 }
 
@@ -134,6 +136,9 @@ function parseArgs(argv: string[]): ParsedArgs {
   } else if (group === "openspec" && action === "imports") {
     args.command = "openspec-imports";
     rest.unshift(subaction);
+  } else if (group === "openspec" && action === "exports") {
+    args.command = "openspec-exports";
+    rest.unshift(subaction);
   } else {
     throw new Error(`Unknown command: ${argv.join(" ")}`);
   }
@@ -201,6 +206,20 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   return args;
+}
+
+function printExportHistory(entries: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listOpenSpecExportHistory"]>>): void {
+  if (entries.length === 0) {
+    console.log("No OpenSpec export history found");
+    return;
+  }
+
+  console.log("OpenSpec export history");
+  for (const entry of entries) {
+    console.log(`- ${entry.exportRecord.exportedAt} ${entry.trackId} (${entry.trackTitle})`);
+    console.log(`  - target: ${entry.exportRecord.target.path}`);
+    console.log(`  - overwrite: ${entry.exportRecord.target.overwrite ? "true" : "false"}`);
+  }
 }
 
 function inferConflictPolicy(args: ParsedArgs): "reject" | "overwrite" | "resolve" | undefined {
@@ -350,6 +369,18 @@ async function run(): Promise<void> {
     }
 
     printImportHistory(result);
+    return;
+  }
+
+  if (args.command === "openspec-exports") {
+    const result = await service.listOpenSpecExportHistory({ trackId: args.trackId, limit: args.limit });
+
+    if (args.json) {
+      console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+      return;
+    }
+
+    printExportHistory(result);
     return;
   }
 

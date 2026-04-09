@@ -108,10 +108,13 @@ Current endpoints in `apps/api/src/index.ts`:
 - `GET /admin/openspec/imports`
   - list persisted OpenSpec import history across tracks
   - query: `trackId?`, `limit?`
+- `GET /admin/openspec/exports`
+  - list persisted OpenSpec export history across tracks
+  - query: `trackId?`, `limit?`
 - `GET /tracks/:trackId/openspec/imports`
-  - return the latest OpenSpec provenance and persisted import history for a single track
+  - return the latest OpenSpec import/export provenance and persisted history for a single track
 - `GET /tracks/:trackId` and `GET /tracks/:trackId/integrations`
-  - now include OpenSpec import inspection data alongside track state and GitHub sync metadata
+  - now include OpenSpec import/export inspection data alongside track state and GitHub sync metadata
 
 ### Terminal admin wrapper
 A terminal wrapper now exposes the same guided OpenSpec admin flow without needing the HTTP admin routes first.
@@ -131,6 +134,9 @@ pnpm --filter @specrail/api openspec:import:help -- --preset policyDefaults
 
 # inspect persisted import history
 pnpm --filter @specrail/api openspec:imports -- --track-id track_123 --limit 10
+
+# inspect persisted export history
+pnpm --filter @specrail/api openspec:exports -- --track-id track_123 --limit 10
 ```
 
 Notes:
@@ -139,6 +145,7 @@ Notes:
 - apply mode auto-selects `conflictPolicy=resolve` when a preset or explicit keep/take overrides are supplied
 - field overrides are available via `--existing track.status,artifacts.plan` and `--incoming track.title`
 - import history can be filtered with `--track-id` and truncated with `--limit`
+- export history can be filtered with `--track-id` and truncated with `--limit`
 - JSON output is available with `--json` for scripting or operator tooling
 
 ### Runs

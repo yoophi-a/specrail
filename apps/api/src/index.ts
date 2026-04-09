@@ -781,6 +781,16 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "GET" && segments.length === 3 && segments[0] === "admin" && segments[1] === "openspec" && segments[2] === "exports") {
+        const searchParams = getSearchParams(request);
+        const trackId = searchParams.get("trackId") ?? undefined;
+        const limit = parsePositiveInteger(searchParams.get("limit"));
+        sendJson(response, 200, {
+          exports: await deps.service.listOpenSpecExportHistory({ trackId, limit }),
+        });
+        return;
+      }
+
       if (method === "GET" && segments.length === 1 && segments[0] === "runs") {
         const searchParams = getSearchParams(request);
         const query: RunListQuery = {

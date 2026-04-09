@@ -17,7 +17,7 @@ async function createService(rootDir: string): Promise<SpecRailService> {
   return new SpecRailService(dependencies.serviceDependencies);
 }
 
-test("CLI exports OpenSpec bundles and lists import history", async () => {
+test("CLI exports OpenSpec bundles and lists import/export history", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-openspec-export-"));
   const service = await createService(rootDir);
 
@@ -40,6 +40,21 @@ test("CLI exports OpenSpec bundles and lists import history", async () => {
   };
   assert.equal(exportPayload.result.package.track.id, track.id);
   assert.equal(exportPayload.result.target.path, bundleDir);
+
+  const exportHistoryResult = await execFileAsync("pnpm", ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "openspec", "exports", "--track-id", track.id, "--limit", "1", "--json"], {
+    cwd: path.resolve(import.meta.dirname, "../.."),
+    env: {
+      ...process.env,
+      SPECRAIL_DATA_DIR: path.join(rootDir, "data"),
+      SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "repo-visible"),
+    },
+  });
+  const exportHistoryPayload = JSON.parse(exportHistoryResult.stdout) as {
+    result: Array<{ trackId: string; exportRecord: { target: { path: string } } }>;
+  };
+  assert.equal(exportHistoryPayload.result.length, 1);
+  assert.equal(exportHistoryPayload.result[0]?.trackId, track.id);
+  assert.equal(exportHistoryPayload.result[0]?.exportRecord.target.path, bundleDir);
 
   await service.importTrackFromOpenSpec({
     source: { kind: "file", path: bundleDir },

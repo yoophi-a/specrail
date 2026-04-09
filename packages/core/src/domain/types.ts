@@ -173,6 +173,22 @@ export interface OpenSpecImportRecord {
   };
 }
 
+export interface OpenSpecExportRecord {
+  id: string;
+  target: {
+    kind: "file";
+    path: string;
+    overwrite?: boolean;
+  };
+  exportedAt: string;
+  bundle: {
+    version: 1;
+    format: "specrail.openspec.bundle";
+    exportedAt: string;
+    generatedBy: "specrail";
+  };
+}
+
 export interface GitHubIntegrationSummary {
   linkedTargetCount: number;
   syncedTargetCount: number;
@@ -186,6 +202,8 @@ export interface TrackIntegrationsInspection {
   openSpec: {
     latestImport: OpenSpecImportRecord | null;
     importHistory: OpenSpecImportRecord[];
+    latestExport: OpenSpecExportRecord | null;
+    exportHistory: OpenSpecExportRecord[];
   };
   github: {
     issue?: GitHubIssueReference;
@@ -233,6 +251,8 @@ export interface Track {
   priority: "low" | "medium" | "high";
   openSpecImport?: OpenSpecImportRecord;
   openSpecImportHistory?: OpenSpecImportRecord[];
+  openSpecExport?: OpenSpecExportRecord;
+  openSpecExportHistory?: OpenSpecExportRecord[];
   createdAt: string;
   updatedAt: string;
 }

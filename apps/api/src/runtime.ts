@@ -72,6 +72,7 @@ export function createDependencies(dataDir: string, repoArtifactRoot: string, gi
           trackTitle: input.track.title,
           trackDescription: input.track.description,
           openSpecImport: input.track.openSpecImport,
+          openSpecExport: input.track.openSpecExport,
           specContent: input.specContent,
           planContent: input.planContent,
           tasksContent: input.tasksContent,
