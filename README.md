@@ -155,6 +155,13 @@ pnpm --filter @specrail/api openspec:inspect:exports -- --track-id track_123 --p
 # inspect the full persisted track payload
 pnpm --filter @specrail/api track:inspect -- --track-id track_123
 
+# update track workflow/approval state locally
+pnpm --filter @specrail/api tracks:update -- --track-id track_123 --status review --spec-status approved --plan-status pending --github-issue-number 55 --github-issue-url https://github.com/yoophi-a/specrail/issues/55
+pnpm --filter @specrail/api track:workflow -- --track-id track_123 --status in_progress --spec-status approved --plan-status approved
+pnpm --filter @specrail/api track:status -- --track-id track_123 --status blocked
+pnpm --filter @specrail/api track:spec-status -- --track-id track_123 --spec-status approved
+pnpm --filter @specrail/api track:plan-status -- --track-id track_123 --plan-status pending
+
 # list tracks in a shell-friendly view
 pnpm --filter @specrail/api tracks:list -- --status ready --sort-by title --sort-order asc
 
@@ -197,6 +204,12 @@ pnpm --filter @specrail/api run:inspect -- --run-id run_123
 
 # inspect a persisted run payload from a remote SpecRail API
 pnpm --filter @specrail/api run:inspect -- --run-id run_123 --api-url http://127.0.0.1:4000
+
+# update track workflow/approval state through a remote SpecRail API
+pnpm --filter @specrail/api tracks:update -- --track-id track_123 --status review --spec-status approved --plan-status pending --github-issue-number 55 --github-issue-url https://github.com/yoophi-a/specrail/issues/55 --api-url http://127.0.0.1:4000
+pnpm --filter @specrail/api track:status -- --track-id track_123 --status blocked --api-url http://127.0.0.1:4000
+pnpm --filter @specrail/api track:spec-status -- --track-id track_123 --spec-status approved --api-url http://127.0.0.1:4000
+pnpm --filter @specrail/api track:plan-status -- --track-id track_123 --plan-status pending --api-url http://127.0.0.1:4000
 ```
 
 Notes:
@@ -207,6 +220,8 @@ Notes:
 - import history supports `--page`/`--page-size` plus `--track-id`, `--source-path`, `--filter-conflict-policy`, `--after`, and `--before`
 - export history supports `--page`/`--page-size` plus `--track-id`, `--target-path`, `--overwrite-only`/`--no-overwrite-only`, `--after`, and `--before`
 - `tracks:list` mirrors `GET /tracks` with `--status`, `--priority`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, and `--json`
+- `tracks:update` mirrors `PATCH /tracks/:trackId` with `--track-id`, `--status`, `--spec-status`, `--plan-status`, optional GitHub issue/PR linkage flags, `--api-url`, and `--json`
+- `track:workflow`, `track:status`, `track:spec-status`, and `track:plan-status` provide narrower track workflow update shortcuts over the same local/remote flow
 - track inspection supports `--page`/`--page-size` for both import and export history together, plus `--import-page`, `--import-page-size`, `--export-page`, and `--export-page-size` when operators want to page each side independently
 - `runs:list` mirrors `GET /runs` with `--track-id`, `--status`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, `--api-url`, and `--json`
 - `runs:start` mirrors `POST /runs` with `--track-id`, `--prompt`, optional `--profile`, `--api-url`, and `--json`

@@ -524,6 +524,152 @@ test("CLI lists tracks and runs with filters, pagination, sorting, and json outp
   });
 });
 
+test("CLI updates track workflow state locally through admin commands", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-track-update-"));
+  const service = await createService(rootDir);
+
+  const track = await service.createTrack({
+    title: "CLI track update",
+    description: "Exercise local track workflow update commands",
+  });
+
+  const env = {
+    ...process.env,
+    SPECRAIL_DATA_DIR: path.join(rootDir, "data"),
+    SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "repo-visible"),
+  };
+  const cwd = path.resolve(import.meta.dirname, "../..");
+
+  const updateResult = await execFileAsync(
+    "pnpm",
+    [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "tracks",
+      "update",
+      "--track-id",
+      track.id,
+      "--status",
+      "review",
+      "--spec-status",
+      "approved",
+      "--plan-status",
+      "pending",
+      "--github-issue-number",
+      "55",
+      "--github-issue-url",
+      "https://github.com/yoophi-a/specrail/issues/55",
+      "--github-pr-number",
+      "77",
+      "--github-pr-url",
+      "https://github.com/yoophi-a/specrail/pull/77",
+      "--json",
+    ],
+    { cwd, env },
+  );
+  const updatePayload = JSON.parse(updateResult.stdout) as {
+    result: {
+      track: {
+        id: string;
+        status: string;
+        specStatus: string;
+        planStatus: string;
+        githubIssue?: { number: number; url: string };
+        githubPullRequest?: { number: number; url: string };
+      };
+      meta: { action: string; source: string };
+    };
+  };
+  assert.equal(updatePayload.result.track.id, track.id);
+  assert.equal(updatePayload.result.track.status, "review");
+  assert.equal(updatePayload.result.track.specStatus, "approved");
+  assert.equal(updatePayload.result.track.planStatus, "pending");
+  assert.deepEqual(updatePayload.result.track.githubIssue, {
+    number: 55,
+    url: "https://github.com/yoophi-a/specrail/issues/55",
+  });
+  assert.deepEqual(updatePayload.result.track.githubPullRequest, {
+    number: 77,
+    url: "https://github.com/yoophi-a/specrail/pull/77",
+  });
+  assert.equal(updatePayload.result.meta.action, "update");
+  assert.equal(updatePayload.result.meta.source, "local");
+
+  const statusResult = await execFileAsync(
+    "pnpm",
+    ["exec", "tsx", "--tsconfig", "../../tsconfig.base.json", "src/cli.ts", "tracks", "status", "--track-id", track.id, "--status", "blocked"],
+    { cwd, env },
+  );
+  assert.match(statusResult.stdout, /Track .* updated \(status, local\)/);
+  assert.match(statusResult.stdout, /status: blocked/);
+
+  const specStatusResult = await execFileAsync(
+    "pnpm",
+    [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "tracks",
+      "spec-status",
+      "--track-id",
+      track.id,
+      "--spec-status",
+      "draft",
+      "--json",
+    ],
+    { cwd, env },
+  );
+  const specStatusPayload = JSON.parse(specStatusResult.stdout) as {
+    result: { track: { specStatus: string }; meta: { action: string; source: string } };
+  };
+  assert.equal(specStatusPayload.result.track.specStatus, "draft");
+  assert.equal(specStatusPayload.result.meta.action, "spec-status");
+  assert.equal(specStatusPayload.result.meta.source, "local");
+
+  const planStatusResult = await execFileAsync(
+    "pnpm",
+    [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "tracks",
+      "plan-status",
+      "--track-id",
+      track.id,
+      "--plan-status",
+      "approved",
+      "--json",
+    ],
+    { cwd, env },
+  );
+  const planStatusPayload = JSON.parse(planStatusResult.stdout) as {
+    result: { track: { planStatus: string }; meta: { action: string; source: string } };
+  };
+  assert.equal(planStatusPayload.result.track.planStatus, "approved");
+  assert.equal(planStatusPayload.result.meta.action, "plan-status");
+  assert.equal(planStatusPayload.result.meta.source, "local");
+
+  const persisted = await service.getTrack(track.id);
+  assert.equal(persisted?.status, "blocked");
+  assert.equal(persisted?.specStatus, "draft");
+  assert.equal(persisted?.planStatus, "approved");
+  assert.deepEqual(persisted?.githubIssue, {
+    number: 55,
+    url: "https://github.com/yoophi-a/specrail/issues/55",
+  });
+  assert.deepEqual(persisted?.githubPullRequest, {
+    number: 77,
+    url: "https://github.com/yoophi-a/specrail/pull/77",
+  });
+});
+
 test("CLI lists run event history and tail output", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-run-events-"));
   const dependencies = createDependencies(path.join(rootDir, "data"), path.join(rootDir, "repo-visible"));
@@ -848,6 +994,102 @@ test("CLI supports remote run lifecycle/list/inspect/events across shared API mo
     assert.equal(eventsPayload.result.events[0]?.executionId, startPayload.result.run.id);
     assert.equal(eventsPayload.result.meta.mode, "history");
     assert.equal(eventsPayload.result.meta.limit, 1);
+  });
+});
+
+test("CLI updates track workflow state through shared remote API mode", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-track-remote-"));
+
+  await withServer(rootDir, async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "CLI remote track commands",
+        description: "Exercise shared remote track update mode",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const cwd = path.resolve(import.meta.dirname, "../..");
+    const env = {
+      ...process.env,
+      SPECRAIL_DATA_DIR: path.join(rootDir, "missing-data"),
+      SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "missing-repo-visible"),
+      SPECRAIL_API_BASE_URL: baseUrl,
+    };
+
+    const workflowResult = await execFileAsync("pnpm", [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "tracks",
+      "workflow",
+      "--track-id",
+      trackPayload.track.id,
+      "--status",
+      "review",
+      "--spec-status",
+      "approved",
+      "--plan-status",
+      "pending",
+      "--github-issue-number",
+      "55",
+      "--github-issue-url",
+      "https://github.com/yoophi-a/specrail/issues/55",
+      "--json",
+    ], { cwd, env });
+    const workflowPayload = JSON.parse(workflowResult.stdout) as {
+      result: {
+        track: { id: string; status: string; specStatus: string; planStatus: string; githubIssue?: { number: number; url: string } };
+        meta: { action: string; source: string };
+      };
+    };
+    assert.equal(workflowPayload.result.track.id, trackPayload.track.id);
+    assert.equal(workflowPayload.result.track.status, "review");
+    assert.equal(workflowPayload.result.track.specStatus, "approved");
+    assert.equal(workflowPayload.result.track.planStatus, "pending");
+    assert.deepEqual(workflowPayload.result.track.githubIssue, {
+      number: 55,
+      url: "https://github.com/yoophi-a/specrail/issues/55",
+    });
+    assert.equal(workflowPayload.result.meta.action, "workflow");
+    assert.equal(workflowPayload.result.meta.source, "remote");
+
+    const statusResult = await execFileAsync("pnpm", [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "tracks",
+      "status",
+      "--track-id",
+      trackPayload.track.id,
+      "--status",
+      "blocked",
+      "--json",
+    ], { cwd, env });
+    const statusPayload = JSON.parse(statusResult.stdout) as {
+      result: { track: { status: string }; meta: { action: string; source: string } };
+    };
+    assert.equal(statusPayload.result.track.status, "blocked");
+    assert.equal(statusPayload.result.meta.action, "status");
+    assert.equal(statusPayload.result.meta.source, "remote");
+
+    const inspectResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
+    const inspectPayload = (await inspectResponse.json()) as {
+      track: { status: string; specStatus: string; planStatus: string; githubIssue?: { number: number; url: string } };
+    };
+    assert.equal(inspectPayload.track.status, "blocked");
+    assert.equal(inspectPayload.track.specStatus, "approved");
+    assert.equal(inspectPayload.track.planStatus, "pending");
+    assert.deepEqual(inspectPayload.track.githubIssue, {
+      number: 55,
+      url: "https://github.com/yoophi-a/specrail/issues/55",
+    });
   });
 });
 

@@ -6,10 +6,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import { loadConfig } from "@specrail/config";
 import {
   OPENSPEC_RESOLUTION_PRESETS,
+  type ApprovalStatus,
   type Execution,
   type ExecutionEvent,
   type RunInspection,
   type Track,
+  type TrackStatus,
   type TrackOpenSpecInspection,
   type TrackInspection,
   type TrackIntegrationsInspection,
@@ -43,6 +45,11 @@ interface ParsedArgs {
     | "openspec-inspect-imports"
     | "openspec-inspect-exports"
     | "track-list"
+    | "track-update"
+    | "track-workflow"
+    | "track-status"
+    | "track-spec-status"
+    | "track-plan-status"
     | "track-inspect"
     | "track-inspect-integrations"
     | "run-list"
@@ -71,6 +78,12 @@ interface ParsedArgs {
   exportPage?: number;
   exportPageSize?: number;
   status?: string;
+  specStatus?: string;
+  planStatus?: string;
+  githubIssueNumber?: number;
+  githubIssueUrl?: string;
+  githubPullRequestNumber?: number;
+  githubPullRequestUrl?: string;
   priority?: string;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
@@ -114,6 +127,11 @@ Usage:
   specrail-admin openspec inspect imports --track-id <track-id> [--page <n>] [--page-size <count>] [--json]
   specrail-admin openspec inspect exports --track-id <track-id> [--page <n>] [--page-size <count>] [--json]
   specrail-admin tracks list [--status <status>] [--priority <priority>] [--page <n>] [--page-size <count>] [--sort-by <updatedAt|createdAt|title|priority|status>] [--sort-order <asc|desc>] [--json]
+  specrail-admin tracks update --track-id <track-id> [--status <status>] [--spec-status <status>] [--plan-status <status>] [--github-issue-number <n> --github-issue-url <url>] [--github-pr-number <n> --github-pr-url <url>] [--api-url <url>] [--json]
+  specrail-admin tracks workflow --track-id <track-id> --status <status> [--spec-status <status>] [--plan-status <status>] [--api-url <url>] [--json]
+  specrail-admin tracks status --track-id <track-id> --status <status> [--api-url <url>] [--json]
+  specrail-admin tracks spec-status --track-id <track-id> --spec-status <status> [--api-url <url>] [--json]
+  specrail-admin tracks plan-status --track-id <track-id> --plan-status <status> [--api-url <url>] [--json]
   specrail-admin tracks inspect --track-id <track-id> [--json]
   specrail-admin tracks inspect integrations --track-id <track-id> [--page <n>] [--page-size <count>] [--import-page <n>] [--import-page-size <count>] [--export-page <n>] [--export-page-size <count>] [--json]
   specrail-admin runs list [--track-id <track-id>] [--status <status>] [--page <n>] [--page-size <count>] [--sort-by <createdAt|startedAt|finishedAt|status>] [--sort-order <asc|desc>] [--api-url <url>] [--json]
@@ -134,6 +152,11 @@ Examples:
   specrail-admin openspec exports --track-id track_123 --page-size 5 --overwrite-only
   specrail-admin openspec inspect --track-id track_123 --page-size 1 --export-page 2
   specrail-admin openspec inspect imports --track-id track_123 --page 2 --page-size 5
+  specrail-admin tracks update --track-id track_123 --status review --spec-status approved --plan-status pending --github-issue-number 55 --github-issue-url https://github.com/yoophi-a/specrail/issues/55
+  specrail-admin tracks workflow --track-id track_123 --status in_progress --spec-status approved --plan-status approved
+  specrail-admin tracks status --track-id track_123 --status blocked --api-url http://127.0.0.1:4000
+  specrail-admin tracks spec-status --track-id track_123 --spec-status approved
+  specrail-admin tracks plan-status --track-id track_123 --plan-status pending
   specrail-admin tracks list --status ready --sort-by title --sort-order asc
   specrail-admin tracks inspect --track-id track_123
   specrail-admin tracks inspect integrations --track-id track_123 --page-size 5
@@ -239,6 +262,21 @@ function parseArgs(argv: string[]): ParsedArgs {
     rest.unshift(subaction);
   } else if (group === "tracks" && action === "list") {
     args.command = "track-list";
+    rest.unshift(subaction);
+  } else if (group === "tracks" && action === "update") {
+    args.command = "track-update";
+    rest.unshift(subaction);
+  } else if (group === "tracks" && action === "workflow") {
+    args.command = "track-workflow";
+    rest.unshift(subaction);
+  } else if (group === "tracks" && action === "status") {
+    args.command = "track-status";
+    rest.unshift(subaction);
+  } else if (group === "tracks" && action === "spec-status") {
+    args.command = "track-spec-status";
+    rest.unshift(subaction);
+  } else if (group === "tracks" && action === "plan-status") {
+    args.command = "track-plan-status";
     rest.unshift(subaction);
   } else if (group === "tracks" && action === "inspect" && subaction === "integrations") {
     args.command = "track-inspect-integrations";
@@ -354,6 +392,34 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--status":
         args.status = rest[++index];
         break;
+      case "--spec-status":
+        args.specStatus = rest[++index];
+        break;
+      case "--plan-status":
+        args.planStatus = rest[++index];
+        break;
+      case "--github-issue-number": {
+        const value = Number.parseInt(rest[++index] ?? "", 10);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error(`Invalid GitHub issue number: ${rest[index] ?? ""}`);
+        }
+        args.githubIssueNumber = value;
+        break;
+      }
+      case "--github-issue-url":
+        args.githubIssueUrl = rest[++index];
+        break;
+      case "--github-pr-number": {
+        const value = Number.parseInt(rest[++index] ?? "", 10);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error(`Invalid GitHub pull request number: ${rest[index] ?? ""}`);
+        }
+        args.githubPullRequestNumber = value;
+        break;
+      }
+      case "--github-pr-url":
+        args.githubPullRequestUrl = rest[++index];
+        break;
       case "--priority":
         args.priority = rest[++index];
         break;
@@ -458,6 +524,25 @@ function printTrackList(result: Awaited<ReturnType<ReturnType<typeof createDefau
     console.log(`  - spec/plan: ${track.specStatus}/${track.planStatus}`);
     console.log(`  - updatedAt: ${track.updatedAt}`);
   }
+}
+
+function printTrackUpdate(track: Track, args: ParsedArgs, meta: { action: string; source: "local" | "remote" }): void {
+  if (args.json) {
+    console.log(JSON.stringify({ config: loadConfig(), result: { track, meta } }, null, 2));
+    return;
+  }
+
+  console.log(`Track ${track.id} updated (${meta.action}, ${meta.source})`);
+  console.log(`- status: ${track.status}`);
+  console.log(`- specStatus: ${track.specStatus}`);
+  console.log(`- planStatus: ${track.planStatus}`);
+  if (track.githubIssue) {
+    console.log(`- githubIssue: #${track.githubIssue.number} ${track.githubIssue.url}`);
+  }
+  if (track.githubPullRequest) {
+    console.log(`- githubPullRequest: #${track.githubPullRequest.number} ${track.githubPullRequest.url}`);
+  }
+  console.log(`- updatedAt: ${track.updatedAt}`);
 }
 
 function printRunList(result: Awaited<ReturnType<ReturnType<typeof createDefaultService>["listRunsPage"]>>, args: ParsedArgs): void {
@@ -727,6 +812,31 @@ function buildQueryString(entries: Array<[string, string | number | undefined]>)
 async function getRemoteRun(apiBaseUrl: string, runId: string): Promise<Execution> {
   const payload = await fetchJson<{ run: Execution }>(`${normalizeApiBaseUrl(apiBaseUrl)}/runs/${encodeURIComponent(runId)}`);
   return payload.run;
+}
+
+async function updateRemoteTrack(
+  apiBaseUrl: string,
+  input: {
+    trackId: string;
+    status?: TrackStatus;
+    specStatus?: ApprovalStatus;
+    planStatus?: ApprovalStatus;
+    githubIssue?: Track["githubIssue"];
+    githubPullRequest?: Track["githubPullRequest"];
+  },
+): Promise<Track> {
+  const payload = await fetchJson<{ track: Track }>(`${normalizeApiBaseUrl(apiBaseUrl)}/tracks/${encodeURIComponent(input.trackId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.specStatus !== undefined ? { specStatus: input.specStatus } : {}),
+      ...(input.planStatus !== undefined ? { planStatus: input.planStatus } : {}),
+      ...(input.githubIssue !== undefined ? { githubIssue: input.githubIssue } : {}),
+      ...(input.githubPullRequest !== undefined ? { githubPullRequest: input.githubPullRequest } : {}),
+    }),
+  });
+  return payload.track;
 }
 
 async function startRemoteRun(apiBaseUrl: string, input: { trackId: string; prompt: string; profile?: string }): Promise<Execution> {
@@ -1321,6 +1431,80 @@ async function run(): Promise<void> {
     }
 
     printTrackList(result, args);
+    return;
+  }
+
+  if (
+    args.command === "track-update" ||
+    args.command === "track-workflow" ||
+    args.command === "track-status" ||
+    args.command === "track-spec-status" ||
+    args.command === "track-plan-status"
+  ) {
+    if (!args.trackId) {
+      throw new Error("Missing required option: --track-id");
+    }
+
+    const update = {
+      trackId: args.trackId,
+      status: args.command === "track-spec-status" || args.command === "track-plan-status" ? undefined : args.status as TrackStatus | undefined,
+      specStatus: args.specStatus as ApprovalStatus | undefined,
+      planStatus: args.planStatus as ApprovalStatus | undefined,
+      githubIssue:
+        args.githubIssueNumber !== undefined || args.githubIssueUrl !== undefined
+          ? {
+              number: args.githubIssueNumber ?? 0,
+              url: args.githubIssueUrl ?? "",
+            }
+          : undefined,
+      githubPullRequest:
+        args.githubPullRequestNumber !== undefined || args.githubPullRequestUrl !== undefined
+          ? {
+              number: args.githubPullRequestNumber ?? 0,
+              url: args.githubPullRequestUrl ?? "",
+            }
+          : undefined,
+    };
+
+    if (args.command === "track-workflow" && !update.status) {
+      throw new Error("Missing required option: --status");
+    }
+    if (args.command === "track-status" && !update.status) {
+      throw new Error("Missing required option: --status");
+    }
+    if (args.command === "track-spec-status" && !update.specStatus) {
+      throw new Error("Missing required option: --spec-status");
+    }
+    if (args.command === "track-plan-status" && !update.planStatus) {
+      throw new Error("Missing required option: --plan-status");
+    }
+    if ((args.githubIssueNumber === undefined) !== (args.githubIssueUrl === undefined)) {
+      throw new Error("--github-issue-number and --github-issue-url must be provided together");
+    }
+    if ((args.githubPullRequestNumber === undefined) !== (args.githubPullRequestUrl === undefined)) {
+      throw new Error("--github-pr-number and --github-pr-url must be provided together");
+    }
+    if (!update.status && !update.specStatus && !update.planStatus && !update.githubIssue && !update.githubPullRequest) {
+      throw new Error("At least one track update option is required");
+    }
+
+    const apiBaseUrl = resolveApiBaseUrl(args);
+    const track = apiBaseUrl
+      ? await updateRemoteTrack(apiBaseUrl, update)
+      : await service.updateTrack(update);
+    printTrackUpdate(track, args, {
+      action:
+        args.command === "track-workflow"
+          ? "workflow"
+          : args.command === "track-status"
+            ? "status"
+            : args.command === "track-spec-status"
+              ? "spec-status"
+              : args.command === "track-plan-status"
+                ? "plan-status"
+                : "update",
+      source: apiBaseUrl ? "remote" : "local",
+    });
     return;
   }
 
