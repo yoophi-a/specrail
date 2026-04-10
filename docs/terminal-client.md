@@ -19,7 +19,7 @@
 ## Current screens
 
 - `home`: overview counts and last fetch time
-- `tracks`: recent track summary list
+- `tracks`: recent track summary list plus planning-session, revision, and approval context for the selected track
 - `runs`: recent run summary list
 - `settings`: resolved config values and extension notes
 
@@ -41,10 +41,27 @@ The run detail pane also highlights:
 - failure focus, including exit code or signal when present in event payloads
 - planning-context staleness and last planning-context update timestamp
 
+## Planning and approval workflow support
+
+The tracks screen now also acts as the first planning-workspace inspector:
+
+- loads planning sessions for the selected track
+- shows the latest messages from the selected planning session
+- summarizes revision focus for `spec`, `plan`, and `tasks`
+- highlights pending approval requests and whether the approved execution context is stale or blocked by newer planning changes
+- lets operators approve or reject the next pending approval request with `a` / `x`
+
+This is intentionally still lightweight:
+
+- revision proposal authoring is review-oriented for now, not a full text editor
+- approval decisions use a minimal `decidedBy: "terminal"` payload
+- the client optimizes for browsing and unblocking runs without dropping to raw API calls
+
 ## Follow-up direction
 
 Good next steps after the live monitor baseline:
 - filters for active vs terminal runs
 - pausing/resuming the live tail without changing selection
 - richer provider-specific event formatting for long stdout/stderr payloads
+- richer planning interaction, including targeted revision selection and proposal authoring
 - operator actions from the terminal surface, such as resume/cancel shortcuts

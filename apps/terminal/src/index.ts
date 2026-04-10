@@ -4,6 +4,7 @@ import { loadTerminalClientConfig, type SpecRailTerminalClientConfig } from "@sp
 
 export type TerminalScreenId = "home" | "tracks" | "runs" | "settings";
 export type RunEventConnectionState = "idle" | "connecting" | "live" | "reconnecting" | "closed" | "error";
+export type ArtifactKind = "spec" | "plan" | "tasks";
 
 export interface TrackListItem {
   id: string;
@@ -51,6 +52,59 @@ export interface ExecutionEvent {
   payload?: Record<string, unknown>;
 }
 
+export interface PlanningSessionSummary {
+  id: string;
+  trackId: string;
+  status: string;
+  latestRevisionId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PlanningMessage {
+  id: string;
+  planningSessionId: string;
+  authorType: string;
+  kind: string;
+  relatedArtifact?: ArtifactKind;
+  body: string;
+  createdAt: string;
+}
+
+export interface ArtifactRevisionSummary {
+  id: string;
+  trackId: string;
+  artifact: ArtifactKind;
+  version: number;
+  createdBy: string;
+  content: string;
+  approvalRequestId?: string;
+  approvedAt?: string;
+  createdAt: string;
+}
+
+export interface ApprovalRequestSummary {
+  id: string;
+  trackId: string;
+  artifact: ArtifactKind;
+  revisionId: string;
+  status: string;
+  requestedBy: string;
+  decisionNote?: string;
+  createdAt: string;
+  decidedAt?: string;
+}
+
+export interface TrackPlanningWorkspace {
+  planningSessions: PlanningSessionSummary[];
+  planningMessages: PlanningMessage[];
+  revisions: Record<ArtifactKind, ArtifactRevisionSummary[]>;
+  approvalRequests: Record<ArtifactKind, ApprovalRequestSummary[]>;
+  selectedPlanningSessionId?: string;
+  selectedArtifact: ArtifactKind;
+  selectedApprovalRequestId?: string;
+}
+
 export interface TrackDetailSnapshot {
   track: TrackListItem;
   artifacts: {
@@ -66,6 +120,7 @@ export interface TrackDetailSnapshot {
     hasPendingChanges?: boolean;
     updatedAt?: string;
   };
+  planningWorkspace?: TrackPlanningWorkspace;
 }
 
 export interface RunDetailSnapshot {
@@ -95,6 +150,11 @@ export interface RunEventFeedState {
   lastEventAt: string | null;
 }
 
+export interface PendingTrackActionState {
+  kind: "approve" | "reject";
+  approvalRequestId: string;
+}
+
 export interface TerminalAppState {
   screen: TerminalScreenId;
   statusLine: string;
@@ -106,6 +166,7 @@ export interface TerminalAppState {
   tracks: DetailPanelState<TrackDetailSnapshot>;
   runs: DetailPanelState<RunDetailSnapshot>;
   runEvents: RunEventFeedState;
+  pendingTrackAction: PendingTrackActionState | null;
 }
 
 interface TracksResponse {
@@ -120,6 +181,19 @@ interface TrackDetailResponse {
   track: TrackListItem;
   artifacts: TrackDetailSnapshot["artifacts"];
   planningContext?: TrackDetailSnapshot["planningContext"];
+}
+
+interface PlanningSessionsResponse {
+  planningSessions: PlanningSessionSummary[];
+}
+
+interface PlanningMessagesResponse {
+  messages: PlanningMessage[];
+}
+
+interface ArtifactWorkflowResponse {
+  revisions: ArtifactRevisionSummary[];
+  approvalRequests: ApprovalRequestSummary[];
 }
 
 interface RunDetailResponse {
@@ -156,11 +230,53 @@ export class SpecRailTerminalApiClient {
 
   async loadTrackDetail(trackId: string): Promise<TrackDetailSnapshot> {
     const payload = await this.request<TrackDetailResponse>(`/tracks/${trackId}`);
+    const planningSessionsPayload = await this.request<PlanningSessionsResponse>(`/tracks/${trackId}/planning-sessions`);
+    const planningSessions = planningSessionsPayload.planningSessions;
+    const selectedPlanningSessionId = payload.planningContext?.planningSessionId ?? planningSessions[0]?.id;
+    const planningMessages = selectedPlanningSessionId
+      ? (await this.request<PlanningMessagesResponse>(`/planning-sessions/${selectedPlanningSessionId}/messages`)).messages
+      : [];
+
+    const artifacts = ["spec", "plan", "tasks"] as const;
+    const workflowPayloads = await Promise.all(
+      artifacts.map(async (artifact) => [artifact, await this.request<ArtifactWorkflowResponse>(`/tracks/${trackId}/artifacts/${artifact}`)] as const),
+    );
+
+    const revisions = Object.fromEntries(workflowPayloads.map(([artifact, data]) => [artifact, data.revisions])) as TrackPlanningWorkspace["revisions"];
+    const approvalRequests = Object.fromEntries(
+      workflowPayloads.map(([artifact, data]) => [artifact, data.approvalRequests]),
+    ) as TrackPlanningWorkspace["approvalRequests"];
+
+    const pendingApproval = artifacts
+      .flatMap((artifact) => approvalRequests[artifact])
+      .find((request) => request.status === "pending");
+
     return {
       track: payload.track,
       artifacts: payload.artifacts,
       planningContext: payload.planningContext,
+      planningWorkspace: {
+        planningSessions,
+        planningMessages,
+        revisions,
+        approvalRequests,
+        selectedPlanningSessionId,
+        selectedArtifact: pendingApproval?.artifact ?? (payload.planningContext?.planRevisionId ? "plan" : "spec"),
+        selectedApprovalRequestId: pendingApproval?.id,
+      },
     };
+  }
+
+  async decideApprovalRequest(approvalRequestId: string, decision: "approve" | "reject"): Promise<void> {
+    const response = await this.fetchImpl(new URL(`/approval-requests/${approvalRequestId}/${decision}`, this.baseUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "terminal" }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`SpecRail API request failed (${response.status}) for /approval-requests/${approvalRequestId}/${decision}`);
+    }
   }
 
   async loadRunDetail(runId: string): Promise<RunDetailSnapshot> {
@@ -259,6 +375,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     tracks: createEmptyDetailState<TrackDetailSnapshot>(),
     runs: createEmptyDetailState<RunDetailSnapshot>(),
     runEvents: createEmptyRunEventFeedState(),
+    pendingTrackAction: null,
   };
 }
 
@@ -291,6 +408,7 @@ export async function bootstrapTerminalState(
     tracks,
     runs,
     runEvents: createEmptyRunEventFeedState(runs.selectedId),
+    pendingTrackAction: null,
   });
 }
 
@@ -310,6 +428,7 @@ export async function refreshTerminalState(
     statusLine: `Refreshed ${summary.tracks.length} tracks and ${summary.runs.length} runs at ${summary.fetchedAt}.`,
     tracks,
     runs,
+    pendingTrackAction: null,
   });
 }
 
@@ -430,6 +549,17 @@ function updateSelection(state: TerminalAppState, delta: number): TerminalAppSta
   return state;
 }
 
+export function resolveSelectedPendingApproval(state: TerminalAppState): ApprovalRequestSummary | null {
+  const workspace = state.tracks.data?.planningWorkspace;
+  if (!workspace) {
+    return null;
+  }
+
+  return getPendingApprovalRequests(workspace).find((request) => request.id === workspace.selectedApprovalRequestId)
+    ?? getPendingApprovalRequests(workspace)[0]
+    ?? null;
+}
+
 export function syncRunEventSelection(state: TerminalAppState): TerminalAppState {
   const selectedId = state.runs.selectedId;
   if (selectedId === state.runEvents.runId) {
@@ -456,7 +586,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
   ].join("\n");
 }
 
@@ -484,6 +614,8 @@ function renderScreenBody(state: TerminalAppState): string[] {
         `- API base URL: ${state.apiBaseUrl}`,
         `- Refresh interval: ${state.refreshIntervalMs}ms`,
         "- Navigation: use j/k or arrow keys to move through track/run selections.",
+        "- Tracks view surfaces planning sessions, revision history, and pending approvals.",
+        "- Press a/x on the tracks screen to approve or reject the next pending request.",
         "- Runs view tails live SSE events with automatic reconnect attempts.",
       ];
     case "home":
@@ -560,6 +692,12 @@ function renderTrackDetail(
     return ["- Detail unavailable. Press r to reload the selected track."];
   }
 
+  const workspace = detail.planningWorkspace;
+  const selectedArtifact = workspace?.selectedArtifact ?? "plan";
+  const selectedRevision = workspace?.revisions[selectedArtifact]?.[0] ?? null;
+  const pendingRequests = workspace ? getPendingApprovalRequests(workspace) : [];
+  const selectedApproval = pendingRequests.find((request) => request.id === workspace?.selectedApprovalRequestId) ?? pendingRequests[0] ?? null;
+
   return [
     `- id: ${detail.track.id}`,
     `- title: ${detail.track.title}`,
@@ -568,11 +706,46 @@ function renderTrackDetail(
     `- approvals: spec=${detail.track.specStatus ?? "unknown"}, plan=${detail.track.planStatus ?? "unknown"}`,
     `- updated: ${detail.track.updatedAt ?? "unknown"}`,
     `- planning session: ${detail.planningContext?.planningSessionId ?? "none"}`,
+    `- planning context updated: ${detail.planningContext?.updatedAt ?? "unknown"}`,
     `- pending planning changes: ${detail.planningContext?.hasPendingChanges ? "yes" : "no"}`,
+    `- execution context signal: ${detail.planningContext?.hasPendingChanges ? "new approvals needed before new runs" : "current approved context is runnable"}`,
     `- spec preview: ${previewText(detail.artifacts.spec)}`,
     `- plan preview: ${previewText(detail.artifacts.plan)}`,
     `- tasks preview: ${previewText(detail.artifacts.tasks)}`,
+    "- planning sessions:",
+    ...renderPlanningSessionLines(workspace),
+    `- revision focus (${selectedArtifact}): ${selectedRevision ? `v${selectedRevision.version} by ${selectedRevision.createdBy} at ${selectedRevision.createdAt}${selectedRevision.approvedAt ? ` | approved ${selectedRevision.approvedAt}` : " | pending review"}` : "none"}`,
+    `- revision preview: ${selectedRevision ? previewText(selectedRevision.content, 120) : "none"}`,
+    `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
+    `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
   ];
+}
+
+function renderPlanningSessionLines(workspace?: TrackPlanningWorkspace): string[] {
+  if (!workspace || workspace.planningSessions.length === 0) {
+    return ["  - none"];
+  }
+
+  return workspace.planningSessions.slice(0, 3).map((session) => {
+    const prefix = session.id === workspace.selectedPlanningSessionId ? "  >" : "   ";
+    const messageCount = workspace.planningMessages.filter((message) => message.planningSessionId === session.id).length;
+    return `${prefix} ${session.id} | ${session.status} | messages ${messageCount} | updated ${session.updatedAt ?? session.createdAt ?? "unknown"}`;
+  }).concat(renderPlanningMessageLines(workspace.planningMessages));
+}
+
+function renderPlanningMessageLines(messages: PlanningMessage[]): string[] {
+  if (messages.length === 0) {
+    return ["  - no planning messages yet"];
+  }
+
+  return messages.slice(-3).map((message) => `  - ${message.authorType}/${message.kind}${message.relatedArtifact ? `/${message.relatedArtifact}` : ""}: ${previewText(message.body, 90)}`);
+}
+
+function getPendingApprovalRequests(workspace: TrackPlanningWorkspace): ApprovalRequestSummary[] {
+  return (["spec", "plan", "tasks"] as const)
+    .flatMap((artifact) => workspace.approvalRequests[artifact])
+    .filter((request) => request.status === "pending")
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
 function renderRunDetail(
@@ -842,6 +1015,43 @@ export async function runTerminalApp(
     }
   };
 
+  const decideSelectedTrackApproval = async (decision: "approve" | "reject") => {
+    if (state.screen !== "tracks") {
+      updateState({ ...state, statusLine: `Switch to the tracks screen to ${decision} pending requests.` });
+      return;
+    }
+
+    const selectedApproval = resolveSelectedPendingApproval(state);
+    if (!selectedApproval) {
+      updateState({ ...state, statusLine: `No pending approval request available to ${decision}.` });
+      return;
+    }
+
+    state = {
+      ...state,
+      pendingTrackAction: { kind: decision, approvalRequestId: selectedApproval.id },
+      statusLine: `${decision === "approve" ? "Approving" : "Rejecting"} ${selectedApproval.id}...`,
+    };
+    render();
+
+    try {
+      await client.decideApprovalRequest(selectedApproval.id, decision);
+      updateState(await refreshTerminalState(state, client));
+      updateState({
+        ...state,
+        statusLine: `${decision === "approve" ? "Approved" : "Rejected"} ${selectedApproval.id}.`,
+        pendingTrackAction: null,
+      });
+    } catch (error) {
+      updateState({
+        ...state,
+        pendingTrackAction: null,
+        error: error instanceof Error ? error.message : `Failed to ${decision} approval request.`,
+        statusLine: error instanceof Error ? error.message : `Failed to ${decision} approval request.`,
+      });
+    }
+  };
+
   await refresh();
 
   if (!io.stdin.isTTY) {
@@ -883,6 +1093,16 @@ export async function runTerminalApp(
 
       if (key.name === "r") {
         void refresh();
+        return;
+      }
+
+      if (key.name === "a") {
+        void decideSelectedTrackApproval("approve");
+        return;
+      }
+
+      if (key.name === "x") {
+        void decideSelectedTrackApproval("reject");
         return;
       }
 
