@@ -166,7 +166,29 @@ SpecRail keeps the terminal state as `cancelled`, but you may still see previous
 
 ## Smoke test workflow
 
-Use this when validating a deployment or local machine:
+Use this when validating a deployment or local machine.
+The smoke path is intentionally opt-in so default `pnpm test` runs stay fast and provider-independent.
+
+### Built-in smoke command
+
+```bash
+SPECRAIL_RUN_CLAUDE_SMOKE=1 pnpm test:claude-smoke
+```
+
+Optional environment overrides:
+- `CLAUDE_SMOKE_MODEL=<model>` to pass a non-default Claude model through as SpecRail's `profile`
+- `CLAUDE_SMOKE_PROMPT='<prompt>'` to override the default low-token prompt
+
+What this smoke test verifies:
+1. `checkClaudeCodeReadiness()` succeeds on the current machine.
+2. SpecRail can spawn a real Claude Code process in non-interactive `--print --output-format stream-json` mode.
+3. persisted session metadata captures a real `providerSessionId` and `resumeSessionRef`.
+4. normalized session events include at least a Claude init event and a terminal completed lifecycle event.
+5. raw Claude stdout transcript capture is written under `.claude-stream.jsonl`.
+
+### Manual/operator flow
+
+If you want to inspect the API-level behavior as well, use this fuller operator checklist:
 
 1. Verify Claude CLI directly:
 
@@ -187,9 +209,19 @@ claude --permission-mode bypassPermissions --print --output-format stream-json '
 6. Cancel a separate test run and verify the run transitions to `cancelled`.
    - inspect `.specrail-data/sessions/<sessionRef>.json` and confirm the cancellation verification fields look sensible for that machine.
 
+### CI guidance
+
+For CI, wire `pnpm test:claude-smoke` into a separate opt-in job that only runs on runners where:
+- the `claude` CLI is installed
+- authentication is already available for the runner user
+- `SPECRAIL_RUN_CLAUDE_SMOKE=1` is explicitly set
+
+If those preconditions are not guaranteed, keep the smoke command disabled and rely on the default unit/integration suite plus the adapter contract tests.
+
 ## Source of truth in code
 
 - `packages/adapters/src/providers/claude-code-adapter.ts`
 - `packages/adapters/src/providers/claude-code-contract.ts`
 - `packages/adapters/src/__tests__/claude-code-adapter.test.ts`
 - `packages/adapters/src/__tests__/claude-code-contract.test.ts`
+- `packages/adapters/src/__tests__/claude-code.smoke.test.ts`

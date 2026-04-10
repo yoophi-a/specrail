@@ -243,6 +243,9 @@ Operator notes:
 
 Read `docs/claude-code-operations.md` for setup, limitations, recovery, and smoke-test steps.
 
+For an opt-in real-CLI smoke run, set `SPECRAIL_RUN_CLAUDE_SMOKE=1` and run `pnpm test:claude-smoke`.
+By default this smoke path stays out of `pnpm test` so local and CI runs do not become provider-dependent unless explicitly enabled.
+
 For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`.
 
 For the API server, you can set `SPECRAIL_EXECUTION_BACKEND` and `SPECRAIL_EXECUTION_PROFILE` to choose the default executor/backend and profile used when callers omit them.
@@ -263,6 +266,7 @@ The docs above are aligned to the current MVP implementation and tests in:
 - `packages/core/src/services/specrail-service.ts`
 - `packages/config/src/artifacts.ts`
 - `packages/adapters/src/providers/codex-adapter.stub.ts`
+- `packages/adapters/src/__tests__/claude-code.smoke.test.ts`
 
 ## Related research
 
