@@ -11,11 +11,13 @@ import {
   type TaskDocument,
 } from "../domain/artifacts.js";
 import type {
+  AttachmentReference,
   ApprovalStatus,
   ApprovalRequest,
   ApprovalRequestStatus,
   ArtifactKind,
   ArtifactRevision,
+  ChannelBinding,
   Execution,
   ExecutionEvent,
   ExecutionStatus,
@@ -32,7 +34,9 @@ import type {
   EventStore,
   ExecutionRepository,
   ApprovalRequestRepository,
+  AttachmentReferenceRepository,
   ArtifactRevisionRepository,
+  ChannelBindingRepository,
   PlanningMessageStore,
   PlanningSessionRepository,
   ProjectRepository,
@@ -93,6 +97,8 @@ export interface SpecRailServiceDependencies {
   planningMessageStore: PlanningMessageStore;
   artifactRevisionRepository: ArtifactRevisionRepository;
   approvalRequestRepository: ApprovalRequestRepository;
+  channelBindingRepository: ChannelBindingRepository;
+  attachmentReferenceRepository: AttachmentReferenceRepository;
   executionRepository: ExecutionRepository;
   eventStore: EventStore;
   artifactWriter: TrackArtifactWriter;
@@ -163,6 +169,26 @@ export interface DecideApprovalRequestInput {
   approvalRequestId: string;
   decidedBy: ApprovalRequest["requestedBy"];
   comment?: string;
+}
+
+export interface BindChannelInput {
+  projectId: string;
+  channelType: ChannelBinding["channelType"];
+  externalChatId: string;
+  externalThreadId?: string;
+  externalUserId?: string;
+  trackId?: string;
+  planningSessionId?: string;
+}
+
+export interface RegisterAttachmentReferenceInput {
+  sourceType: AttachmentReference["sourceType"];
+  externalFileId: string;
+  fileName?: string;
+  mimeType?: string;
+  localPath?: string;
+  trackId?: string;
+  planningSessionId?: string;
 }
 
 export type SortOrder = "asc" | "desc";
@@ -461,6 +487,118 @@ export class SpecRailService {
     });
 
     return message;
+  }
+
+  async bindChannel(input: BindChannelInput): Promise<ChannelBinding> {
+    const project = await this.dependencies.projectRepository.getById(input.projectId);
+    if (!project) {
+      throw new NotFoundError(`Project not found: ${input.projectId}`);
+    }
+
+    if (input.trackId) {
+      const track = await this.dependencies.trackRepository.getById(input.trackId);
+      if (!track) {
+        throw new NotFoundError(`Track not found: ${input.trackId}`);
+      }
+
+      if (track.projectId !== input.projectId) {
+        throw new ValidationError(`Track does not belong to project: ${input.trackId}`);
+      }
+    }
+
+    if (input.planningSessionId) {
+      const session = await this.dependencies.planningSessionRepository.getById(input.planningSessionId);
+      if (!session) {
+        throw new NotFoundError(`Planning session not found: ${input.planningSessionId}`);
+      }
+
+      if (input.trackId && session.trackId !== input.trackId) {
+        throw new ValidationError(`Planning session does not belong to track: ${input.planningSessionId}`);
+      }
+    }
+
+    const existing = await this.dependencies.channelBindingRepository.findByExternalRef({
+      channelType: input.channelType,
+      externalChatId: input.externalChatId,
+      externalThreadId: input.externalThreadId,
+    });
+    const timestamp = this.now();
+
+    const binding: ChannelBinding = existing
+      ? {
+          ...existing,
+          externalUserId: input.externalUserId,
+          trackId: input.trackId,
+          planningSessionId: input.planningSessionId,
+          updatedAt: timestamp,
+        }
+      : {
+          id: `channel-binding-${this.idGenerator()}`,
+          projectId: input.projectId,
+          channelType: input.channelType,
+          externalChatId: input.externalChatId,
+          externalThreadId: input.externalThreadId,
+          externalUserId: input.externalUserId,
+          trackId: input.trackId,
+          planningSessionId: input.planningSessionId,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+
+    if (existing) {
+      await this.dependencies.channelBindingRepository.update(binding);
+    } else {
+      await this.dependencies.channelBindingRepository.create(binding);
+    }
+
+    return binding;
+  }
+
+  findChannelBindingByExternalRef(input: {
+    channelType: ChannelBinding["channelType"];
+    externalChatId: string;
+    externalThreadId?: string;
+  }): Promise<ChannelBinding | null> {
+    return this.dependencies.channelBindingRepository.findByExternalRef(input);
+  }
+
+  async registerAttachmentReference(input: RegisterAttachmentReferenceInput): Promise<AttachmentReference> {
+    if (input.trackId) {
+      const track = await this.dependencies.trackRepository.getById(input.trackId);
+      if (!track) {
+        throw new NotFoundError(`Track not found: ${input.trackId}`);
+      }
+    }
+
+    if (input.planningSessionId) {
+      const session = await this.dependencies.planningSessionRepository.getById(input.planningSessionId);
+      if (!session) {
+        throw new NotFoundError(`Planning session not found: ${input.planningSessionId}`);
+      }
+
+      if (input.trackId && session.trackId !== input.trackId) {
+        throw new ValidationError(`Planning session does not belong to track: ${input.planningSessionId}`);
+      }
+    }
+
+    const attachment: AttachmentReference = {
+      id: `attachment-reference-${this.idGenerator()}`,
+      sourceType: input.sourceType,
+      externalFileId: input.externalFileId,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      localPath: input.localPath,
+      trackId: input.trackId,
+      planningSessionId: input.planningSessionId,
+      uploadedAt: this.now(),
+    };
+
+    await this.dependencies.attachmentReferenceRepository.create(attachment);
+    return attachment;
+  }
+
+  listAttachmentReferences(input: { trackId?: string; planningSessionId?: string }): Promise<AttachmentReference[]> {
+    return this.dependencies.attachmentReferenceRepository.listByTarget(input);
   }
 
   async proposeArtifactRevision(

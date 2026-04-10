@@ -14,8 +14,12 @@ import {
   APPROVAL_STATUSES,
   APPROVAL_REQUEST_STATUSES,
   ARTIFACT_KINDS,
+  ATTACHMENT_SOURCE_TYPES,
+  CHANNEL_TYPES,
+  FileAttachmentReferenceRepository,
   FileApprovalRequestRepository,
   FileArtifactRevisionRepository,
+  FileChannelBindingRepository,
   FileExecutionRepository,
   FilePlanningSessionRepository,
   FileProjectRepository,
@@ -90,6 +94,26 @@ interface DecideApprovalRequestBody {
   comment?: string;
 }
 
+interface BindChannelRequestBody {
+  projectId: string;
+  channelType: "telegram";
+  externalChatId: string;
+  externalThreadId?: string;
+  externalUserId?: string;
+  trackId?: string;
+  planningSessionId?: string;
+}
+
+interface RegisterAttachmentRequestBody {
+  sourceType: "telegram";
+  externalFileId: string;
+  fileName?: string;
+  mimeType?: string;
+  localPath?: string;
+  trackId?: string;
+  planningSessionId?: string;
+}
+
 interface TrackListQuery {
   status?: TrackStatus;
   priority?: TrackRequestBody["priority"];
@@ -162,6 +186,8 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
   const planningMessageStore = new JsonlPlanningMessageStore(stateDir);
   const artifactRevisionRepository = new FileArtifactRevisionRepository(stateDir);
   const approvalRequestRepository = new FileApprovalRequestRepository(stateDir);
+  const channelBindingRepository = new FileChannelBindingRepository(stateDir);
+  const attachmentReferenceRepository = new FileAttachmentReferenceRepository(stateDir);
   const executionRepository = new FileExecutionRepository(stateDir);
   let service: SpecRailService | null = null;
 
@@ -172,6 +198,8 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
     planningMessageStore,
     artifactRevisionRepository,
     approvalRequestRepository,
+    channelBindingRepository,
+    attachmentReferenceRepository,
     executionRepository,
     eventStore,
     artifactWriter: {
@@ -507,6 +535,68 @@ function assertValidDecideApprovalRequestBody(body: DecideApprovalRequestBody): 
     if (commentDetail) {
       details.push(commentDetail);
     }
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidBindChannelBody(body: BindChannelRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  for (const field of ["projectId", "externalChatId"] as const) {
+    const detail = getNonEmptyStringDetail(field, body[field]);
+    if (detail) {
+      details.push(detail);
+    }
+  }
+
+  if (!CHANNEL_TYPES.includes(body.channelType)) {
+    details.push({ field: "channelType", message: `must be one of: ${CHANNEL_TYPES.join(", ")}` });
+  }
+
+  for (const field of ["externalThreadId", "externalUserId", "trackId", "planningSessionId"] as const) {
+    if (body[field] !== undefined) {
+      const detail = getNonEmptyStringDetail(field, body[field]);
+      if (detail) {
+        details.push(detail);
+      }
+    }
+  }
+
+  if (body.trackId === undefined && body.planningSessionId === undefined) {
+    details.push({ field: "body", message: "trackId or planningSessionId is required" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidRegisterAttachmentBody(body: RegisterAttachmentRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (!ATTACHMENT_SOURCE_TYPES.includes(body.sourceType)) {
+    details.push({ field: "sourceType", message: `must be one of: ${ATTACHMENT_SOURCE_TYPES.join(", ")}` });
+  }
+
+  const externalFileIdDetail = getNonEmptyStringDetail("externalFileId", body.externalFileId);
+  if (externalFileIdDetail) {
+    details.push(externalFileIdDetail);
+  }
+
+  for (const field of ["fileName", "mimeType", "localPath", "trackId", "planningSessionId"] as const) {
+    if (body[field] !== undefined) {
+      const detail = getNonEmptyStringDetail(field, body[field]);
+      if (detail) {
+        details.push(detail);
+      }
+    }
+  }
+
+  if (body.trackId === undefined && body.planningSessionId === undefined) {
+    details.push({ field: "body", message: "trackId or planningSessionId is required" });
   }
 
   if (details.length > 0) {
@@ -871,6 +961,66 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           comment: body.comment,
         });
         sendJson(response, 200, { approvalRequest });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 1 && segments[0] === "channel-bindings") {
+        const body = await readJson<BindChannelRequestBody>(request);
+        assertValidBindChannelBody(body);
+        const binding = await deps.service.bindChannel(body);
+        sendJson(response, 201, { binding });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 1 && segments[0] === "channel-bindings") {
+        const searchParams = getSearchParams(request);
+        const channelType = searchParams.get("channelType");
+        const externalChatId = searchParams.get("externalChatId");
+        const externalThreadId = searchParams.get("externalThreadId") ?? undefined;
+
+        if (!channelType || !externalChatId || !CHANNEL_TYPES.includes(channelType as "telegram")) {
+          throw new RequestValidationError("request validation failed", [
+            { field: "channelType", message: `must be one of: ${CHANNEL_TYPES.join(", ")}` },
+            { field: "externalChatId", message: "must not be empty" },
+          ].filter((detail, index) => (index === 0 ? !channelType || !CHANNEL_TYPES.includes(channelType as "telegram") : !externalChatId)));
+        }
+
+        const binding = await deps.service.findChannelBindingByExternalRef({
+          channelType: channelType as "telegram",
+          externalChatId,
+          externalThreadId,
+        });
+
+        if (!binding) {
+          sendError(response, 404, "not_found", "channel binding not found");
+          return;
+        }
+
+        sendJson(response, 200, { binding });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 1 && segments[0] === "attachments") {
+        const body = await readJson<RegisterAttachmentRequestBody>(request);
+        assertValidRegisterAttachmentBody(body);
+        const attachment = await deps.service.registerAttachmentReference(body);
+        sendJson(response, 201, { attachment });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 1 && segments[0] === "attachments") {
+        const searchParams = getSearchParams(request);
+        const trackId = searchParams.get("trackId") ?? undefined;
+        const planningSessionId = searchParams.get("planningSessionId") ?? undefined;
+
+        if (!trackId && !planningSessionId) {
+          throw new RequestValidationError("request validation failed", [
+            { field: "query", message: "trackId or planningSessionId is required" },
+          ]);
+        }
+
+        const attachments = await deps.service.listAttachmentReferences({ trackId, planningSessionId });
+        sendJson(response, 200, { attachments });
         return;
       }
 

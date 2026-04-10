@@ -46,6 +46,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - JSONL-backed run event persistence
 - SSE event streaming for run events
 - request validation and structured API errors
+- thin-channel foundations for external chat bindings and attachment references
 - automated API/config/adapter tests
 
 ### Not implemented yet
@@ -107,6 +108,18 @@ Current endpoints in `apps/api/src/index.ts`:
   - includes invalid pagination/sort params
 - `500` for unexpected server errors
 
+### Channel bindings and attachments
+- `POST /channel-bindings`
+  - create or refresh an external channel binding
+  - body: `{ projectId, channelType, externalChatId, externalThreadId?, externalUserId?, trackId?, planningSessionId? }`
+- `GET /channel-bindings?channelType=telegram&externalChatId=...&externalThreadId?...`
+  - resolve a thin-channel conversation back to its linked SpecRail context
+- `POST /attachments`
+  - register an attachment reference received by a channel frontend
+  - body: `{ sourceType, externalFileId, fileName?, mimeType?, localPath?, trackId?, planningSessionId? }`
+- `GET /attachments?trackId=...` or `GET /attachments?planningSessionId=...`
+  - list attachment references associated with a track or planning session
+
 ## Artifact and state layout
 
 At runtime the API writes under `SPECRAIL_DATA_DIR` (default from config), with these main areas:
@@ -129,6 +142,10 @@ At runtime the API writes under `SPECRAIL_DATA_DIR` (default from config), with 
       <projectId>.json
     tracks/
       <trackId>.json
+    channel-bindings/
+      <bindingId>.json
+    attachments/
+      <attachmentId>.json
     executions/
       <runId>.json
     events/

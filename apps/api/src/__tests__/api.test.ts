@@ -187,6 +187,49 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(planningMessagesPayload.messages.length, 1);
     assert.equal(planningMessagesPayload.messages[0]?.body, "Can we separate planning state from run events?");
 
+    const bindResponse = await fetch(`${baseUrl}/channel-bindings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "project-default",
+        channelType: "telegram",
+        externalChatId: "chat-1",
+        externalThreadId: "thread-1",
+        externalUserId: "user-1",
+        trackId: trackPayload.track.id,
+        planningSessionId: planningSessionPayload.planningSession.id,
+      }),
+    });
+    assert.equal(bindResponse.status, 201);
+    const bindPayload = (await bindResponse.json()) as { binding: { id: string; planningSessionId?: string } };
+    assert.equal(bindPayload.binding.planningSessionId, planningSessionPayload.planningSession.id);
+
+    const getBindingResponse = await fetch(
+      `${baseUrl}/channel-bindings?channelType=telegram&externalChatId=chat-1&externalThreadId=thread-1`,
+    );
+    assert.equal(getBindingResponse.status, 200);
+    const getBindingPayload = (await getBindingResponse.json()) as { binding: { id: string } };
+    assert.equal(getBindingPayload.binding.id, bindPayload.binding.id);
+
+    const attachmentResponse = await fetch(`${baseUrl}/attachments`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceType: "telegram",
+        externalFileId: "file-1",
+        fileName: "brief.txt",
+        planningSessionId: planningSessionPayload.planningSession.id,
+      }),
+    });
+    assert.equal(attachmentResponse.status, 201);
+
+    const attachmentsResponse = await fetch(
+      `${baseUrl}/attachments?planningSessionId=${planningSessionPayload.planningSession.id}`,
+    );
+    assert.equal(attachmentsResponse.status, 200);
+    const attachmentsPayload = (await attachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
+    assert.deepEqual(attachmentsPayload.attachments.map((attachment) => attachment.externalFileId), ["file-1"]);
+
     const proposedPlanRevisionResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/plan`, {
       method: "POST",
       headers: { "content-type": "application/json" },

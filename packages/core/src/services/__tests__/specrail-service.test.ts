@@ -6,8 +6,10 @@ import test from "node:test";
 
 import type { ExecutionEvent } from "../../domain/types.js";
 import {
+  FileAttachmentReferenceRepository,
   FileApprovalRequestRepository,
   FileArtifactRevisionRepository,
+  FileChannelBindingRepository,
   FileExecutionRepository,
   FilePlanningSessionRepository,
   FileProjectRepository,
@@ -29,6 +31,8 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
     planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
     artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
     approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
+    channelBindingRepository: new FileChannelBindingRepository(path.join(rootDir, "state")),
+    attachmentReferenceRepository: new FileAttachmentReferenceRepository(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: {
@@ -217,6 +221,41 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.deepEqual(
     events.map((event) => event.summary),
     ["Run started", "Prepared Codex command", "Run resumed", "Run cancelled"],
+  );
+
+  const binding = await service.bindChannel({
+    projectId: "project-default",
+    channelType: "telegram",
+    externalChatId: "chat-1",
+    externalThreadId: "thread-1",
+    externalUserId: "user-1",
+    trackId: track.id,
+    planningSessionId: planningSession.id,
+  });
+  assert.equal(binding.trackId, track.id);
+
+  const rebound = await service.bindChannel({
+    projectId: "project-default",
+    channelType: "telegram",
+    externalChatId: "chat-1",
+    externalThreadId: "thread-1",
+    externalUserId: "user-2",
+    planningSessionId: planningSession.id,
+  });
+  assert.equal(rebound.id, binding.id);
+  assert.equal(rebound.externalUserId, "user-2");
+
+  const attachment = await service.registerAttachmentReference({
+    sourceType: "telegram",
+    externalFileId: "file-1",
+    fileName: "notes.txt",
+    trackId: track.id,
+    planningSessionId: planningSession.id,
+  });
+  assert.equal(attachment.externalFileId, "file-1");
+  assert.deepEqual(
+    (await service.listAttachmentReferences({ planningSessionId: planningSession.id })).map((item) => item.id),
+    [attachment.id],
   );
 });
 

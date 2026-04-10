@@ -133,6 +133,39 @@ export interface PlanningMessage {
   createdAt: string;
 }
 
+export const CHANNEL_TYPES = ["telegram"] as const;
+
+export type ChannelType = "telegram";
+
+export interface ChannelBinding {
+  id: string;
+  projectId: string;
+  channelType: ChannelType;
+  externalChatId: string;
+  externalThreadId?: string;
+  externalUserId?: string;
+  trackId?: string;
+  planningSessionId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const ATTACHMENT_SOURCE_TYPES = ["telegram"] as const;
+
+export type AttachmentSourceType = "telegram";
+
+export interface AttachmentReference {
+  id: string;
+  sourceType: AttachmentSourceType;
+  externalFileId: string;
+  fileName?: string;
+  mimeType?: string;
+  localPath?: string;
+  trackId?: string;
+  planningSessionId?: string;
+  uploadedAt: string;
+}
+
 export interface CommandExecutionMetadata {
   command: string;
   args: string[];

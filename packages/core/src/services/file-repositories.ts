@@ -2,8 +2,10 @@ import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promise
 import path from "node:path";
 
 import type {
+  AttachmentReference,
   ApprovalRequest,
   ArtifactRevision,
+  ChannelBinding,
   Execution,
   ExecutionEvent,
   PlanningMessage,
@@ -12,8 +14,10 @@ import type {
   Track,
 } from "../domain/types.js";
 import type {
+  AttachmentReferenceRepository,
   ApprovalRequestRepository,
   ArtifactRevisionRepository,
+  ChannelBindingRepository,
   EventStore,
   ExecutionRepository,
   PlanningMessageStore,
@@ -29,6 +33,8 @@ interface FileStatePaths {
   planningMessagesDir: string;
   artifactRevisionsDir: string;
   approvalRequestsDir: string;
+  channelBindingsDir: string;
+  attachmentsDir: string;
   executionsDir: string;
   eventsDir: string;
 }
@@ -41,6 +47,8 @@ export function getStatePaths(rootDir: string): FileStatePaths {
     planningMessagesDir: path.join(rootDir, "planning-messages"),
     artifactRevisionsDir: path.join(rootDir, "artifact-revisions"),
     approvalRequestsDir: path.join(rootDir, "approval-requests"),
+    channelBindingsDir: path.join(rootDir, "channel-bindings"),
+    attachmentsDir: path.join(rootDir, "attachments"),
     executionsDir: path.join(rootDir, "executions"),
     eventsDir: path.join(rootDir, "events"),
   };
@@ -297,6 +305,70 @@ export class FileApprovalRequestRepository implements ApprovalRequestRepository 
 
   update(request: ApprovalRequest): Promise<void> {
     return this.repository.update(request);
+  }
+}
+
+export class FileChannelBindingRepository implements ChannelBindingRepository {
+  private readonly repository: JsonFileRepository<ChannelBinding>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<ChannelBinding>(getStatePaths(rootDir).channelBindingsDir);
+  }
+
+  create(binding: ChannelBinding): Promise<void> {
+    return this.repository.create(binding);
+  }
+
+  getById(bindingId: string): Promise<ChannelBinding | null> {
+    return this.repository.getById(bindingId);
+  }
+
+  async findByExternalRef(input: {
+    channelType: ChannelBinding["channelType"];
+    externalChatId: string;
+    externalThreadId?: string;
+  }): Promise<ChannelBinding | null> {
+    const bindings = await this.repository.list();
+    return (
+      bindings.find(
+        (binding) =>
+          binding.channelType === input.channelType &&
+          binding.externalChatId === input.externalChatId &&
+          (input.externalThreadId === undefined ? true : binding.externalThreadId === input.externalThreadId),
+      ) ?? null
+    );
+  }
+
+  list(): Promise<ChannelBinding[]> {
+    return this.repository.list();
+  }
+
+  update(binding: ChannelBinding): Promise<void> {
+    return this.repository.update(binding);
+  }
+}
+
+export class FileAttachmentReferenceRepository implements AttachmentReferenceRepository {
+  private readonly repository: JsonFileRepository<AttachmentReference>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<AttachmentReference>(getStatePaths(rootDir).attachmentsDir);
+  }
+
+  create(attachment: AttachmentReference): Promise<void> {
+    return this.repository.create(attachment);
+  }
+
+  getById(attachmentId: string): Promise<AttachmentReference | null> {
+    return this.repository.getById(attachmentId);
+  }
+
+  async listByTarget(input: { trackId?: string; planningSessionId?: string }): Promise<AttachmentReference[]> {
+    const attachments = await this.repository.list();
+    return attachments
+      .filter((attachment) => (input.trackId ? attachment.trackId === input.trackId : true))
+      .filter((attachment) => (input.planningSessionId ? attachment.planningSessionId === input.planningSessionId : true))
+      .sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt) || right.id.localeCompare(left.id));
   }
 }
 

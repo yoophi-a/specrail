@@ -1,6 +1,8 @@
 import type {
+  AttachmentReference,
   ApprovalRequest,
   ArtifactRevision,
+  ChannelBinding,
   Execution,
   ExecutionEvent,
   PlanningMessage,
@@ -46,6 +48,24 @@ export interface ApprovalRequestRepository {
   getById(requestId: string): Promise<ApprovalRequest | null>;
   listByTrack(trackId: string, artifact?: ApprovalRequest["artifact"]): Promise<ApprovalRequest[]>;
   update(request: ApprovalRequest): Promise<void>;
+}
+
+export interface ChannelBindingRepository {
+  create(binding: ChannelBinding): Promise<void>;
+  getById(bindingId: string): Promise<ChannelBinding | null>;
+  findByExternalRef(input: {
+    channelType: ChannelBinding["channelType"];
+    externalChatId: string;
+    externalThreadId?: string;
+  }): Promise<ChannelBinding | null>;
+  list(): Promise<ChannelBinding[]>;
+  update(binding: ChannelBinding): Promise<void>;
+}
+
+export interface AttachmentReferenceRepository {
+  create(attachment: AttachmentReference): Promise<void>;
+  getById(attachmentId: string): Promise<AttachmentReference | null>;
+  listByTarget(input: { trackId?: string; planningSessionId?: string }): Promise<AttachmentReference[]>;
 }
 
 export interface ExecutionRepository {

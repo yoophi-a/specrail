@@ -6,8 +6,10 @@ import test from "node:test";
 
 import type { ApprovalRequest, ArtifactRevision, Execution, ExecutionEvent, Project, Track } from "../../domain/types.js";
 import {
+  FileAttachmentReferenceRepository,
   FileApprovalRequestRepository,
   FileArtifactRevisionRepository,
+  FileChannelBindingRepository,
   FileExecutionRepository,
   FileProjectRepository,
   FileTrackRepository,
@@ -181,5 +183,46 @@ test("artifact revision and approval request repositories persist and query by t
   assert.deepEqual(
     (await approvalRequestRepository.listByTrack("track-1", "spec")).map((request) => request.id),
     ["approval-2", "approval-1"],
+  );
+});
+
+test("channel binding and attachment repositories persist thin-frontend references", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-channel-state-"));
+  const channelBindingRepository = new FileChannelBindingRepository(rootDir);
+  const attachmentReferenceRepository = new FileAttachmentReferenceRepository(rootDir);
+
+  await channelBindingRepository.create({
+    id: "binding-1",
+    projectId: "project-1",
+    channelType: "telegram",
+    externalChatId: "chat-1",
+    externalThreadId: "thread-1",
+    trackId: "track-1",
+    planningSessionId: "planning-1",
+    createdAt: "2026-04-10T10:00:00.000Z",
+    updatedAt: "2026-04-10T10:00:00.000Z",
+  });
+  await attachmentReferenceRepository.create({
+    id: "attachment-1",
+    sourceType: "telegram",
+    externalFileId: "file-1",
+    fileName: "spec.pdf",
+    mimeType: "application/pdf",
+    trackId: "track-1",
+    planningSessionId: "planning-1",
+    uploadedAt: "2026-04-10T10:05:00.000Z",
+  });
+
+  assert.equal(
+    (await channelBindingRepository.findByExternalRef({
+      channelType: "telegram",
+      externalChatId: "chat-1",
+      externalThreadId: "thread-1",
+    }))?.id,
+    "binding-1",
+  );
+  assert.deepEqual(
+    (await attachmentReferenceRepository.listByTarget({ planningSessionId: "planning-1" })).map((attachment) => attachment.id),
+    ["attachment-1"],
   );
 });
