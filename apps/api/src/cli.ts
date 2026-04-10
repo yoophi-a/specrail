@@ -2,6 +2,7 @@
 import { watch } from "node:fs";
 import { mkdir, open, stat } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { loadConfig } from "@specrail/config";
 import {
   OPENSPEC_RESOLUTION_PRESETS,
@@ -52,6 +53,7 @@ interface ParsedArgs {
   path?: string;
   trackId?: string;
   runId?: string;
+  apiUrl?: string;
   follow: boolean;
   overwrite: boolean;
   preview: boolean;
@@ -112,7 +114,7 @@ Usage:
   specrail-admin runs list [--track-id <track-id>] [--status <status>] [--page <n>] [--page-size <count>] [--sort-by <createdAt|startedAt|finishedAt|status>] [--sort-order <asc|desc>] [--json]
   specrail-admin runs inspect --run-id <run-id> [--json]
   specrail-admin runs events --run-id <run-id> [--after <iso>] [--before <iso>] [--type <event-type>] [--limit <count>] [--json]
-  specrail-admin runs tail --run-id <run-id> [--type <event-type>] [--limit <count>] [--follow] [--json]
+  specrail-admin runs tail --run-id <run-id> [--type <event-type>] [--limit <count>] [--follow] [--api-url <url>] [--json]
 
 Examples:
   specrail-admin openspec export --track-id track_123 --path ./bundle
@@ -131,6 +133,7 @@ Examples:
   specrail-admin runs inspect --run-id run_123
   specrail-admin runs events --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20
   specrail-admin runs tail --run-id run_123 --limit 10 --json
+  specrail-admin runs tail --run-id run_123 --follow --api-url http://127.0.0.1:4000
   specrail-admin runs tail --run-id run_123 --follow
 `);
 }
@@ -262,6 +265,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--run-id":
         args.runId = rest[++index];
+        break;
+      case "--api-url":
+        args.apiUrl = rest[++index];
         break;
       case "--overwrite":
         args.overwrite = true;
@@ -634,6 +640,131 @@ function getRunEventLogPath(runId: string): string {
   return path.join(config.dataDir, "state", "events", `${runId}.jsonl`);
 }
 
+function normalizeApiBaseUrl(apiUrl: string): string {
+  return apiUrl.replace(/\/+$/u, "");
+}
+
+function resolveApiBaseUrl(args: ParsedArgs): string | null {
+  return args.apiUrl ?? loadConfig().apiBaseUrl ?? null;
+}
+
+function filterRunEvents(events: ExecutionEvent[], args: ParsedArgs, tailMode = false): ExecutionEvent[] {
+  return selectRunEvents(events, args, tailMode);
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    headers: { accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status}) for ${url}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+async function getRemoteRun(apiBaseUrl: string, runId: string): Promise<Execution> {
+  const payload = await fetchJson<{ run: Execution }>(`${normalizeApiBaseUrl(apiBaseUrl)}/runs/${encodeURIComponent(runId)}`);
+  return payload.run;
+}
+
+async function listRemoteRunEvents(apiBaseUrl: string, runId: string): Promise<ExecutionEvent[]> {
+  const payload = await fetchJson<{ events: ExecutionEvent[] }>(`${normalizeApiBaseUrl(apiBaseUrl)}/runs/${encodeURIComponent(runId)}/events`);
+  return payload.events;
+}
+
+function parseSseChunk(chunk: string, pendingData: string): { events: ExecutionEvent[]; pendingData: string } {
+  const events: ExecutionEvent[] = [];
+  const frames = (pendingData + chunk).split("\n\n");
+  const remainder = frames.pop() ?? "";
+
+  for (const frame of frames) {
+    const dataLines = frame
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart());
+
+    if (dataLines.length === 0) {
+      continue;
+    }
+
+    events.push(JSON.parse(dataLines.join("\n")) as ExecutionEvent);
+  }
+
+  return { events, pendingData: remainder };
+}
+
+async function followRemoteRunEvents(run: Execution, args: ParsedArgs, initialEvents: ExecutionEvent[], apiBaseUrl: string): Promise<void> {
+  const label = `Run event tail for ${run.id}`;
+
+  if (args.json) {
+    for (const event of initialEvents) {
+      console.log(JSON.stringify({ mode: "follow", source: "remote", run, event }));
+    }
+  } else if (initialEvents.length === 0) {
+    console.log(`${label} live (remote SSE, waiting for events)`);
+  } else {
+    console.log(`${label} live (remote SSE)`);
+    for (const event of initialEvents) {
+      printRunEvent(event);
+    }
+  }
+
+  const controller = new AbortController();
+  const finish = (): void => controller.abort();
+  process.once("SIGINT", finish);
+  process.once("SIGTERM", finish);
+
+  const seenEventIds = new Set(initialEvents.map((event) => event.id));
+
+  try {
+    const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/runs/${encodeURIComponent(run.id)}/events/stream`, {
+      headers: { accept: "text/event-stream" },
+      signal: controller.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Unable to open SSE stream (${response.status})`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pendingData = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      const parsed = parseSseChunk(decoder.decode(value, { stream: true }), pendingData);
+      pendingData = parsed.pendingData;
+
+      for (const event of parsed.events) {
+        if (seenEventIds.has(event.id) || !isSelectedRunEvent(event, args)) {
+          continue;
+        }
+
+        seenEventIds.add(event.id);
+        if (args.json) {
+          console.log(JSON.stringify({ mode: "follow", source: "remote", run, event }));
+        } else {
+          printRunEvent(event);
+        }
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof Error) || error.name !== "AbortError") {
+      throw error;
+    }
+  } finally {
+    process.off("SIGINT", finish);
+    process.off("SIGTERM", finish);
+    await delay(0);
+  }
+}
+
 async function followRunEvents(run: Execution, args: ParsedArgs, initialEvents: ExecutionEvent[]): Promise<void> {
   const label = `Run event tail for ${run.id}`;
   const eventLogPath = getRunEventLogPath(run.id);
@@ -952,17 +1083,24 @@ async function run(): Promise<void> {
       throw new Error("Missing required option: --run-id");
     }
 
-    const run = await service.getRun(args.runId);
+    const apiBaseUrl = resolveApiBaseUrl(args);
+    const run = apiBaseUrl ? await getRemoteRun(apiBaseUrl, args.runId) : await service.getRun(args.runId);
     if (!run) {
       throw new Error(`Run not found: ${args.runId}`);
     }
 
-    const events = selectRunEvents(await service.listRunEvents(run.id), args, args.command === "run-tail");
+    const allEvents = apiBaseUrl ? await listRemoteRunEvents(apiBaseUrl, run.id) : await service.listRunEvents(run.id);
+    const events = filterRunEvents(allEvents, args, args.command === "run-tail");
     const label = args.command === "run-tail" ? `Run event tail for ${run.id}` : `Run event history for ${run.id}`;
 
     if (args.follow) {
       if (args.command !== "run-tail") {
         throw new Error("--follow is only supported with runs tail");
+      }
+
+      if (apiBaseUrl) {
+        await followRemoteRunEvents(run, args, events, apiBaseUrl);
+        return;
       }
 
       await followRunEvents(run, args, events);

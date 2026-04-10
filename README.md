@@ -173,6 +173,9 @@ pnpm --filter @specrail/api runs:tail -- --run-id run_123 --limit 10 --json
 # follow newly appended run events in the terminal
 pnpm --filter @specrail/api runs:tail -- --run-id run_123 --limit 10 --follow
 
+# follow over HTTP/SSE against a remote SpecRail API
+pnpm --filter @specrail/api runs:tail -- --run-id run_123 --limit 10 --follow --api-url http://127.0.0.1:4000
+
 # inspect a persisted run payload
 pnpm --filter @specrail/api run:inspect -- --run-id run_123
 ```
@@ -189,7 +192,8 @@ Notes:
 - `runs:list` mirrors `GET /runs` with `--track-id`, `--status`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, and `--json`
 - `runs:events` mirrors `GET /runs/:runId/events` with shell-friendly filtering via `--after`, `--before`, `--type`, `--limit`, and `--json`
 - `runs:tail` focuses on the latest persisted events for a run and reuses the same `--type`, `--limit`, and `--json` switches
-- add `--follow` to keep the tail open and stream newly appended events; in `--json` mode this emits newline-delimited JSON event envelopes for shell pipelines
+- add `--follow` to keep the tail open and stream newly appended events; by default this tails the local JSONL event log, and with `--api-url <base-url>` (or `SPECRAIL_API_BASE_URL`) it switches to the remote `/runs/:id/events/stream` SSE endpoint for API-driven environments
+- in `--json` mode follow output emits newline-delimited JSON event envelopes for shell pipelines
 - `track:inspect` mirrors `GET /tracks/:trackId`, `track:inspect:integrations` mirrors `GET /tracks/:trackId/integrations`, and `run:inspect` mirrors `GET /runs/:runId`
 - JSON output is available with `--json` for scripting or operator tooling
 

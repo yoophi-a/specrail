@@ -9,6 +9,7 @@ import test from "node:test";
 
 import { SpecRailService } from "@specrail/core";
 
+import { createSpecRailHttpServer } from "../index.js";
 import { createDependencies } from "../runtime.js";
 
 const execFileAsync = promisify(execFile);
@@ -56,6 +57,49 @@ async function waitForStdout(proc: ReturnType<typeof spawn>, matcher: (output: s
 async function createService(rootDir: string): Promise<SpecRailService> {
   const dependencies = createDependencies(path.join(rootDir, "data"), path.join(rootDir, "repo-visible"));
   return new SpecRailService(dependencies.serviceDependencies);
+}
+
+async function stopProcess(proc: ReturnType<typeof spawn>, signal: NodeJS.Signals = "SIGINT"): Promise<void> {
+  if (proc.exitCode !== null) {
+    return;
+  }
+
+  proc.kill(signal);
+  const exitPromise = once(proc, "exit");
+  await Promise.race([
+    exitPromise,
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(() => {
+        proc.kill("SIGKILL");
+        reject(new Error(`process did not exit after ${signal}`));
+      }, 1500);
+    }),
+  ]).catch(async () => {
+    await exitPromise;
+  });
+}
+
+async function withServer(rootDir: string, run: (baseUrl: string) => Promise<void>): Promise<void> {
+  const dependencies = createDependencies(path.join(rootDir, "data"), path.join(rootDir, "repo-visible"));
+  const server = createSpecRailHttpServer({
+    service: new SpecRailService(dependencies.serviceDependencies),
+    artifactRoot: dependencies.artifactRoot,
+    eventLogDir: dependencies.eventLogDir,
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("failed to resolve test server address");
+    }
+
+    await run(`http://127.0.0.1:${address.port}`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
 }
 
 test("CLI exports OpenSpec bundles and lists import/export history", async () => {
@@ -649,4 +693,78 @@ test("CLI follows appended run events in human and json modes", async () => {
   assert.equal(finalJsonLines.at(-1)?.event.summary, "Captured final output");
   jsonFollow.kill("SIGINT");
   await once(jsonFollow, "exit");
+});
+
+test("CLI follows run events over remote SSE when api-url is provided", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-run-follow-remote-"));
+
+  await withServer(rootDir, async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "CLI remote run follow",
+        description: "Follow run events via HTTP/SSE",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const createRunResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        prompt: "Start remote follow test",
+      }),
+    });
+    const runPayload = (await createRunResponse.json()) as { run: { id: string } };
+
+    const env = {
+      ...process.env,
+      SPECRAIL_DATA_DIR: path.join(rootDir, "missing-data"),
+      SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "missing-repo-visible"),
+    };
+    const cwd = path.resolve(import.meta.dirname, "../..");
+
+    const remoteFollow = spawn(
+      "pnpm",
+      [
+        "exec",
+        "tsx",
+        "--tsconfig",
+        "../../tsconfig.base.json",
+        "src/cli.ts",
+        "runs",
+        "tail",
+        "--run-id",
+        runPayload.run.id,
+        "--limit",
+        "1",
+        "--follow",
+        "--api-url",
+        baseUrl,
+        "--json",
+      ],
+      { cwd, env, stdio: ["ignore", "pipe", "pipe"] },
+    );
+
+    const initialOutput = await waitForStdout(remoteFollow, (output) => output.trim().split("\n").filter(Boolean).length >= 1);
+    const initialLines = initialOutput.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { source?: string; event: { summary: string } });
+    assert.equal(initialLines.at(-1)?.source, "remote");
+    assert.ok((initialLines.at(-1)?.event.summary ?? "").length > 0);
+
+    const resumeResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "Continue remote follow test" }),
+    });
+    assert.equal(resumeResponse.status, 200);
+
+    const finalOutput = await waitForStdout(remoteFollow, (output) => output.trim().split("\n").filter(Boolean).length >= initialLines.length + 1);
+    const finalLines = finalOutput.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { source?: string; event: { summary: string } });
+    assert.equal(finalLines.at(-1)?.source, "remote");
+    assert.notEqual(finalLines.at(-1)?.event.summary, initialLines.at(-1)?.event.summary);
+
+    await stopProcess(remoteFollow);
+  });
 });
