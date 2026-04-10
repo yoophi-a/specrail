@@ -49,11 +49,16 @@ interface ParsedArgs {
     | "run-inspect"
     | "run-events"
     | "run-tail"
+    | "run-start"
+    | "run-resume"
+    | "run-cancel"
     | null;
   path?: string;
   trackId?: string;
   runId?: string;
   apiUrl?: string;
+  prompt?: string;
+  profile?: string;
   follow: boolean;
   overwrite: boolean;
   preview: boolean;
@@ -112,6 +117,9 @@ Usage:
   specrail-admin tracks inspect --track-id <track-id> [--json]
   specrail-admin tracks inspect integrations --track-id <track-id> [--page <n>] [--page-size <count>] [--import-page <n>] [--import-page-size <count>] [--export-page <n>] [--export-page-size <count>] [--json]
   specrail-admin runs list [--track-id <track-id>] [--status <status>] [--page <n>] [--page-size <count>] [--sort-by <createdAt|startedAt|finishedAt|status>] [--sort-order <asc|desc>] [--api-url <url>] [--json]
+  specrail-admin runs start --track-id <track-id> --prompt <text> [--profile <name>] [--api-url <url>] [--json]
+  specrail-admin runs resume --run-id <run-id> --prompt <text> [--api-url <url>] [--json]
+  specrail-admin runs cancel --run-id <run-id> [--api-url <url>] [--json]
   specrail-admin runs inspect --run-id <run-id> [--api-url <url>] [--json]
   specrail-admin runs events --run-id <run-id> [--after <iso>] [--before <iso>] [--type <event-type>] [--limit <count>] [--api-url <url>] [--json]
   specrail-admin runs tail --run-id <run-id> [--type <event-type>] [--limit <count>] [--follow] [--api-url <url>] [--json]
@@ -130,6 +138,9 @@ Examples:
   specrail-admin tracks inspect --track-id track_123
   specrail-admin tracks inspect integrations --track-id track_123 --page-size 5
   specrail-admin runs list --track-id track_123 --status running --page-size 10 --api-url http://127.0.0.1:4000
+  specrail-admin runs start --track-id track_123 --prompt "Start remote work" --api-url http://127.0.0.1:4000
+  specrail-admin runs resume --run-id run_123 --prompt "Continue after review" --api-url http://127.0.0.1:4000
+  specrail-admin runs cancel --run-id run_123 --api-url http://127.0.0.1:4000
   specrail-admin runs inspect --run-id run_123 --api-url http://127.0.0.1:4000
   specrail-admin runs events --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20 --api-url http://127.0.0.1:4000
   specrail-admin runs tail --run-id run_123 --limit 10 --json
@@ -237,6 +248,15 @@ function parseArgs(argv: string[]): ParsedArgs {
   } else if (group === "runs" && action === "list") {
     args.command = "run-list";
     rest.unshift(subaction);
+  } else if (group === "runs" && action === "start") {
+    args.command = "run-start";
+    rest.unshift(subaction);
+  } else if (group === "runs" && action === "resume") {
+    args.command = "run-resume";
+    rest.unshift(subaction);
+  } else if (group === "runs" && action === "cancel") {
+    args.command = "run-cancel";
+    rest.unshift(subaction);
   } else if (group === "runs" && action === "inspect") {
     args.command = "run-inspect";
     rest.unshift(subaction);
@@ -268,6 +288,12 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--api-url":
         args.apiUrl = rest[++index];
+        break;
+      case "--prompt":
+        args.prompt = rest[++index];
+        break;
+      case "--profile":
+        args.profile = rest[++index];
         break;
       case "--overwrite":
         args.overwrite = true;
@@ -575,6 +601,23 @@ function printTrackIntegrationsInspection(result: TrackIntegrationsInspection, a
   printTrackInspection(result.openSpec, args);
 }
 
+function printRunMutationResult(action: "started" | "resumed" | "cancelled", run: Execution): void {
+  console.log(`Run ${action}: ${run.id}`);
+  console.log(`- trackId: ${run.trackId}`);
+  console.log(`- status: ${run.status}`);
+  console.log(`- backend/profile: ${run.backend}/${run.profile}`);
+  console.log(`- createdAt: ${run.createdAt}`);
+  if (run.startedAt) {
+    console.log(`- startedAt: ${run.startedAt}`);
+  }
+  if (run.finishedAt) {
+    console.log(`- finishedAt: ${run.finishedAt}`);
+  }
+  if (run.summary) {
+    console.log(`- summary: events=${run.summary.eventCount}, lastEvent=${run.summary.lastEventSummary ?? "none"}, lastEventAt=${run.summary.lastEventAt ?? "none"}`);
+  }
+}
+
 function printRunInspection(result: RunInspection): void {
   console.log(`Run inspection for ${result.run.id}`);
   console.log(`- trackId: ${result.run.trackId}`);
@@ -652,9 +695,13 @@ function filterRunEvents(events: ExecutionEvent[], args: ParsedArgs, tailMode = 
   return selectRunEvents(events, args, tailMode);
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
-    headers: { accept: "application/json" },
+    ...init,
+    headers: {
+      accept: "application/json",
+      ...(init?.headers ?? {}),
+    },
   });
 
   if (!response.ok) {
@@ -679,6 +726,31 @@ function buildQueryString(entries: Array<[string, string | number | undefined]>)
 
 async function getRemoteRun(apiBaseUrl: string, runId: string): Promise<Execution> {
   const payload = await fetchJson<{ run: Execution }>(`${normalizeApiBaseUrl(apiBaseUrl)}/runs/${encodeURIComponent(runId)}`);
+  return payload.run;
+}
+
+async function startRemoteRun(apiBaseUrl: string, input: { trackId: string; prompt: string; profile?: string }): Promise<Execution> {
+  const payload = await fetchJson<{ run: Execution }>(`${normalizeApiBaseUrl(apiBaseUrl)}/runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return payload.run;
+}
+
+async function resumeRemoteRun(apiBaseUrl: string, input: { runId: string; prompt: string }): Promise<Execution> {
+  const payload = await fetchJson<{ run: Execution }>(`${normalizeApiBaseUrl(apiBaseUrl)}/runs/${encodeURIComponent(input.runId)}/resume`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ prompt: input.prompt }),
+  });
+  return payload.run;
+}
+
+async function cancelRemoteRun(apiBaseUrl: string, runId: string): Promise<Execution> {
+  const payload = await fetchJson<{ run: Execution }>(`${normalizeApiBaseUrl(apiBaseUrl)}/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: "POST",
+  });
   return payload.run;
 }
 
@@ -1107,6 +1179,76 @@ async function run(): Promise<void> {
     }
 
     printTrackInspection(result, args);
+    return;
+  }
+
+  if (args.command === "run-start") {
+    if (!args.trackId) {
+      throw new Error("Missing required option: --track-id");
+    }
+    if (!args.prompt) {
+      throw new Error("Missing required option: --prompt");
+    }
+
+    const apiBaseUrl = resolveApiBaseUrl(args);
+    const run = apiBaseUrl
+      ? await startRemoteRun(apiBaseUrl, { trackId: args.trackId, prompt: args.prompt, profile: args.profile })
+      : await service.startRun({ trackId: args.trackId, prompt: args.prompt, profile: args.profile });
+
+    if (args.json) {
+      console.log(JSON.stringify({
+        config: loadConfig(),
+        result: { run, meta: { action: "start", source: apiBaseUrl ? "remote" : "local" } },
+      }, null, 2));
+      return;
+    }
+
+    printRunMutationResult("started", run);
+    return;
+  }
+
+  if (args.command === "run-resume") {
+    if (!args.runId) {
+      throw new Error("Missing required option: --run-id");
+    }
+    if (!args.prompt) {
+      throw new Error("Missing required option: --prompt");
+    }
+
+    const apiBaseUrl = resolveApiBaseUrl(args);
+    const run = apiBaseUrl
+      ? await resumeRemoteRun(apiBaseUrl, { runId: args.runId, prompt: args.prompt })
+      : await service.resumeRun({ runId: args.runId, prompt: args.prompt });
+
+    if (args.json) {
+      console.log(JSON.stringify({
+        config: loadConfig(),
+        result: { run, meta: { action: "resume", source: apiBaseUrl ? "remote" : "local" } },
+      }, null, 2));
+      return;
+    }
+
+    printRunMutationResult("resumed", run);
+    return;
+  }
+
+  if (args.command === "run-cancel") {
+    if (!args.runId) {
+      throw new Error("Missing required option: --run-id");
+    }
+
+    const apiBaseUrl = resolveApiBaseUrl(args);
+    const run = apiBaseUrl ? await cancelRemoteRun(apiBaseUrl, args.runId) : await service.cancelRun({ runId: args.runId });
+
+    if (args.json) {
+      console.log(JSON.stringify({
+        config: loadConfig(),
+        result: { run, meta: { action: "cancel", source: apiBaseUrl ? "remote" : "local" } },
+      }, null, 2));
+      return;
+    }
+
+    printRunMutationResult("cancelled", run);
     return;
   }
 

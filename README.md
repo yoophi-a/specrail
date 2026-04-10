@@ -164,8 +164,18 @@ pnpm --filter @specrail/api track:inspect:integrations -- --track-id track_123 -
 # list runs for a track
 pnpm --filter @specrail/api runs:list -- --track-id track_123 --status running --page-size 10
 
+# start, resume, or cancel a run locally
+pnpm --filter @specrail/api runs:start -- --track-id track_123 --prompt "Start implementation"
+pnpm --filter @specrail/api runs:resume -- --run-id run_123 --prompt "Continue after review"
+pnpm --filter @specrail/api runs:cancel -- --run-id run_123
+
 # list runs from a remote SpecRail API
 pnpm --filter @specrail/api runs:list -- --track-id track_123 --status running --page-size 10 --api-url http://127.0.0.1:4000
+
+# start, resume, or cancel a run against a remote SpecRail API
+pnpm --filter @specrail/api runs:start -- --track-id track_123 --prompt "Start remote implementation" --api-url http://127.0.0.1:4000
+pnpm --filter @specrail/api runs:resume -- --run-id run_123 --prompt "Continue remote implementation" --api-url http://127.0.0.1:4000
+pnpm --filter @specrail/api runs:cancel -- --run-id run_123 --api-url http://127.0.0.1:4000
 
 # inspect persisted run event history
 pnpm --filter @specrail/api runs:events -- --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20
@@ -199,6 +209,9 @@ Notes:
 - `tracks:list` mirrors `GET /tracks` with `--status`, `--priority`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, and `--json`
 - track inspection supports `--page`/`--page-size` for both import and export history together, plus `--import-page`, `--import-page-size`, `--export-page`, and `--export-page-size` when operators want to page each side independently
 - `runs:list` mirrors `GET /runs` with `--track-id`, `--status`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, `--api-url`, and `--json`
+- `runs:start` mirrors `POST /runs` with `--track-id`, `--prompt`, optional `--profile`, `--api-url`, and `--json`
+- `runs:resume` mirrors `POST /runs/:runId/resume` with `--run-id`, `--prompt`, `--api-url`, and `--json`
+- `runs:cancel` mirrors `POST /runs/:runId/cancel` with `--run-id`, `--api-url`, and `--json`
 - `runs:events` mirrors `GET /runs/:runId/events` with shell-friendly filtering via `--after`, `--before`, `--type`, `--limit`, `--api-url`, and `--json`
 - `runs:tail` focuses on the latest persisted events for a run and reuses the same `--type`, `--limit`, `--api-url`, and `--json` switches
 - add `--follow` to keep the tail open and stream newly appended events; by default this tails the local JSONL event log, and with `--api-url <base-url>` (or `SPECRAIL_API_BASE_URL`) it switches to the remote `/runs/:id/events/stream` SSE endpoint for API-driven environments

@@ -695,7 +695,7 @@ test("CLI follows appended run events in human and json modes", async () => {
   await once(jsonFollow, "exit");
 });
 
-test("CLI supports remote run list, inspect, and events across shared API mode", async () => {
+test("CLI supports remote run lifecycle/list/inspect/events across shared API mode", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-run-remote-"));
 
   await withServer(rootDir, async (baseUrl) => {
@@ -709,16 +709,6 @@ test("CLI supports remote run list, inspect, and events across shared API mode",
     });
     const trackPayload = (await trackResponse.json()) as { track: { id: string } };
 
-    const createRunResponse = await fetch(`${baseUrl}/runs`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        trackId: trackPayload.track.id,
-        prompt: "Start remote shared mode test",
-      }),
-    });
-    const runPayload = (await createRunResponse.json()) as { run: { id: string } };
-
     const cwd = path.resolve(import.meta.dirname, "../..");
     const env = {
       ...process.env,
@@ -726,6 +716,73 @@ test("CLI supports remote run list, inspect, and events across shared API mode",
       SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "missing-repo-visible"),
       SPECRAIL_API_BASE_URL: baseUrl,
     };
+
+    const startResult = await execFileAsync("pnpm", [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "runs",
+      "start",
+      "--track-id",
+      trackPayload.track.id,
+      "--prompt",
+      "Start remote shared mode test",
+      "--profile",
+      "default",
+      "--json",
+    ], { cwd, env });
+    const startPayload = JSON.parse(startResult.stdout) as {
+      result: { run: { id: string; trackId: string; profile: string; status: string }; meta: { action: string; source: string } };
+    };
+    assert.equal(startPayload.result.run.trackId, trackPayload.track.id);
+    assert.equal(startPayload.result.run.profile, "default");
+    assert.equal(startPayload.result.meta.action, "start");
+    assert.equal(startPayload.result.meta.source, "remote");
+
+    const resumeResult = await execFileAsync("pnpm", [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "runs",
+      "resume",
+      "--run-id",
+      startPayload.result.run.id,
+      "--prompt",
+      "Resume remote shared mode test",
+      "--json",
+    ], { cwd, env });
+    const resumePayload = JSON.parse(resumeResult.stdout) as {
+      result: { run: { id: string; summary?: { eventCount: number; lastEventSummary?: string } }; meta: { action: string; source: string } };
+    };
+    assert.equal(resumePayload.result.run.id, startPayload.result.run.id);
+    assert.equal(resumePayload.result.meta.action, "resume");
+    assert.equal(resumePayload.result.meta.source, "remote");
+    assert.ok((resumePayload.result.run.summary?.eventCount ?? 0) >= 2);
+
+    const cancelResult = await execFileAsync("pnpm", [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "runs",
+      "cancel",
+      "--run-id",
+      startPayload.result.run.id,
+      "--json",
+    ], { cwd, env });
+    const cancelPayload = JSON.parse(cancelResult.stdout) as {
+      result: { run: { id: string; status: string; summary?: { lastEventSummary?: string } }; meta: { action: string; source: string } };
+    };
+    assert.equal(cancelPayload.result.run.id, startPayload.result.run.id);
+    assert.equal(cancelPayload.result.run.status, "cancelled");
+    assert.equal(cancelPayload.result.meta.action, "cancel");
+    assert.equal(cancelPayload.result.meta.source, "remote");
+    assert.match(cancelPayload.result.run.summary?.lastEventSummary ?? "", /cancel/i);
 
     const listResult = await execFileAsync("pnpm", [
       "exec",
@@ -742,7 +799,7 @@ test("CLI supports remote run list, inspect, and events across shared API mode",
     const listPayload = JSON.parse(listResult.stdout) as {
       result: { runs: Array<{ id: string; trackId: string }>; meta: { total: number; page: number; pageSize: number } };
     };
-    assert.deepEqual(listPayload.result.runs.map((run) => run.id), [runPayload.run.id]);
+    assert.deepEqual(listPayload.result.runs.map((run) => run.id), [startPayload.result.run.id]);
     assert.equal(listPayload.result.runs[0]?.trackId, trackPayload.track.id);
     assert.equal(listPayload.result.meta.total, 1);
     assert.equal(listPayload.result.meta.page, 1);
@@ -757,7 +814,7 @@ test("CLI supports remote run list, inspect, and events across shared API mode",
       "runs",
       "inspect",
       "--run-id",
-      runPayload.run.id,
+      startPayload.result.run.id,
       "--api-url",
       baseUrl,
       "--json",
@@ -765,7 +822,7 @@ test("CLI supports remote run list, inspect, and events across shared API mode",
     const inspectPayload = JSON.parse(inspectResult.stdout) as {
       result: { run: { id: string; trackId: string; summary?: { eventCount: number } } };
     };
-    assert.equal(inspectPayload.result.run.id, runPayload.run.id);
+    assert.equal(inspectPayload.result.run.id, startPayload.result.run.id);
     assert.equal(inspectPayload.result.run.trackId, trackPayload.track.id);
     assert.ok((inspectPayload.result.run.summary?.eventCount ?? 0) >= 1);
 
@@ -778,7 +835,7 @@ test("CLI supports remote run list, inspect, and events across shared API mode",
       "runs",
       "events",
       "--run-id",
-      runPayload.run.id,
+      startPayload.result.run.id,
       "--limit",
       "1",
       "--json",
@@ -786,9 +843,9 @@ test("CLI supports remote run list, inspect, and events across shared API mode",
     const eventsPayload = JSON.parse(eventsResult.stdout) as {
       result: { run: { id: string }; events: Array<{ executionId: string }>; meta: { mode: string; total: number; limit: number } };
     };
-    assert.equal(eventsPayload.result.run.id, runPayload.run.id);
+    assert.equal(eventsPayload.result.run.id, startPayload.result.run.id);
     assert.equal(eventsPayload.result.events.length, 1);
-    assert.equal(eventsPayload.result.events[0]?.executionId, runPayload.run.id);
+    assert.equal(eventsPayload.result.events[0]?.executionId, startPayload.result.run.id);
     assert.equal(eventsPayload.result.meta.mode, "history");
     assert.equal(eventsPayload.result.meta.limit, 1);
   });
