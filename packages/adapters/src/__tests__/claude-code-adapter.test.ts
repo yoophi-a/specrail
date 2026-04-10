@@ -208,6 +208,40 @@ test("ClaudeCodeAdapter resume prefers persisted provider session id and cancel 
   assert.equal((await readClaudeCodeSessionMetadata(sessionsDir, spawnResult.sessionRef)).status, "cancelled");
 });
 
+test("ClaudeCodeAdapter records an explicit failure message when Claude exits non-zero", async () => {
+  const sessionsDir = await mkdtemp(path.join(os.tmpdir(), "specrail-claude-sessions-"));
+  const child = new FakeChildProcess(7201);
+  const adapter = new ClaudeCodeAdapter({
+    sessionsDir,
+    now: (() => {
+      const timestamps = [
+        "2026-04-10T12:30:00.000Z",
+        "2026-04-10T12:30:01.000Z",
+        "2026-04-10T12:30:02.000Z",
+      ];
+      return () => timestamps.shift() ?? "2026-04-10T12:30:03.000Z";
+    })(),
+    spawnProcess: () => child,
+  });
+
+  const result = await adapter.spawn({
+    executionId: "run-claude-4",
+    prompt: "Do the thing",
+    workspacePath: "/tmp/specrail/run-claude-4",
+    profile: "default",
+  });
+
+  child.emit("exit", 17, null);
+  await flush();
+
+  const metadata = await readClaudeCodeSessionMetadata(sessionsDir, result.sessionRef);
+  assert.equal(metadata.status, "failed");
+  assert.equal(metadata.failureMessage, "Claude Code exited with code 17");
+
+  const runtimeEvents = await readClaudeCodeSessionEvents(sessionsDir, result.sessionRef);
+  assert.equal(runtimeEvents.at(-1)?.summary, "Failed Claude Code session run-claude-4-claude");
+});
+
 test("ClaudeCodeAdapter normalizes lifecycle and stream events into shared execution events", () => {
   const adapter = new ClaudeCodeAdapter({ sessionsDir: "/tmp/specrail-claude" });
 

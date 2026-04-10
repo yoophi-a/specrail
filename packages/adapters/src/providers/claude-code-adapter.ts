@@ -170,6 +170,18 @@ function deriveClaudeSessionId(sessionRef: string): string {
   return `${base.slice(0, 8)}-${base.slice(8, 12)}-${base.slice(12, 16)}-${base.slice(16, 20)}-${base.slice(20, 32)}`;
 }
 
+function formatClaudeExitFailure(code: number | null, signal: NodeJS.Signals | null): string {
+  if (typeof code === "number") {
+    return `Claude Code exited with code ${code}`;
+  }
+
+  if (signal) {
+    return `Claude Code exited from signal ${signal}`;
+  }
+
+  return "Claude Code exited unexpectedly";
+}
+
 export class ClaudeCodeAdapter implements ExecutorAdapter {
   readonly name = CLAUDE_CODE_BACKEND;
 
@@ -412,6 +424,11 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
       const timestamp = this.now();
       const metadata = readSessionMetadataSync(this.sessionsDir, input.sessionRef);
       const nextStatus = metadata.status === "cancelled" ? "cancelled" : code === 0 ? "completed" : "failed";
+      const failureMessage =
+        nextStatus === "failed"
+          ? metadata.failureMessage ?? formatClaudeExitFailure(code, signal)
+          : metadata.failureMessage;
+
       writeSessionMetadataSync(this.sessionsDir, {
         ...metadata,
         status: nextStatus,
@@ -419,6 +436,7 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
         signal: signal ?? undefined,
         finishedAt: timestamp,
         updatedAt: timestamp,
+        failureMessage,
       });
 
       if (nextStatus === "completed" || nextStatus === "failed") {

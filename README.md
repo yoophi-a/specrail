@@ -222,6 +222,18 @@ pnpm dev:api
 pnpm dev:telegram
 ```
 
+## Claude Code backend
+
+SpecRail supports `claude_code` as a first-class execution backend.
+
+Operator notes:
+- SpecRail runs Claude Code in non-interactive `--print --output-format stream-json` mode.
+- `profile` is passed through as `--model`.
+- resume relies on persisted provider session metadata discovered from stdout.
+- cancel is local best-effort process termination plus SpecRail state reconciliation.
+
+Read `docs/claude-code-operations.md` for setup, limitations, recovery, and smoke-test steps.
+
 For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`.
 
 For the API server, you can set `SPECRAIL_EXECUTION_BACKEND` and `SPECRAIL_EXECUTION_PROFILE` to choose the default executor/backend and profile used when callers omit them.

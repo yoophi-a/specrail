@@ -230,6 +230,15 @@ sequenceDiagram
 
 즉, caller는 provider-specific route를 따로 알 필요 없이 `backend: "claude_code"`와 원하는 profile만 넘기면 됩니다.
 
+### Current operational limitations
+
+- resume는 Claude stdout에서 `session_id`를 관측해야 가장 안정적으로 동작합니다.
+- cancel은 provider 원격 취소가 아니라 SpecRail이 띄운 로컬 프로세스에 대한 `SIGTERM` 기반 best-effort 동작입니다.
+- shared event model에는 stdout/stderr/lifecycle 위주로만 투영되며, Claude의 모든 세부 subtype을 별도 도메인 이벤트로 승격하지는 않습니다.
+- `providerInvocationId`는 durable session id가 아니라 마지막으로 관측한 run/event uuid일 수 있습니다.
+
+운영 관점의 상세 setup/recovery 가이드는 `docs/claude-code-operations.md`를 참고합니다.
+
 ## CodexAdapter
 
 `packages/adapters/src/providers/codex-adapter.stub.ts`에 위치한 Codex 백엔드 어댑터입니다.
