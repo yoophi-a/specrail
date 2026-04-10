@@ -34,6 +34,7 @@ import type {
   GitHubPullRequestReference,
   GitHubRunCommentSyncState,
   HeartbeatActiveTask,
+  HeartbeatDispatchDecision,
   HeartbeatSessionContext,
   HeartbeatState,
   HeartbeatTaskReference,
@@ -430,6 +431,12 @@ export interface MarkHeartbeatTaskCompletedInput {
 
 export interface UpdateHeartbeatReportInput {
   reportedAt?: string;
+}
+
+export interface EvaluateHeartbeatDispatchInput {
+  task: HeartbeatTaskReference;
+  session?: HeartbeatSessionContext;
+  cooldownMs?: number;
 }
 
 export interface CreateTrackInput {
@@ -877,6 +884,51 @@ function buildHeartbeatActiveTask(task: HeartbeatTaskReference, startedAt: strin
   };
 }
 
+function parseTimestamp(value?: string): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function tasksMatch(left?: HeartbeatTaskReference, right?: HeartbeatTaskReference): boolean {
+  if (!left || !right) {
+    return false;
+  }
+
+  if (left.taskId && right.taskId) {
+    return left.taskId === right.taskId;
+  }
+
+  if (left.runId && right.runId) {
+    return left.runId === right.runId;
+  }
+
+  if (left.trackId && right.trackId && left.title === right.title) {
+    return left.trackId === right.trackId;
+  }
+
+  return left.title === right.title;
+}
+
+function sessionsMatch(left?: HeartbeatSessionContext, right?: HeartbeatSessionContext): boolean {
+  if (!left || !right) {
+    return false;
+  }
+
+  if (left.sessionRef && right.sessionRef) {
+    return left.sessionRef === right.sessionRef;
+  }
+
+  if (left.executionId && right.executionId) {
+    return left.executionId === right.executionId;
+  }
+
+  return false;
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -888,6 +940,49 @@ export class SpecRailService {
 
   getHeartbeatState(): Promise<HeartbeatState | null> {
     return this.dependencies.heartbeatStateStore?.get() ?? Promise.resolve(null);
+  }
+
+  async evaluateHeartbeatDispatch(input: EvaluateHeartbeatDispatchInput): Promise<HeartbeatDispatchDecision> {
+    const state = await this.getHeartbeatState();
+    if (!state) {
+      return { action: "dispatch", reason: "no_state" };
+    }
+
+    const matchedActiveTask = tasksMatch(state.activeTask?.task, input.task);
+    const matchedActiveSession = sessionsMatch(state.activeTask?.session, input.session);
+    if (state.activeTask && (matchedActiveTask || matchedActiveSession)) {
+      return {
+        action: "skip",
+        reason: "active_task",
+        matchedTask: matchedActiveTask,
+        matchedSession: matchedActiveSession,
+      };
+    }
+
+    const cooldownMs = Math.max(0, input.cooldownMs ?? 0);
+    const completedAt = parseTimestamp(state.lastCompletedTask?.timestamp);
+    const now = parseTimestamp(this.now());
+    const matchedCompletedTask = tasksMatch(state.lastCompletedTask?.task, input.task);
+    const matchedCompletedSession = sessionsMatch(state.lastCompletedTask?.session, input.session);
+    if (
+      cooldownMs > 0
+      && completedAt !== null
+      && now !== null
+      && (matchedCompletedTask || matchedCompletedSession)
+    ) {
+      const elapsedMs = now - completedAt;
+      if (elapsedMs >= 0 && elapsedMs < cooldownMs) {
+        return {
+          action: "skip",
+          reason: "recent_completion_cooldown",
+          cooldownRemainingMs: cooldownMs - elapsedMs,
+          matchedTask: matchedCompletedTask,
+          matchedSession: matchedCompletedSession,
+        };
+      }
+    }
+
+    return { action: "dispatch", reason: "safe_reentry" };
   }
 
   async markHeartbeatTaskStarted(input: MarkHeartbeatTaskStartedInput): Promise<HeartbeatState> {

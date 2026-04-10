@@ -370,3 +370,15 @@ export interface HeartbeatState {
   lastReportAt?: string;
   activeTask?: HeartbeatActiveTask;
 }
+
+export interface HeartbeatDispatchDecision {
+  action: "dispatch" | "skip";
+  reason:
+    | "no_state"
+    | "safe_reentry"
+    | "active_task"
+    | "recent_completion_cooldown";
+  cooldownRemainingMs?: number;
+  matchedTask?: boolean;
+  matchedSession?: boolean;
+}

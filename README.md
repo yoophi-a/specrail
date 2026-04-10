@@ -364,6 +364,25 @@ Intended usage:
 - `lastReportAt` tracks the last heartbeat/report emission time
 - `activeTask` keeps the currently running task plus session context when available
 
+### Heartbeat dispatch safety policy
+
+Use the durable heartbeat state before starting heartbeat-driven work again.
+
+Safe re-entry conditions:
+- no heartbeat state exists yet, so there is nothing to dedupe against
+- no matching active task/session is recorded, and any matching completed task is outside the configured cooldown window
+
+Skip conditions:
+- a matching `activeTask.task` is still recorded, which means the same task is already in flight
+- a matching `activeTask.session` is still recorded, which means the same delegated session is already in flight even if task ids drifted
+- a matching `lastCompletedTask` is still inside the recent-completion cooldown window, which avoids immediate re-dispatch loops after a finish event
+
+Suggested operator flow:
+1. call `getHeartbeatState()` or `evaluateHeartbeatDispatch(...)` before dispatch
+2. only dispatch when the decision is `dispatch`
+3. call `markHeartbeatTaskStarted(...)` immediately after handing work off
+4. call `markHeartbeatTaskCompleted(...)` when the delegated work really finishes, then let the cooldown absorb duplicate heartbeat cycles
+
 ## Domain model snapshot
 
 ### Track

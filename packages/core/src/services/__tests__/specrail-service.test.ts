@@ -76,6 +76,119 @@ test("SpecRailService updates durable heartbeat state for start, report, and com
   });
 });
 
+test("SpecRailService skips heartbeat dispatch when the same task or session is already active", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-heartbeat-active-"));
+  const stateDir = path.join(rootDir, "state");
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(stateDir),
+    trackRepository: new FileTrackRepository(stateDir),
+    executionRepository: new FileExecutionRepository(stateDir),
+    eventStore: new JsonlEventStore(stateDir),
+    heartbeatStateStore: new FileHeartbeatStateStore(stateDir),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("not used");
+      },
+      async resume() {
+        throw new Error("not used");
+      },
+      async cancel() {
+        throw new Error("not used");
+      },
+    },
+    defaultProject: { id: "project-default", name: "SpecRail" },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => "2026-04-10T00:05:00.000Z",
+  });
+
+  await service.markHeartbeatTaskStarted({
+    task: { trackId: "track-57", runId: "run-57", taskId: "issue-57", title: "Prevent duplicate heartbeat dispatches" },
+    session: { sessionRef: "session:run-57", executionId: "run-57", profile: "default" },
+  });
+
+  const byTask = await service.evaluateHeartbeatDispatch({
+    task: { trackId: "track-57", runId: "run-57", taskId: "issue-57", title: "Prevent duplicate heartbeat dispatches" },
+    session: { sessionRef: "session:other", executionId: "run-other" },
+  });
+  assert.deepEqual(byTask, {
+    action: "skip",
+    reason: "active_task",
+    matchedTask: true,
+    matchedSession: false,
+  });
+
+  const bySession = await service.evaluateHeartbeatDispatch({
+    task: { trackId: "track-57", runId: "run-other", taskId: "issue-other", title: "Other candidate" },
+    session: { sessionRef: "session:run-57", executionId: "run-57" },
+  });
+  assert.deepEqual(bySession, {
+    action: "skip",
+    reason: "active_task",
+    matchedTask: false,
+    matchedSession: true,
+  });
+});
+
+test("SpecRailService applies cooldown after recent heartbeat completion and allows safe re-entry later", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-heartbeat-cooldown-"));
+  const stateDir = path.join(rootDir, "state");
+  const nowValues = ["2026-04-10T00:01:00.000Z", "2026-04-10T00:01:20.000Z", "2026-04-10T00:03:10.000Z", "2026-04-10T00:04:30.000Z"];
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(stateDir),
+    trackRepository: new FileTrackRepository(stateDir),
+    executionRepository: new FileExecutionRepository(stateDir),
+    eventStore: new JsonlEventStore(stateDir),
+    heartbeatStateStore: new FileHeartbeatStateStore(stateDir),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("not used");
+      },
+      async resume() {
+        throw new Error("not used");
+      },
+      async cancel() {
+        throw new Error("not used");
+      },
+    },
+    defaultProject: { id: "project-default", name: "SpecRail" },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => nowValues.shift() ?? "2026-04-10T00:04:30.000Z",
+  });
+
+  await service.markHeartbeatTaskStarted({
+    task: { trackId: "track-57", runId: "run-57", taskId: "issue-57", title: "Prevent duplicate heartbeat dispatches" },
+    session: { sessionRef: "session:run-57", executionId: "run-57" },
+  });
+  await service.markHeartbeatTaskCompleted();
+
+  const duringCooldown = await service.evaluateHeartbeatDispatch({
+    task: { trackId: "track-57", runId: "run-57", taskId: "issue-57", title: "Prevent duplicate heartbeat dispatches" },
+    session: { sessionRef: "session:run-57", executionId: "run-57" },
+    cooldownMs: 180000,
+  });
+  assert.deepEqual(duringCooldown, {
+    action: "skip",
+    reason: "recent_completion_cooldown",
+    cooldownRemainingMs: 70000,
+    matchedTask: true,
+    matchedSession: true,
+  });
+
+  const afterCooldown = await service.evaluateHeartbeatDispatch({
+    task: { trackId: "track-57", runId: "run-57", taskId: "issue-57", title: "Prevent duplicate heartbeat dispatches" },
+    session: { sessionRef: "session:run-57", executionId: "run-57" },
+    cooldownMs: 180000,
+  });
+  assert.deepEqual(afterCooldown, {
+    action: "dispatch",
+    reason: "safe_reentry",
+  });
+});
+
 test("SpecRailService creates tracks, artifacts, runs, and execution events", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-"));
   const artifactRoot = path.join(rootDir, ".specrail");
