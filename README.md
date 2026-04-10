@@ -238,6 +238,8 @@ Operator notes:
 - `profile` is passed through as `--model`.
 - resume relies on persisted provider session metadata discovered from stdout.
 - cancel is local best-effort process termination plus SpecRail state reconciliation.
+- cancelled sessions now persist verification hints such as whether `SIGTERM` was delivered and why manual follow-up may still be required.
+- adapter exports a lightweight `checkClaudeCodeReadiness()` helper so operators can validate `claude --version` before routing work to this backend.
 
 Read `docs/claude-code-operations.md` for setup, limitations, recovery, and smoke-test steps.
 

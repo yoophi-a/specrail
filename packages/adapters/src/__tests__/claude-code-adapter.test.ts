@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   buildClaudeCodeSpawnCommand,
+  checkClaudeCodeReadiness,
   ClaudeCodeAdapter,
   readClaudeCodeRawOutput,
   readClaudeCodeSessionEvents,
@@ -130,9 +131,11 @@ test("ClaudeCodeAdapter promotes structured Claude stdout into richer runtime ev
     workingDirectory: "/tmp/specrail/run-claude-1",
     lastEventType: "result",
     lastEventSubtype: "error",
+    lastError: "Permission denied",
   });
   assert.equal(metadata.status, "completed");
   assert.equal(metadata.exitCode, 0);
+  assert.equal(metadata.failureMessage, "Claude Code reported an error result: Permission denied");
 
   const runtimeEvents = await readClaudeCodeSessionEvents(sessionsDir, spawnResult.sessionRef);
   assert.deepEqual(
@@ -217,7 +220,56 @@ test("ClaudeCodeAdapter resume prefers persisted provider session id and cancel 
   const cancellationEvent = await adapter.cancel(spawnResult.sessionRef);
   assert.equal(cancellationEvent.summary, "Cancelled Claude Code session run-claude-2-claude");
   assert.deepEqual(killCalls, [{ pid: 6102, signal: "SIGTERM" }]);
-  assert.equal((await readClaudeCodeSessionMetadata(sessionsDir, spawnResult.sessionRef)).status, "cancelled");
+  assert.deepEqual(cancellationEvent.payload, {
+    sessionRef: "run-claude-2-claude",
+    status: "cancelled",
+    exitCode: undefined,
+    signal: undefined,
+    providerSessionId: "claude-session-real",
+    providerInvocationId: "init-uuid",
+    model: undefined,
+    cancelSignal: "SIGTERM",
+    cancelSignalDelivered: true,
+    cancelFailureReason: undefined,
+  });
+
+  const cancelledMetadata = await readClaudeCodeSessionMetadata(sessionsDir, spawnResult.sessionRef);
+  assert.equal(cancelledMetadata.status, "cancelled");
+  assert.equal(cancelledMetadata.providerMetadata?.transcriptPath, path.join(sessionsDir, "run-claude-2-claude.claude-stream.jsonl"));
+  assert.equal(cancelledMetadata.providerMetadata?.workingDirectory, "/tmp/specrail/run-claude-2");
+  assert.equal(cancelledMetadata.providerMetadata?.lastEventType, "system");
+  assert.equal(cancelledMetadata.providerMetadata?.lastEventSubtype, "init");
+  assert.ok(typeof cancelledMetadata.providerMetadata?.cancelRequestedAt === "string");
+  assert.equal(cancelledMetadata.providerMetadata?.cancelSignal, "SIGTERM");
+  assert.equal(cancelledMetadata.providerMetadata?.cancelSignalDelivered, true);
+  assert.equal(cancelledMetadata.providerMetadata?.cancelFailureReason, undefined);
+});
+
+test("ClaudeCodeAdapter cancel surfaces a verification reason when no tracked Claude PID remains", async () => {
+  const sessionsDir = await mkdtemp(path.join(os.tmpdir(), "specrail-claude-sessions-"));
+  const child = new FakeChildProcess(undefined);
+  const adapter = new ClaudeCodeAdapter({
+    sessionsDir,
+    now: (() => {
+      const timestamps = ["2026-04-10T11:30:00.000Z", "2026-04-10T11:30:01.000Z"];
+      return () => timestamps.shift() ?? "2026-04-10T11:30:02.000Z";
+    })(),
+    spawnProcess: () => child,
+  });
+
+  const result = await adapter.spawn({
+    executionId: "run-claude-cancel-no-pid",
+    prompt: "Initial prompt",
+    workspacePath: "/tmp/specrail/run-claude-cancel-no-pid",
+    profile: "default",
+  });
+
+  const cancellationEvent = await adapter.cancel(result.sessionRef);
+  assert.equal(cancellationEvent.payload?.cancelSignalDelivered, false);
+  assert.match(
+    String(cancellationEvent.payload?.cancelFailureReason),
+    /lost the active Claude Code PID/i,
+  );
 });
 
 test("ClaudeCodeAdapter records an explicit failure message when Claude exits non-zero", async () => {
@@ -354,4 +406,35 @@ test("ClaudeCodeAdapter normalizes lifecycle and fallback stream events into sha
   );
 
   assert.equal(adapter.normalize({ foo: "bar" }), null);
+});
+
+test("checkClaudeCodeReadiness reports the installed Claude CLI version", async () => {
+  const result = await checkClaudeCodeReadiness({
+    execCommand: async (command, args) => {
+      assert.equal(command, "claude");
+      assert.deepEqual(args, ["--version"]);
+      return { stdout: "1.2.3\n" };
+    },
+  });
+
+  assert.deepEqual(result, {
+    ready: true,
+    commandAvailable: true,
+    version: "1.2.3",
+  });
+});
+
+test("checkClaudeCodeReadiness returns actionable troubleshooting guidance when Claude is unavailable", async () => {
+  const result = await checkClaudeCodeReadiness({
+    execCommand: async () => {
+      throw new Error("spawn claude ENOENT");
+    },
+  });
+
+  assert.deepEqual(result, {
+    ready: false,
+    commandAvailable: false,
+    failureReason: "Claude CLI is not available on PATH.",
+    suggestedAction: "Install the claude CLI and confirm `claude --version` works for the SpecRail host user.",
+  });
 });

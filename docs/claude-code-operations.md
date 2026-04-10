@@ -56,6 +56,10 @@ claude --permission-mode bypassPermissions --print --output-format stream-json '
 
 If the last command fails, SpecRail will also fail because it depends on the same non-interactive invocation mode.
 
+For code-level readiness probes, the adapter also exports `checkClaudeCodeReadiness()`.
+Today it intentionally stays lightweight and verifies that `claude --version` succeeds for the current host user.
+Use it when you need a fast operator-facing readiness signal without starting a full run.
+
 ## Session and metadata model
 
 SpecRail keeps two identifiers around:
@@ -99,11 +103,14 @@ Meaning:
 - SpecRail cancellation is local-process-first: it sends `SIGTERM` to the latest tracked PID.
 - SpecRail always marks the run `cancelled` in its own state, even if Claude has already exited or ignores the signal.
 - this is a local control-plane cancel, not a remote provider-side kill contract.
+- cancellation metadata now records `cancelRequestedAt`, `cancelSignal`, `cancelSignalDelivered`, and `cancelFailureReason` when SpecRail cannot positively verify signal delivery.
+- if `cancelFailureReason` is populated, treat it as an operator follow-up hint, for example checking whether the Claude child process is still running.
 
 ### Completion and failure
 - exit code `0` becomes `completed`.
 - non-zero exit becomes `failed`.
 - failed exits now persist an explicit `failureMessage` like `Claude Code exited with code 17` when Claude did not provide a richer process error.
+- Claude `result` envelopes with `is_error: true` now also promote a more actionable `failureMessage`, for example `Claude Code reported an error result: Permission denied`.
 
 ## Known limitations
 
@@ -178,6 +185,7 @@ claude --permission-mode bypassPermissions --print --output-format stream-json '
    - at least one promoted Claude event such as `Initialized Claude Code session ...`, `Claude requested tool ...`, or a terminal lifecycle event
 5. Resume the same run and verify `--resume` behavior through persisted metadata.
 6. Cancel a separate test run and verify the run transitions to `cancelled`.
+   - inspect `.specrail-data/sessions/<sessionRef>.json` and confirm the cancellation verification fields look sensible for that machine.
 
 ## Source of truth in code
 

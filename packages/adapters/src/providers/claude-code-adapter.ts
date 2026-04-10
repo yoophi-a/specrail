@@ -42,6 +42,18 @@ interface SpawnedProcessLike {
   on(event: "exit", listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
 }
 
+export interface ClaudeCodeReadinessCheckResult {
+  ready: boolean;
+  commandAvailable: boolean;
+  version?: string;
+  failureReason?: string;
+  suggestedAction?: string;
+}
+
+export interface ClaudeCodeReadinessCheckOptions {
+  execCommand?: (command: string, args: string[]) => Promise<{ stdout?: string; stderr?: string }>;
+}
+
 
 export interface ClaudeCodeAdapterOptions {
   sessionsDir?: string;
@@ -177,6 +189,74 @@ function formatClaudeExitFailure(code: number | null, signal: NodeJS.Signals | n
   return "Claude Code exited unexpectedly";
 }
 
+function mergeProviderMetadata(
+  metadata: ExecutorSessionMetadata,
+  providerMetadata: Record<string, unknown>,
+): ExecutorSessionMetadata["providerMetadata"] {
+  return {
+    ...(metadata.providerMetadata ?? {}),
+    ...providerMetadata,
+  };
+}
+
+function buildCancellationFailureReason(metadata: ExecutorSessionMetadata, error?: unknown): string | undefined {
+  if (error instanceof Error && error.message) {
+    return `Failed to send SIGTERM to Claude Code process ${metadata.pid ?? "unknown"}: ${error.message}`;
+  }
+
+  if (typeof metadata.pid !== "number") {
+    return "Cancel requested after SpecRail lost the active Claude Code PID. The run was marked cancelled locally, but verify the Claude process is no longer running.";
+  }
+
+  return undefined;
+}
+
+export async function checkClaudeCodeReadiness(
+  options: ClaudeCodeReadinessCheckOptions = {},
+): Promise<ClaudeCodeReadinessCheckResult> {
+  const execCommand =
+    options.execCommand ??
+    (async (command: string, args: string[]) => {
+      const { execFile } = await import("node:child_process");
+
+      return new Promise<{ stdout?: string; stderr?: string }>((resolve, reject) => {
+        execFile(command, args, (error, stdout, stderr) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve({ stdout, stderr });
+        });
+      });
+    });
+
+  try {
+    const versionResult = await execCommand("claude", ["--version"]);
+    const version = versionResult.stdout?.trim() || versionResult.stderr?.trim() || undefined;
+
+    return {
+      ready: true,
+      commandAvailable: true,
+      version,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const missingCommand = /ENOENT|not found/i.test(message);
+
+    return {
+      ready: false,
+      commandAvailable: false,
+      failureReason: missingCommand
+        ? "Claude CLI is not available on PATH."
+        : `Claude CLI readiness check failed: ${message}`,
+      suggestedAction: missingCommand
+        ? "Install the claude CLI and confirm `claude --version` works for the SpecRail host user."
+        : "Run `claude --version` directly on the SpecRail host and fix the reported environment/auth issue.",
+    };
+  }
+}
+
 export class ClaudeCodeAdapter implements ExecutorAdapter {
   readonly name = CLAUDE_CODE_BACKEND;
 
@@ -302,14 +382,23 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
     const sessionRef = typeof input === "string" ? input : input.sessionRef;
     const metadata = await readSessionMetadata(this.sessionsDir, sessionRef);
     const timestamp = this.now();
+    let cancellationError: unknown;
+    const cancellationFailureReason = buildCancellationFailureReason(metadata);
+    let cancelSignalDelivered = false;
 
     if (typeof metadata.pid === "number") {
       try {
-        this.killProcess(metadata.pid, "SIGTERM");
-      } catch {
-        // ignore
+        cancelSignalDelivered = this.killProcess(metadata.pid, "SIGTERM");
+      } catch (error) {
+        cancellationError = error;
       }
     }
+
+    const actionableCancellationReason = cancellationError
+      ? buildCancellationFailureReason(metadata, cancellationError)
+      : !cancelSignalDelivered
+        ? cancellationFailureReason
+        : undefined;
 
     const updatedMetadata: ExecutorSessionMetadata = {
       ...metadata,
@@ -317,10 +406,16 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
       cancelledAt: timestamp,
       finishedAt: metadata.finishedAt ?? timestamp,
       updatedAt: timestamp,
+      providerMetadata: mergeProviderMetadata(metadata, {
+        cancelRequestedAt: timestamp,
+        cancelSignal: "SIGTERM",
+        cancelSignalDelivered,
+        cancelFailureReason: actionableCancellationReason,
+      }),
     };
     await writeSessionMetadata(this.sessionsDir, updatedMetadata);
 
-    return normalizeClaudeCodeEvent({
+    const cancellationEvent = normalizeClaudeCodeEvent({
       kind: "cancelled",
       executionId: metadata.executionId,
       sessionRef,
@@ -329,6 +424,15 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
       runId: metadata.providerInvocationId,
       model: readProviderModel(metadata),
     });
+
+    cancellationEvent.payload = {
+      ...(cancellationEvent.payload ?? {}),
+      cancelSignal: "SIGTERM",
+      cancelSignalDelivered,
+      cancelFailureReason: actionableCancellationReason,
+    };
+
+    return cancellationEvent;
   }
 
   normalize(rawEvent: unknown): ExecutionEvent | null {
@@ -474,6 +578,10 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
           providerSessionId: nextProviderSessionId,
           providerInvocationId: nextRunId,
           resumeSessionRef: nextProviderSessionId ?? metadata.resumeSessionRef,
+          failureMessage:
+            parsed.is_error && typeof parsed.error === "string" && parsed.error.trim()
+              ? `Claude Code reported an error result: ${parsed.error.trim()}`
+              : metadata.failureMessage,
           providerMetadata: {
             ...(metadata.providerMetadata ?? {}),
             model: nextModel,
@@ -481,6 +589,7 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
             workingDirectory: metadata.workspacePath,
             lastEventType: parsed.type,
             lastEventSubtype: parsed.subtype,
+            lastError: parsed.is_error ? (parsed.error ?? parsed.result ?? "Claude reported an error result") : undefined,
           },
           updatedAt: this.now(),
         });
