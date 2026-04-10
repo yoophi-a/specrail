@@ -220,6 +220,7 @@ export interface ExecutionEvent {
   id: string;
   executionId: string;
   type: EventType;
+  subtype?: string;
   timestamp: string;
   source: string;
   summary: string;

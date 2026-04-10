@@ -197,6 +197,13 @@ The Codex MVP currently emits lifecycle-oriented events such as:
 - `shell_command` for session spawn
 - `message` for stdout/stderr capture
 
+Claude Code now additionally promotes important `stream-json` provider events into richer shared event subtypes, for example:
+- `summary` / `claude_init` for session initialization metadata
+- `message` / `claude_assistant_text` for assistant text turns
+- `tool_call` / `claude_tool_call` and `tool_result` / `claude_tool_result`
+- `approval_requested` / `claude_permission_denial` when Claude reports blocked tool execution
+- `summary` / `claude_result_*` for result envelopes
+
 ## Repository layout
 
 ```text

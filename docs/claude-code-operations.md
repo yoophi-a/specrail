@@ -116,9 +116,10 @@ These are current, expected limitations of the MVP:
    - SpecRail kills the child process it started.
    - it does not currently verify remote provider-side cancellation semantics.
 
-3. event coverage is intentionally lightweight.
-   - SpecRail maps stdout/stderr and lifecycle transitions into shared execution events.
-   - it does not yet project every Claude event subtype into first-class domain events.
+3. event coverage is selective.
+   - SpecRail promotes high-value Claude `stream-json` events into shared execution event subtypes.
+   - examples: `claude_init`, `claude_assistant_text`, `claude_tool_call`, `claude_tool_result`, `claude_permission_denial`, `claude_result_*`.
+   - low-value transport noise still stays in raw transcript files instead of flooding shared surfaces.
 
 4. `providerInvocationId` is not a durable thread id.
    - it tracks the latest observed Claude event UUID/run identifier.
@@ -174,7 +175,7 @@ claude --permission-mode bypassPermissions --print --output-format stream-json '
 4. Confirm `GET /runs/:runId/events` shows:
    - `Run started`
    - `Spawned Claude Code session ...`
-   - at least one `STDOUT ...` or terminal lifecycle event
+   - at least one promoted Claude event such as `Initialized Claude Code session ...`, `Claude requested tool ...`, or a terminal lifecycle event
 5. Resume the same run and verify `--resume` behavior through persisted metadata.
 6. Cancel a separate test run and verify the run transitions to `cancelled`.
 

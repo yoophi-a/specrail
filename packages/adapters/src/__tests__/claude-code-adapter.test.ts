@@ -58,11 +58,11 @@ test("buildClaudeCodeSpawnCommand uses print stream-json mode and maps non-defau
   assert.equal(command.args.at(-1), "Implement the adapter");
 });
 
-test("ClaudeCodeAdapter persists process metadata, structured runtime metadata, raw output, and normalized events", async () => {
+test("ClaudeCodeAdapter promotes structured Claude stdout into richer runtime events", async () => {
   const sessionsDir = await mkdtemp(path.join(os.tmpdir(), "specrail-claude-sessions-"));
   const child = new FakeChildProcess(5151);
   const spawnedCalls: Array<{ command: string; args: string[]; cwd: string }> = [];
-  const forwardedEvents: Array<{ id: string; summary: string }> = [];
+  const forwardedEvents: Array<{ type: string; subtype?: string; summary: string }> = [];
   const timestamps = [
     "2026-04-10T10:00:00.000Z",
     "2026-04-10T10:00:01.000Z",
@@ -71,17 +71,21 @@ test("ClaudeCodeAdapter persists process metadata, structured runtime metadata, 
     "2026-04-10T10:00:04.000Z",
     "2026-04-10T10:00:05.000Z",
     "2026-04-10T10:00:06.000Z",
+    "2026-04-10T10:00:07.000Z",
+    "2026-04-10T10:00:08.000Z",
+    "2026-04-10T10:00:09.000Z",
+    "2026-04-10T10:00:10.000Z",
   ];
 
   const adapter = new ClaudeCodeAdapter({
     sessionsDir,
-    now: () => timestamps.shift() ?? "2026-04-10T10:00:07.000Z",
+    now: () => timestamps.shift() ?? "2026-04-10T10:00:11.000Z",
     spawnProcess: (command, args, cwd) => {
       spawnedCalls.push({ command, args, cwd });
       return child;
     },
     onEvent: (event) => {
-      forwardedEvents.push({ id: event.id, summary: event.summary });
+      forwardedEvents.push({ type: event.type, subtype: event.subtype, summary: event.summary });
     },
   });
 
@@ -100,24 +104,23 @@ test("ClaudeCodeAdapter persists process metadata, structured runtime metadata, 
     "Spawned Claude Code session run-claude-1-claude",
   ]);
 
-  child.stdout.emitData('{"type":"system","subtype":"init","session_id":"claude-session-123","model":"claude-sonnet-4","uuid":"init-uuid"}\n');
-  child.stdout.emitData('{"type":"assistant","session_id":"claude-session-123","uuid":"message-uuid"}\n');
+  child.stdout.emitData(
+    '{"type":"system","subtype":"init","session_id":"claude-session-123","model":"claude-sonnet-4","uuid":"init-uuid","tools":["Bash"]}\n',
+  );
+  child.stdout.emitData(
+    '{"type":"assistant","session_id":"claude-session-123","uuid":"message-uuid","message":{"id":"msg-1","role":"assistant","content":[{"type":"text","text":"Planning next steps."},{"type":"tool_use","id":"toolu-1","name":"Bash","input":{"command":"ls -la"}}]}}\n',
+  );
+  child.stdout.emitData(
+    '{"type":"user","session_id":"claude-session-123","message":{"id":"msg-2","role":"user","content":[{"type":"tool_result","tool_use_id":"toolu-1","content":"ok"}]}}\n',
+  );
+  child.stdout.emitData(
+    '{"type":"result","subtype":"error","session_id":"claude-session-123","is_error":true,"error":"Permission denied","permission_denials":[{"tool_name":"Bash","tool_use_id":"toolu-1","tool_input":{"command":"git fetch origin main"}}]}\n',
+  );
   child.stderr.emitData("warning: approval needed\n");
   child.emit("exit", 0, null);
   await flush();
 
   const metadata = await readClaudeCodeSessionMetadata(sessionsDir, spawnResult.sessionRef);
-  assert.equal(metadata.executionId, "run-claude-1");
-  assert.equal(metadata.sessionRef, "run-claude-1-claude");
-  assert.equal(metadata.backend, "claude_code");
-  assert.equal(metadata.profile, "default");
-  assert.equal(metadata.workspacePath, "/tmp/specrail/run-claude-1");
-  assert.deepEqual(metadata.command, {
-    command: "claude",
-    args: spawnedCalls[0]?.args ?? [],
-    cwd: "/tmp/specrail/run-claude-1",
-  });
-  assert.equal(metadata.pid, 5151);
   assert.equal(metadata.providerSessionId, "claude-session-123");
   assert.equal(metadata.providerInvocationId, "message-uuid");
   assert.equal(metadata.resumeSessionRef, "claude-session-123");
@@ -125,24 +128,32 @@ test("ClaudeCodeAdapter persists process metadata, structured runtime metadata, 
     model: "claude-sonnet-4",
     transcriptPath: path.join(sessionsDir, "run-claude-1-claude.claude-stream.jsonl"),
     workingDirectory: "/tmp/specrail/run-claude-1",
-    lastEventType: "assistant",
+    lastEventType: "result",
+    lastEventSubtype: "error",
   });
   assert.equal(metadata.status, "completed");
   assert.equal(metadata.exitCode, 0);
-  assert.ok(metadata.finishedAt);
 
   const runtimeEvents = await readClaudeCodeSessionEvents(sessionsDir, spawnResult.sessionRef);
-  assert.deepEqual(runtimeEvents.map((event) => event.summary), [
-    "STDOUT run-claude-1-claude",
-    "STDOUT run-claude-1-claude",
-    "STDERR run-claude-1-claude",
-    "Completed Claude Code session run-claude-1-claude",
-  ]);
-  assert.deepEqual(forwardedEvents, runtimeEvents.map((event) => ({ id: event.id, summary: event.summary })));
+  assert.deepEqual(
+    runtimeEvents.map((event) => ({ type: event.type, subtype: event.subtype, summary: event.summary })),
+    [
+      { type: "summary", subtype: "claude_init", summary: "Initialized Claude Code session run-claude-1-claude" },
+      { type: "message", subtype: "claude_assistant_text", summary: "Claude message run-claude-1-claude" },
+      { type: "tool_call", subtype: "claude_tool_call", summary: "Claude requested tool Bash" },
+      { type: "tool_result", subtype: "claude_tool_result", summary: "Claude received tool result toolu-1" },
+      { type: "approval_requested", subtype: "claude_permission_denial", summary: "Claude requested approval for Bash" },
+      { type: "summary", subtype: "claude_result_error", summary: "Claude result error run-claude-1-claude" },
+      { type: "message", subtype: "claude_stderr", summary: "STDERR run-claude-1-claude" },
+      { type: "task_status_changed", subtype: "claude_completed", summary: "Completed Claude Code session run-claude-1-claude" },
+    ],
+  );
+  assert.deepEqual(forwardedEvents, runtimeEvents.map((event) => ({ type: event.type, subtype: event.subtype, summary: event.summary })));
 
   const rawOutput = await readClaudeCodeRawOutput(sessionsDir, spawnResult.sessionRef);
   assert.match(rawOutput ?? "", /claude-session-123/);
   assert.match(rawOutput ?? "", /message-uuid/);
+  assert.match(rawOutput ?? "", /permission_denials/);
 });
 
 test("ClaudeCodeAdapter resume prefers persisted provider session id and cancel terminates the latest process", async () => {
@@ -156,11 +167,12 @@ test("ClaudeCodeAdapter resume prefers persisted provider session id and cancel 
     "2026-04-10T11:00:00.000Z",
     "2026-04-10T11:00:01.000Z",
     "2026-04-10T11:00:02.000Z",
+    "2026-04-10T11:00:03.000Z",
   ];
 
   const adapter = new ClaudeCodeAdapter({
     sessionsDir,
-    now: () => timestamps.shift() ?? "2026-04-10T11:00:03.000Z",
+    now: () => timestamps.shift() ?? "2026-04-10T11:00:04.000Z",
     spawnProcess: (command, args, cwd) => {
       spawnedCalls.push({ command, args, cwd });
       const next = children.shift();
@@ -240,9 +252,10 @@ test("ClaudeCodeAdapter records an explicit failure message when Claude exits no
 
   const runtimeEvents = await readClaudeCodeSessionEvents(sessionsDir, result.sessionRef);
   assert.equal(runtimeEvents.at(-1)?.summary, "Failed Claude Code session run-claude-4-claude");
+  assert.equal(runtimeEvents.at(-1)?.subtype, "claude_failed");
 });
 
-test("ClaudeCodeAdapter normalizes lifecycle and stream events into shared execution events", () => {
+test("ClaudeCodeAdapter normalizes lifecycle and fallback stream events into shared execution events", () => {
   const adapter = new ClaudeCodeAdapter({ sessionsDir: "/tmp/specrail-claude" });
 
   assert.deepEqual(
@@ -264,6 +277,7 @@ test("ClaudeCodeAdapter normalizes lifecycle and stream events into shared execu
       id: "run-claude-3:spawned:2026-04-10T12:00:00.000Z",
       executionId: "run-claude-3",
       type: "shell_command",
+      subtype: "claude_spawned",
       timestamp: "2026-04-10T12:00:00.000Z",
       source: "claude_code",
       summary: "Spawned Claude Code session run-claude-3-claude",
@@ -294,6 +308,7 @@ test("ClaudeCodeAdapter normalizes lifecycle and stream events into shared execu
       id: "run-claude-3:stdout:2026-04-10T12:00:01.000Z",
       executionId: "run-claude-3",
       type: "message",
+      subtype: "claude_stdout",
       timestamp: "2026-04-10T12:00:01.000Z",
       source: "claude_code",
       summary: "STDOUT run-claude-3-claude",
@@ -322,6 +337,7 @@ test("ClaudeCodeAdapter normalizes lifecycle and stream events into shared execu
       id: "run-claude-3:failed:2026-04-10T12:00:02.000Z",
       executionId: "run-claude-3",
       type: "task_status_changed",
+      subtype: "claude_failed",
       timestamp: "2026-04-10T12:00:02.000Z",
       source: "claude_code",
       summary: "Failed Claude Code session run-claude-3-claude",

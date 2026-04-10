@@ -24,8 +24,10 @@ import {
   CLAUDE_CODE_BACKEND,
   normalizeClaudeCodeEvent,
   normalizeClaudeCodeSessionMetadata,
+  normalizeClaudeCodeStructuredStreamEvent,
   type ClaudeCodeLifecycleEvent,
   type ClaudeCodeSessionSnapshot,
+  type ClaudeCodeStreamJsonEvent,
 } from "./claude-code-contract.js";
 
 interface SpawnedProcessStreamLike {
@@ -40,13 +42,6 @@ interface SpawnedProcessLike {
   on(event: "exit", listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
 }
 
-interface ClaudeCliJsonEvent {
-  type?: string;
-  subtype?: string;
-  session_id?: string;
-  model?: string;
-  uuid?: string;
-}
 
 export interface ClaudeCodeAdapterOptions {
   sessionsDir?: string;
@@ -364,19 +359,10 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
     input.process.stdout?.on("data", (chunk) => {
       const text = chunk.toString();
       appendRawOutputSync(this.sessionsDir, input.sessionRef, text);
-      this.captureStructuredStdout(input.executionId, input.sessionRef, stdoutBuffer, text);
-      this.persistRuntimeEvent(
-        input.executionId,
-        input.sessionRef,
-        this.normalize({
-          kind: "stdout",
-          executionId: input.executionId,
-          sessionRef: input.sessionRef,
-          timestamp: this.now(),
-          text,
-          sessionId: readSessionMetadataSync(this.sessionsDir, input.sessionRef).providerSessionId,
-        }),
-      );
+      const structuredEvents = this.captureStructuredStdout(input.executionId, input.sessionRef, stdoutBuffer, text);
+      for (const event of structuredEvents) {
+        this.persistRuntimeEvent(input.executionId, input.sessionRef, event);
+      }
     });
 
     input.process.stderr?.on("data", (chunk) => {
@@ -459,13 +445,15 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
     });
   }
 
-  private captureStructuredStdout(executionId: string, sessionRef: string, buffer: { value: string }, chunk: string): void {
+  private captureStructuredStdout(executionId: string, sessionRef: string, buffer: { value: string }, chunk: string): ExecutionEvent[] {
     buffer.value += chunk;
+    const events: ExecutionEvent[] = [];
+    let eventIndex = 0;
 
     while (true) {
       const newlineIndex = buffer.value.indexOf("\n");
       if (newlineIndex < 0) {
-        return;
+        return events;
       }
 
       const line = buffer.value.slice(0, newlineIndex).trim();
@@ -475,35 +463,49 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
       }
 
       try {
-        const parsed = JSON.parse(line) as ClaudeCliJsonEvent;
+        const parsed = JSON.parse(line) as ClaudeCodeStreamJsonEvent;
         const metadata = readSessionMetadataSync(this.sessionsDir, sessionRef);
         const nextProviderSessionId = typeof parsed.session_id === "string" && parsed.session_id ? parsed.session_id : metadata.providerSessionId;
         const nextModel = typeof parsed.model === "string" && parsed.model ? parsed.model : readProviderModel(metadata);
         const nextRunId = typeof parsed.uuid === "string" && parsed.uuid ? parsed.uuid : metadata.providerInvocationId;
 
-        if (
-          nextProviderSessionId !== metadata.providerSessionId ||
-          nextRunId !== metadata.providerInvocationId ||
-          nextModel !== readProviderModel(metadata)
-        ) {
-          writeSessionMetadataSync(this.sessionsDir, {
-            ...metadata,
-            providerSessionId: nextProviderSessionId,
-            providerInvocationId: nextRunId,
-            resumeSessionRef: nextProviderSessionId ?? metadata.resumeSessionRef,
-            providerMetadata: {
-              ...(metadata.providerMetadata ?? {}),
-              model: nextModel,
-              transcriptPath: buildSessionRawOutputPath(this.sessionsDir, sessionRef),
-              workingDirectory: metadata.workspacePath,
-              lastEventType: parsed.type,
-              lastEventSubtype: parsed.subtype,
-            },
-            updatedAt: this.now(),
-          });
-        }
+        writeSessionMetadataSync(this.sessionsDir, {
+          ...metadata,
+          providerSessionId: nextProviderSessionId,
+          providerInvocationId: nextRunId,
+          resumeSessionRef: nextProviderSessionId ?? metadata.resumeSessionRef,
+          providerMetadata: {
+            ...(metadata.providerMetadata ?? {}),
+            model: nextModel,
+            transcriptPath: buildSessionRawOutputPath(this.sessionsDir, sessionRef),
+            workingDirectory: metadata.workspacePath,
+            lastEventType: parsed.type,
+            lastEventSubtype: parsed.subtype,
+          },
+          updatedAt: this.now(),
+        });
+
+        events.push(
+          ...normalizeClaudeCodeStructuredStreamEvent({
+            executionId,
+            sessionRef,
+            timestamp: this.now(),
+            event: parsed,
+            eventIndex,
+          }),
+        );
+        eventIndex += 1;
       } catch {
-        // best-effort only
+        events.push(
+          normalizeClaudeCodeEvent({
+            kind: "stdout",
+            executionId,
+            sessionRef,
+            timestamp: this.now(),
+            text: line,
+            sessionId: readSessionMetadataSync(this.sessionsDir, sessionRef).providerSessionId,
+          }),
+        );
       }
     }
   }
