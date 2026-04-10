@@ -23,6 +23,14 @@ export const APPROVAL_STATUSES = ["draft", "pending", "approved", "rejected"] as
 
 export type ApprovalStatus = "draft" | "pending" | "approved" | "rejected";
 
+export const ARTIFACT_KINDS = ["spec", "plan", "tasks"] as const;
+
+export type ArtifactKind = "spec" | "plan" | "tasks";
+
+export const APPROVAL_REQUEST_STATUSES = ["pending", "approved", "rejected"] as const;
+
+export type ApprovalRequestStatus = "pending" | "approved" | "rejected";
+
 export const PLANNING_SYSTEMS = ["native", "openspec", "speckit"] as const;
 
 export type PlanningSystem = "native" | "openspec" | "speckit";
@@ -87,6 +95,32 @@ export interface PlanningSession {
   createdAt: string;
   updatedAt: string;
   latestRevisionId?: string;
+}
+
+export interface ArtifactRevision {
+  id: string;
+  trackId: string;
+  artifact: ArtifactKind;
+  version: number;
+  content: string;
+  summary?: string;
+  createdAt: string;
+  createdBy: "user" | "agent" | "system";
+  approvalRequestId?: string;
+  approvedAt?: string;
+}
+
+export interface ApprovalRequest {
+  id: string;
+  trackId: string;
+  artifact: ArtifactKind;
+  revisionId: string;
+  status: ApprovalRequestStatus;
+  requestedBy: "user" | "agent" | "system";
+  requestedAt: string;
+  decidedAt?: string;
+  decidedBy?: "user" | "agent" | "system";
+  decisionComment?: string;
 }
 
 export interface PlanningMessage {

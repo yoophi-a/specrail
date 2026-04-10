@@ -2,6 +2,8 @@ import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promise
 import path from "node:path";
 
 import type {
+  ApprovalRequest,
+  ArtifactRevision,
   Execution,
   ExecutionEvent,
   PlanningMessage,
@@ -10,6 +12,8 @@ import type {
   Track,
 } from "../domain/types.js";
 import type {
+  ApprovalRequestRepository,
+  ArtifactRevisionRepository,
   EventStore,
   ExecutionRepository,
   PlanningMessageStore,
@@ -23,6 +27,8 @@ interface FileStatePaths {
   tracksDir: string;
   planningSessionsDir: string;
   planningMessagesDir: string;
+  artifactRevisionsDir: string;
+  approvalRequestsDir: string;
   executionsDir: string;
   eventsDir: string;
 }
@@ -33,6 +39,8 @@ export function getStatePaths(rootDir: string): FileStatePaths {
     tracksDir: path.join(rootDir, "tracks"),
     planningSessionsDir: path.join(rootDir, "planning-sessions"),
     planningMessagesDir: path.join(rootDir, "planning-messages"),
+    artifactRevisionsDir: path.join(rootDir, "artifact-revisions"),
+    approvalRequestsDir: path.join(rootDir, "approval-requests"),
     executionsDir: path.join(rootDir, "executions"),
     eventsDir: path.join(rootDir, "events"),
   };
@@ -222,6 +230,73 @@ export class FileExecutionRepository implements ExecutionRepository {
 
   update(execution: Execution): Promise<void> {
     return this.repository.update(execution);
+  }
+}
+
+export class FileArtifactRevisionRepository implements ArtifactRevisionRepository {
+  private readonly repository: JsonFileRepository<ArtifactRevision>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<ArtifactRevision>(getStatePaths(rootDir).artifactRevisionsDir);
+  }
+
+  create(revision: ArtifactRevision): Promise<void> {
+    return this.repository.create(revision);
+  }
+
+  getById(revisionId: string): Promise<ArtifactRevision | null> {
+    return this.repository.getById(revisionId);
+  }
+
+  async listByTrack(trackId: string, artifact?: ArtifactRevision["artifact"]): Promise<ArtifactRevision[]> {
+    const revisions = await this.repository.list();
+    return revisions
+      .filter((revision) => revision.trackId === trackId)
+      .filter((revision) => (artifact ? revision.artifact === artifact : true))
+      .sort(
+        (left, right) =>
+          right.version - left.version || right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+      );
+  }
+
+  async getLatestVersion(trackId: string, artifact: ArtifactRevision["artifact"]): Promise<number> {
+    const revisions = await this.listByTrack(trackId, artifact);
+    return revisions[0]?.version ?? 0;
+  }
+
+  update(revision: ArtifactRevision): Promise<void> {
+    return this.repository.update(revision);
+  }
+}
+
+export class FileApprovalRequestRepository implements ApprovalRequestRepository {
+  private readonly repository: JsonFileRepository<ApprovalRequest>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<ApprovalRequest>(getStatePaths(rootDir).approvalRequestsDir);
+  }
+
+  create(request: ApprovalRequest): Promise<void> {
+    return this.repository.create(request);
+  }
+
+  getById(requestId: string): Promise<ApprovalRequest | null> {
+    return this.repository.getById(requestId);
+  }
+
+  async listByTrack(trackId: string, artifact?: ApprovalRequest["artifact"]): Promise<ApprovalRequest[]> {
+    const requests = await this.repository.list();
+    return requests
+      .filter((request) => request.trackId === trackId)
+      .filter((request) => (artifact ? request.artifact === artifact : true))
+      .sort(
+        (left, right) =>
+          right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id),
+      );
+  }
+
+  update(request: ApprovalRequest): Promise<void> {
+    return this.repository.update(request);
   }
 }
 

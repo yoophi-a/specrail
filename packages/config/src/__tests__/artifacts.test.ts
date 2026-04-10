@@ -14,7 +14,9 @@ import {
   getProjectArtifactPaths,
   getRepoArtifactPaths,
   getRepoTrackArtifactPaths,
+  getTrackArtifactPaths,
   materializeTrackArtifacts,
+  writeApprovedTrackArtifact,
 } from "../artifacts.js";
 
 test("materializeTrackArtifacts creates runtime and repo-visible .specrail files for a track", async () => {
@@ -96,4 +98,37 @@ test("materializeTrackArtifacts creates runtime and repo-visible .specrail files
     tasks: path.join("tracks", "track-api-bootstrap", "tasks.md"),
   });
   assert.match(syncMetadata.syncedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("writeApprovedTrackArtifact updates approved-current runtime and repo-visible files", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "specrail-approved-artifacts-"));
+  const rootDir = path.join(tempRoot, ".specrail-data", "artifacts");
+  const repoVisibleRootDir = path.join(tempRoot, ".specrail");
+  const templateDir = path.resolve(process.cwd(), ".specrail-template");
+
+  await materializeTrackArtifacts({
+    rootDir,
+    repoVisibleRootDir,
+    templateDir,
+    projectName: "SpecRail",
+    trackId: "track-approved-current",
+    trackTitle: "Approved current",
+    trackDescription: "Keep approved view separate from revision history.",
+    specContent: "draft spec",
+    planContent: "draft plan",
+    tasksContent: "draft tasks",
+  });
+
+  await writeApprovedTrackArtifact({
+    rootDir,
+    repoVisibleRootDir,
+    trackId: "track-approved-current",
+    artifact: "plan",
+    content: "approved plan v2",
+  });
+
+  const repoTrackPaths = getRepoTrackArtifactPaths(repoVisibleRootDir, "track-approved-current");
+  const runtimeTrackPaths = getTrackArtifactPaths(rootDir, "track-approved-current");
+  assert.equal(await readFile(runtimeTrackPaths.planPath, "utf8"), "approved plan v2");
+  assert.equal(await readFile(repoTrackPaths.planPath, "utf8"), "approved plan v2");
 });

@@ -173,3 +173,30 @@ export async function materializeTrackArtifacts(input: MaterializeTrackArtifacts
 
   return trackPaths;
 }
+
+export async function writeApprovedTrackArtifact(input: {
+  rootDir: string;
+  repoVisibleRootDir?: string;
+  trackId: string;
+  artifact: "spec" | "plan" | "tasks";
+  content: string;
+}): Promise<void> {
+  const trackPaths = getTrackArtifactPaths(input.rootDir, input.trackId);
+  await mkdir(trackPaths.trackDir, { recursive: true });
+
+  const runtimePath =
+    input.artifact === "spec" ? trackPaths.specPath : input.artifact === "plan" ? trackPaths.planPath : trackPaths.tasksPath;
+  await writeFile(runtimePath, input.content, "utf8");
+
+  if (input.repoVisibleRootDir) {
+    const repoTrackPaths = getRepoTrackArtifactPaths(input.repoVisibleRootDir, input.trackId);
+    await mkdir(repoTrackPaths.trackDir, { recursive: true });
+    const repoPath =
+      input.artifact === "spec"
+        ? repoTrackPaths.specPath
+        : input.artifact === "plan"
+          ? repoTrackPaths.planPath
+          : repoTrackPaths.tasksPath;
+    await writeFile(repoPath, input.content, "utf8");
+  }
+}

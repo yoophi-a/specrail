@@ -707,3 +707,81 @@ test("API returns 404s for unknown tracks and runs", async () => {
     assert.equal(missingCancelPayload.error.code, "not_found");
   });
 });
+
+test("API supports proposing, approving, and rejecting artifact revisions", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Revision approvals",
+        description: "Exercise artifact revision workflow.",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const rejectProposalResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/spec`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        content: "spec revision v1",
+        summary: "first pass",
+        createdBy: "agent",
+      }),
+    });
+    assert.equal(rejectProposalResponse.status, 201);
+    const rejectProposal = (await rejectProposalResponse.json()) as {
+      revision: { version: number };
+      approvalRequest: { id: string; status: string };
+    };
+    assert.equal(rejectProposal.revision.version, 1);
+    assert.equal(rejectProposal.approvalRequest.status, "pending");
+
+    const rejectResponse = await fetch(`${baseUrl}/approval-requests/${rejectProposal.approvalRequest.id}/reject`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "user", comment: "Need more detail" }),
+    });
+    assert.equal(rejectResponse.status, 200);
+
+    const pendingProposalResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/spec`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        content: "approved spec revision",
+        summary: "second pass",
+        createdBy: "agent",
+      }),
+    });
+    const pendingProposal = (await pendingProposalResponse.json()) as {
+      revision: { version: number };
+      approvalRequest: { id: string };
+    };
+    assert.equal(pendingProposal.revision.version, 2);
+
+    const approveResponse = await fetch(`${baseUrl}/approval-requests/${pendingProposal.approvalRequest.id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "user", comment: "Ship it" }),
+    });
+    assert.equal(approveResponse.status, 200);
+
+    const artifactResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/spec`);
+    assert.equal(artifactResponse.status, 200);
+    const artifactPayload = (await artifactResponse.json()) as {
+      revisions: Array<{ version: number; approvedAt?: string }>;
+      approvalRequests: Array<{ status: string }>;
+    };
+    assert.deepEqual(artifactPayload.revisions.map((revision) => revision.version), [2, 1]);
+    assert.ok(artifactPayload.revisions[0]?.approvedAt);
+    assert.deepEqual(artifactPayload.approvalRequests.map((request) => request.status), ["approved", "rejected"]);
+
+    const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
+    const getTrackPayload = (await getTrackResponse.json()) as {
+      track: { specStatus: string };
+      artifacts: { spec: string };
+    };
+    assert.equal(getTrackPayload.track.specStatus, "approved");
+    assert.equal(getTrackPayload.artifacts.spec, "approved spec revision");
+  });
+});

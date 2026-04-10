@@ -9,9 +9,13 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..", "..");
 
 import { CodexAdapter } from "@specrail/adapters";
-import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
+import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts, writeApprovedTrackArtifact } from "@specrail/config";
 import {
   APPROVAL_STATUSES,
+  APPROVAL_REQUEST_STATUSES,
+  ARTIFACT_KINDS,
+  FileApprovalRequestRepository,
+  FileArtifactRevisionRepository,
   FileExecutionRepository,
   FilePlanningSessionRepository,
   FileProjectRepository,
@@ -26,6 +30,7 @@ import {
   TRACK_STATUSES,
   type ExecutionEvent,
   type ApprovalStatus,
+  type ArtifactKind,
   type PlanningMessage,
   type PlanningMessageKind,
   type PlanningSessionStatus,
@@ -70,6 +75,17 @@ interface AppendPlanningMessageRequestBody {
 
 interface ResumeRunRequestBody {
   prompt: string;
+}
+
+interface ProposeArtifactRevisionRequestBody {
+  content: string;
+  summary?: string;
+  createdBy: "user" | "agent" | "system";
+}
+
+interface DecideApprovalRequestBody {
+  decidedBy: "user" | "agent" | "system";
+  comment?: string;
 }
 
 interface TrackListQuery {
@@ -142,6 +158,8 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
   const trackRepository = new FileTrackRepository(stateDir);
   const planningSessionRepository = new FilePlanningSessionRepository(stateDir);
   const planningMessageStore = new JsonlPlanningMessageStore(stateDir);
+  const artifactRevisionRepository = new FileArtifactRevisionRepository(stateDir);
+  const approvalRequestRepository = new FileApprovalRequestRepository(stateDir);
   const executionRepository = new FileExecutionRepository(stateDir);
   let service: SpecRailService | null = null;
 
@@ -150,6 +168,8 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
     trackRepository,
     planningSessionRepository,
     planningMessageStore,
+    artifactRevisionRepository,
+    approvalRequestRepository,
     executionRepository,
     eventStore,
     artifactWriter: {
@@ -165,6 +185,15 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
           specContent: input.specContent,
           planContent: input.planContent,
           tasksContent: input.tasksContent,
+        });
+      },
+      async writeApprovedArtifact(input) {
+        await writeApprovedTrackArtifact({
+          rootDir: artifactRoot,
+          repoVisibleRootDir: repoArtifactRoot,
+          trackId: input.track.id,
+          artifact: input.artifact,
+          content: input.content,
         });
       },
     },
@@ -265,6 +294,10 @@ function isPlanningSessionStatus(value: unknown): value is PlanningSessionStatus
 
 function isPlanningMessageKind(value: unknown): value is PlanningMessageKind {
   return typeof value === "string" && PLANNING_MESSAGE_KINDS.includes(value as PlanningMessageKind);
+}
+
+function isArtifactKind(value: unknown): value is ArtifactKind {
+  return typeof value === "string" && ARTIFACT_KINDS.includes(value as ArtifactKind);
 }
 
 function parsePositiveInteger(value: string | null): number | undefined {
@@ -427,6 +460,48 @@ function assertValidResumeRunBody(body: ResumeRunRequestBody): void {
 
   if (promptDetail) {
     throw new RequestValidationError("request validation failed", [promptDetail]);
+  }
+}
+
+function assertValidProposeArtifactRevisionBody(body: ProposeArtifactRevisionRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+  const contentDetail = getNonEmptyStringDetail("content", body.content);
+  if (contentDetail) {
+    details.push(contentDetail);
+  }
+
+  if (body.summary !== undefined) {
+    const summaryDetail = getNonEmptyStringDetail("summary", body.summary);
+    if (summaryDetail) {
+      details.push(summaryDetail);
+    }
+  }
+
+  if (body.createdBy !== "user" && body.createdBy !== "agent" && body.createdBy !== "system") {
+    details.push({ field: "createdBy", message: "createdBy must be one of: user, agent, system" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidDecideApprovalRequestBody(body: DecideApprovalRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (body.decidedBy !== "user" && body.decidedBy !== "agent" && body.decidedBy !== "system") {
+    details.push({ field: "decidedBy", message: "decidedBy must be one of: user, agent, system" });
+  }
+
+  if (body.comment !== undefined) {
+    const commentDetail = getNonEmptyStringDetail("comment", body.comment);
+    if (commentDetail) {
+      details.push(commentDetail);
+    }
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
   }
 }
 
@@ -651,6 +726,48 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "POST" && segments.length === 4 && segments[0] === "tracks" && segments[2] === "artifacts") {
+        const artifact = segments[3];
+        if (!isArtifactKind(artifact)) {
+          sendError(response, 404, "not_found", "not found");
+          return;
+        }
+
+        const body = await readJson<ProposeArtifactRevisionRequestBody>(request);
+        assertValidProposeArtifactRevisionBody(body);
+
+        const result = await deps.service.proposeArtifactRevision({
+          trackId: segments[1] ?? "",
+          artifact,
+          content: body.content,
+          summary: body.summary,
+          createdBy: body.createdBy,
+        });
+        sendJson(response, 201, result);
+        return;
+      }
+
+      if (method === "GET" && segments.length === 4 && segments[0] === "tracks" && segments[2] === "artifacts") {
+        const artifact = segments[3];
+        if (!isArtifactKind(artifact)) {
+          sendError(response, 404, "not_found", "not found");
+          return;
+        }
+
+        const track = await deps.service.getTrack(segments[1] ?? "");
+        if (!track) {
+          sendError(response, 404, "not_found", "track not found");
+          return;
+        }
+
+        const [revisions, approvalRequests] = await Promise.all([
+          deps.service.listArtifactRevisions(track.id, artifact),
+          deps.service.listApprovalRequests(track.id, artifact),
+        ]);
+        sendJson(response, 200, { revisions, approvalRequests });
+        return;
+      }
+
       if (method === "PATCH" && segments.length === 2 && segments[0] === "tracks") {
         const body = await readJson<UpdateTrackRequestBody>(request);
         assertValidTrackUpdateBody(body);
@@ -720,6 +837,30 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       if (method === "GET" && segments.length === 3 && segments[0] === "planning-sessions" && segments[2] === "messages") {
         const messages = await deps.service.listPlanningMessages(segments[1] ?? "");
         sendJson(response, 200, { messages });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "approval-requests" && segments[2] === "approve") {
+        const body = await readJson<DecideApprovalRequestBody>(request);
+        assertValidDecideApprovalRequestBody(body);
+        const approvalRequest = await deps.service.approveApprovalRequest({
+          approvalRequestId: segments[1] ?? "",
+          decidedBy: body.decidedBy,
+          comment: body.comment,
+        });
+        sendJson(response, 200, { approvalRequest });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "approval-requests" && segments[2] === "reject") {
+        const body = await readJson<DecideApprovalRequestBody>(request);
+        assertValidDecideApprovalRequestBody(body);
+        const approvalRequest = await deps.service.rejectApprovalRequest({
+          approvalRequestId: segments[1] ?? "",
+          decidedBy: body.decidedBy,
+          comment: body.comment,
+        });
+        sendJson(response, 200, { approvalRequest });
         return;
       }
 

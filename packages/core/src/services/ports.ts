@@ -1,4 +1,6 @@
 import type {
+  ApprovalRequest,
+  ArtifactRevision,
   Execution,
   ExecutionEvent,
   PlanningMessage,
@@ -29,6 +31,21 @@ export interface PlanningSessionRepository {
 export interface PlanningMessageStore {
   append(message: PlanningMessage): Promise<void>;
   listBySession(planningSessionId: string): Promise<PlanningMessage[]>;
+}
+
+export interface ArtifactRevisionRepository {
+  create(revision: ArtifactRevision): Promise<void>;
+  getById(revisionId: string): Promise<ArtifactRevision | null>;
+  listByTrack(trackId: string, artifact?: ArtifactRevision["artifact"]): Promise<ArtifactRevision[]>;
+  getLatestVersion(trackId: string, artifact: ArtifactRevision["artifact"]): Promise<number>;
+  update(revision: ArtifactRevision): Promise<void>;
+}
+
+export interface ApprovalRequestRepository {
+  create(request: ApprovalRequest): Promise<void>;
+  getById(requestId: string): Promise<ApprovalRequest | null>;
+  listByTrack(trackId: string, artifact?: ApprovalRequest["artifact"]): Promise<ApprovalRequest[]>;
+  update(request: ApprovalRequest): Promise<void>;
 }
 
 export interface ExecutionRepository {

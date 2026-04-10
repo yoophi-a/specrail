@@ -12,6 +12,10 @@ import {
 } from "../domain/artifacts.js";
 import type {
   ApprovalStatus,
+  ApprovalRequest,
+  ApprovalRequestStatus,
+  ArtifactKind,
+  ArtifactRevision,
   Execution,
   ExecutionEvent,
   ExecutionStatus,
@@ -27,6 +31,8 @@ import { NotFoundError } from "../errors.js";
 import type {
   EventStore,
   ExecutionRepository,
+  ApprovalRequestRepository,
+  ArtifactRevisionRepository,
   PlanningMessageStore,
   PlanningSessionRepository,
   ProjectRepository,
@@ -43,6 +49,12 @@ export interface TrackArtifactWriterInput {
 
 export interface TrackArtifactWriter {
   write(input: TrackArtifactWriterInput): Promise<void>;
+  writeApprovedArtifact(input: {
+    track: Track;
+    project: Project;
+    artifact: ArtifactKind;
+    content: string;
+  }): Promise<void>;
 }
 
 export interface ExecutorLaunchResult {
@@ -79,6 +91,8 @@ export interface SpecRailServiceDependencies {
   trackRepository: TrackRepository;
   planningSessionRepository: PlanningSessionRepository;
   planningMessageStore: PlanningMessageStore;
+  artifactRevisionRepository: ArtifactRevisionRepository;
+  approvalRequestRepository: ApprovalRequestRepository;
   executionRepository: ExecutionRepository;
   eventStore: EventStore;
   artifactWriter: TrackArtifactWriter;
@@ -134,6 +148,20 @@ export interface ResumeRunInput {
 
 export interface CancelRunInput {
   runId: string;
+}
+
+export interface ProposeArtifactRevisionInput {
+  trackId: string;
+  artifact: ArtifactKind;
+  content: string;
+  summary?: string;
+  createdBy: ArtifactRevision["createdBy"];
+}
+
+export interface DecideApprovalRequestInput {
+  approvalRequestId: string;
+  decidedBy: ApprovalRequest["requestedBy"];
+  comment?: string;
 }
 
 export type SortOrder = "asc" | "desc";
@@ -415,6 +443,66 @@ export class SpecRailService {
     return message;
   }
 
+  async proposeArtifactRevision(
+    input: ProposeArtifactRevisionInput,
+  ): Promise<{ revision: ArtifactRevision; approvalRequest: ApprovalRequest }> {
+    const track = await this.dependencies.trackRepository.getById(input.trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${input.trackId}`);
+    }
+
+    const timestamp = this.now();
+    const version = (await this.dependencies.artifactRevisionRepository.getLatestVersion(track.id, input.artifact)) + 1;
+    const revision: ArtifactRevision = {
+      id: `artifact-revision-${this.idGenerator()}`,
+      trackId: track.id,
+      artifact: input.artifact,
+      version,
+      content: input.content,
+      summary: input.summary,
+      createdAt: timestamp,
+      createdBy: input.createdBy,
+    };
+    const approvalRequest: ApprovalRequest = {
+      id: `approval-request-${this.idGenerator()}`,
+      trackId: track.id,
+      artifact: input.artifact,
+      revisionId: revision.id,
+      status: "pending",
+      requestedBy: input.createdBy,
+      requestedAt: timestamp,
+    };
+
+    revision.approvalRequestId = approvalRequest.id;
+
+    await this.dependencies.artifactRevisionRepository.create(revision);
+    await this.dependencies.approvalRequestRepository.create(approvalRequest);
+    await this.dependencies.trackRepository.update({
+      ...track,
+      ...this.getTrackApprovalPatch(track, input.artifact, "pending"),
+      updatedAt: timestamp,
+    });
+
+    return { revision, approvalRequest };
+  }
+
+  listArtifactRevisions(trackId: string, artifact?: ArtifactKind): Promise<ArtifactRevision[]> {
+    return this.dependencies.artifactRevisionRepository.listByTrack(trackId, artifact);
+  }
+
+  listApprovalRequests(trackId: string, artifact?: ArtifactKind): Promise<ApprovalRequest[]> {
+    return this.dependencies.approvalRequestRepository.listByTrack(trackId, artifact);
+  }
+
+  async approveApprovalRequest(input: DecideApprovalRequestInput): Promise<ApprovalRequest> {
+    return this.resolveApprovalRequest(input, "approved");
+  }
+
+  async rejectApprovalRequest(input: DecideApprovalRequestInput): Promise<ApprovalRequest> {
+    return this.resolveApprovalRequest(input, "rejected");
+  }
+
   async listPlanningMessages(planningSessionId: string): Promise<PlanningMessage[]> {
     const session = await this.dependencies.planningSessionRepository.getById(planningSessionId);
 
@@ -615,6 +703,78 @@ export class SpecRailService {
       status: nextStatus,
       updatedAt: execution.finishedAt ?? this.now(),
     });
+  }
+
+  private async resolveApprovalRequest(
+    input: DecideApprovalRequestInput,
+    nextStatus: ApprovalRequestStatus,
+  ): Promise<ApprovalRequest> {
+    const request = await this.dependencies.approvalRequestRepository.getById(input.approvalRequestId);
+
+    if (!request) {
+      throw new NotFoundError(`Approval request not found: ${input.approvalRequestId}`);
+    }
+
+    if (request.status !== "pending") {
+      throw new Error(`Approval request is already ${request.status}: ${request.id}`);
+    }
+
+    const revision = await this.dependencies.artifactRevisionRepository.getById(request.revisionId);
+    if (!revision) {
+      throw new NotFoundError(`Artifact revision not found: ${request.revisionId}`);
+    }
+
+    const track = await this.dependencies.trackRepository.getById(request.trackId);
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${request.trackId}`);
+    }
+
+    const project = await this.ensureDefaultProject();
+    const timestamp = this.now();
+    const resolvedRequest: ApprovalRequest = {
+      ...request,
+      status: nextStatus,
+      decidedAt: timestamp,
+      decidedBy: input.decidedBy,
+      decisionComment: input.comment,
+    };
+
+    await this.dependencies.approvalRequestRepository.update(resolvedRequest);
+
+    const trackApprovalStatus: ApprovalStatus = nextStatus === "approved" ? "approved" : "rejected";
+    await this.dependencies.trackRepository.update({
+      ...track,
+      ...this.getTrackApprovalPatch(track, request.artifact, trackApprovalStatus),
+      updatedAt: timestamp,
+    });
+
+    if (nextStatus === "approved") {
+      await this.dependencies.artifactRevisionRepository.update({
+        ...revision,
+        approvedAt: timestamp,
+      });
+      await this.dependencies.artifactWriter.writeApprovedArtifact({
+        track,
+        project,
+        artifact: request.artifact,
+        content: revision.content,
+      });
+    }
+
+    return resolvedRequest;
+  }
+
+  private getTrackApprovalPatch(track: Track, artifact: ArtifactKind, status: ApprovalStatus): Partial<Track> {
+    switch (artifact) {
+      case "spec":
+        return { specStatus: status };
+      case "plan":
+        return { planStatus: status };
+      case "tasks":
+        return { status: status === "approved" ? track.status : track.status };
+      default:
+        return {};
+    }
   }
 
   private async requireRun(runId: string): Promise<Execution> {
