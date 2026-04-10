@@ -55,7 +55,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - database-backed persistence
 - real approval broker or approval event workflow
 - worktree or branch orchestration beyond metadata/workspace path allocation
-- non-Codex executor adapters
+- process-backed non-Codex executor adapters (Claude Code contract is defined, runtime implementation still pending)
 - web UI or GitHub app/webhooks
 - artifact editing endpoints
 - automatic track reconciliation from terminal run outcomes beyond the current first-pass policy
@@ -175,7 +175,7 @@ Notes:
 - status values include `created`, `queued`, `running`, `waiting_approval`, `completed`, `failed`, `cancelled`
 - current API actively exercises `running`, `completed`, `failed`, and `cancelled`
 - terminal run states reconcile back into track status with a first-pass policy: `completed -> review`, `failed -> failed`, `cancelled -> blocked`
-- run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, event summary, and linked planning-context references (`planningSessionId`, approved revision ids, stale flag)
+- run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, normalized provider session metadata (`providerSessionId`, `providerInvocationId`, `resumeSessionRef`, `parentSessionRef`, `providerMetadata`), event summary, and linked planning-context references (`planningSessionId`, approved revision ids, stale flag)
 
 ### Event types
 Normalized event types currently defined in core:

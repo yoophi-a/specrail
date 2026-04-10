@@ -218,6 +218,7 @@ export class CodexAdapter implements ExecutorAdapter {
       profile: input.profile,
       workspacePath: input.workspacePath,
       command,
+      resumeSessionRef: sessionRef,
       status: "running",
       prompt: input.prompt,
       createdAt: timestamp,
@@ -260,7 +261,7 @@ export class CodexAdapter implements ExecutorAdapter {
   async resume(input: ResumeExecutionInput): Promise<ResumeExecutionResult> {
     const metadata = await readSessionMetadata(this.sessionsDir, input.sessionRef);
     const timestamp = this.now();
-    const resumeSessionRef = metadata.codexSessionId ?? metadata.sessionRef;
+    const resumeSessionRef = metadata.providerSessionId ?? metadata.codexSessionId ?? metadata.sessionRef;
     const command = buildCodexResumeCommand(
       {
         ...input,
@@ -276,6 +277,7 @@ export class CodexAdapter implements ExecutorAdapter {
       command,
       pid: spawned.pid,
       prompt: input.prompt,
+      resumeSessionRef,
       status: "running",
       resumedAt: timestamp,
       updatedAt: timestamp,
@@ -530,10 +532,12 @@ export class CodexAdapter implements ExecutorAdapter {
         const codexSessionId = readCodexSessionId(parsed);
         if (codexSessionId) {
           const metadata = readSessionMetadataSync(this.sessionsDir, sessionRef);
-          if (metadata.codexSessionId !== codexSessionId) {
+          if (metadata.codexSessionId !== codexSessionId || metadata.providerSessionId !== codexSessionId) {
             writeSessionMetadataSync(this.sessionsDir, {
               ...metadata,
               codexSessionId,
+              providerSessionId: codexSessionId,
+              resumeSessionRef: codexSessionId,
               updatedAt: this.now(),
             });
           }
