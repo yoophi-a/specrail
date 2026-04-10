@@ -553,11 +553,26 @@ packages/
 우선순위는 다음 순서가 적절하다.
 
 1. `SpecRail`에 channel binding 개념 추가
-2. `apps/telegram-bot` 앱 추가
+2. `apps/telegram` 앱 추가, webhook 기반 thin frontend로 유지
 3. 텔레그램 메시지 -> `Track` / `Run` 연결 최소 흐름 구현
 4. 첨부파일 등록 API 추가
 5. planning session API 추가
 6. 질문/응답/승인 흐름을 텔레그램까지 확장
+
+---
+
+## 구현 상태 메모 (issue #65)
+
+현재 저장소에는 `apps/telegram` 앱이 추가되어 있습니다.
+
+- Telegram update webhook을 받는다
+- channel binding으로 기존 track 연결을 조회한다
+- binding이 없으면 새 track을 만들고 chat/thread를 bind한다
+- 첨부파일이 있으면 attachment reference로 등록한다
+- `POST /runs`로 실행을 시작한다
+- `GET /runs/:runId/events/stream`을 구독해 Telegram 진행 메시지로 relay한다
+
+즉, 실행기 로직은 여전히 `apps/api`와 core/adapters 쪽에 있고, Telegram 앱은 얇은 입출력 어댑터로만 남긴다.
 
 ---
 

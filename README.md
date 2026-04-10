@@ -47,7 +47,8 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - SSE event streaming for run events
 - request validation and structured API errors
 - thin-channel foundations for external chat bindings and attachment references
-- automated API/config/adapter tests
+- thin Telegram adapter app that binds chats to tracks and relays run events
+- automated API/config/adapter/frontend tests
 
 ### Not implemented yet
 - authentication and multi-user access control
@@ -55,7 +56,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - real approval broker or approval event workflow
 - worktree or branch orchestration beyond metadata/workspace path allocation
 - non-Codex executor adapters
-- web UI, GitHub app/webhooks, or chat integrations
+- web UI or GitHub app/webhooks
 - artifact editing endpoints
 - automatic track reconciliation from terminal run outcomes beyond the current first-pass policy
 
@@ -200,6 +201,7 @@ The Codex MVP currently emits lifecycle-oriented events such as:
 specrail/
   apps/
     api/                  # Node HTTP API with JSON + SSE routes
+    telegram/             # Thin Telegram webhook frontend over the SpecRail API
   packages/
     core/                 # Domain types, file repositories, service orchestration
     adapters/             # Executor contracts and Codex MVP adapter
@@ -215,7 +217,10 @@ specrail/
 pnpm install
 pnpm test
 pnpm dev:api
+pnpm dev:telegram
 ```
+
+For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`.
 
 Then call the API locally, for example:
 
