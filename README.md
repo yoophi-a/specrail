@@ -251,8 +251,10 @@ Current shell behavior:
 - loads recent tracks and runs from the API
 - renders navigable track and run list views with selected detail panes
 - auto-selects the current track/run and refreshes detail snapshots from the API
+- tails live selected-run events over SSE with cached recent activity and reconnect attempts when the stream drops
+- shows richer run status context including event counts, last event, planning-context staleness, and failure focus where available
 - supports `1-4` to switch screens, `j/k` or arrow keys to move selection, `r` to refresh, `q` to quit
-- surfaces loading and refresh failures in the status line and detail panes
+- surfaces loading, streaming, and refresh failures in the status line and detail panes
 
 ## Claude Code backend
 

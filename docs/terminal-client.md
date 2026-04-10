@@ -23,10 +23,28 @@
 - `runs`: recent run summary list
 - `settings`: resolved config values and extension notes
 
+## Current operator flow
+
+The runs screen now does more than snapshot inspection:
+
+- keeps the selected run detail panel in sync with periodic refreshes
+- opens an SSE stream against `/runs/:id/events/stream` for the selected run
+- caches the most recent run events in-memory for a tail-style activity view
+- deduplicates replayed events after reconnect because the API replays prior history on each SSE connection
+- retries dropped streams with bounded backoff for non-terminal runs
+- stops reconnecting once the selected run reaches `completed`, `failed`, or `cancelled`
+
+The run detail pane also highlights:
+
+- event count and last-event timestamp
+- the latest event summary
+- failure focus, including exit code or signal when present in event payloads
+- planning-context staleness and last planning-context update timestamp
+
 ## Follow-up direction
 
-Issue `#74` can now build on this skeleton to add:
-- list selection state
-- detail panes for tracks and runs
-- loading and error-state polish per screen
-- richer refresh behavior and view models
+Good next steps after the live monitor baseline:
+- filters for active vs terminal runs
+- pausing/resuming the live tail without changing selection
+- richer provider-specific event formatting for long stdout/stderr payloads
+- operator actions from the terminal surface, such as resume/cancel shortcuts

@@ -3,6 +3,7 @@ import process from "node:process";
 import { loadTerminalClientConfig, type SpecRailTerminalClientConfig } from "@specrail/config";
 
 export type TerminalScreenId = "home" | "tracks" | "runs" | "settings";
+export type RunEventConnectionState = "idle" | "connecting" | "live" | "reconnecting" | "closed" | "error";
 
 export interface TrackListItem {
   id: string;
@@ -27,10 +28,27 @@ export interface RunListItem {
   sessionRef?: string;
   planningSessionId?: string;
   planningContextStale?: boolean;
+  planningContextUpdatedAt?: string;
   planningContextStaleReason?: string;
+  summary?: {
+    eventCount: number;
+    lastEventSummary?: string;
+    lastEventAt?: string;
+  };
   createdAt?: string;
   startedAt?: string;
   finishedAt?: string;
+}
+
+export interface ExecutionEvent {
+  id: string;
+  executionId: string;
+  type: string;
+  subtype?: string;
+  timestamp: string;
+  source: string;
+  summary: string;
+  payload?: Record<string, unknown>;
 }
 
 export interface TrackDetailSnapshot {
@@ -68,6 +86,15 @@ export interface DetailPanelState<T> {
   error: string | null;
 }
 
+export interface RunEventFeedState {
+  runId: string | null;
+  items: ExecutionEvent[];
+  connection: RunEventConnectionState;
+  reconnectAttempts: number;
+  lastError: string | null;
+  lastEventAt: string | null;
+}
+
 export interface TerminalAppState {
   screen: TerminalScreenId;
   statusLine: string;
@@ -78,6 +105,7 @@ export interface TerminalAppState {
   error: string | null;
   tracks: DetailPanelState<TrackDetailSnapshot>;
   runs: DetailPanelState<RunDetailSnapshot>;
+  runEvents: RunEventFeedState;
 }
 
 interface TracksResponse {
@@ -139,6 +167,84 @@ export class SpecRailTerminalApiClient {
     const payload = await this.request<RunDetailResponse>(`/runs/${runId}`);
     return { run: payload.run };
   }
+
+  async *streamRunEvents(runId: string, signal?: AbortSignal): AsyncGenerator<ExecutionEvent> {
+    const response = await this.fetchImpl(new URL(`/runs/${runId}/events/stream`, this.baseUrl), {
+      headers: { accept: "text/event-stream" },
+      signal,
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`SpecRail API request failed (${response.status}) for /runs/${runId}/events/stream`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          break;
+        }
+
+        buffer += decoder.decode(chunk.value, { stream: true });
+
+        while (true) {
+          const separatorIndex = buffer.indexOf("\n\n");
+          if (separatorIndex === -1) {
+            break;
+          }
+
+          const frame = buffer.slice(0, separatorIndex);
+          buffer = buffer.slice(separatorIndex + 2);
+          const dataLine = frame
+            .split("\n")
+            .find((line) => line.startsWith("data:"))
+            ?.slice(5)
+            .trim();
+
+          if (!dataLine) {
+            continue;
+          }
+
+          yield JSON.parse(dataLine) as ExecutionEvent;
+        }
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+  }
+}
+
+export function createEmptyRunEventFeedState(runId: string | null = null): RunEventFeedState {
+  return {
+    runId,
+    items: [],
+    connection: "idle",
+    reconnectAttempts: 0,
+    lastError: null,
+    lastEventAt: null,
+  };
+}
+
+export function appendRunEvents(feed: RunEventFeedState, events: ExecutionEvent[], maxItems = 12): RunEventFeedState {
+  if (events.length === 0) {
+    return feed;
+  }
+
+  const seenIds = new Set(feed.items.map((event) => event.id));
+  const deduped = events.filter((event) => !seenIds.has(event.id));
+  if (deduped.length === 0) {
+    return feed;
+  }
+
+  const items = [...feed.items, ...deduped].sort((left, right) => left.timestamp.localeCompare(right.timestamp)).slice(-maxItems);
+  return {
+    ...feed,
+    items,
+    lastEventAt: items.at(-1)?.timestamp ?? feed.lastEventAt,
+  };
 }
 
 export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): TerminalAppState {
@@ -152,6 +258,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     error: null,
     tracks: createEmptyDetailState<TrackDetailSnapshot>(),
     runs: createEmptyDetailState<RunDetailSnapshot>(),
+    runEvents: createEmptyRunEventFeedState(),
   };
 }
 
@@ -173,7 +280,7 @@ export async function bootstrapTerminalState(
   const tracks = await populateTrackPanel(createEmptyDetailState<TrackDetailSnapshot>(), summary, client);
   const runs = await populateRunPanel(createEmptyDetailState<RunDetailSnapshot>(), summary, client);
 
-  return {
+  return syncRunEventSelection({
     screen: config.initialScreen,
     statusLine: `Loaded ${summary.tracks.length} tracks and ${summary.runs.length} runs.`,
     summary,
@@ -183,7 +290,8 @@ export async function bootstrapTerminalState(
     error: null,
     tracks,
     runs,
-  };
+    runEvents: createEmptyRunEventFeedState(runs.selectedId),
+  });
 }
 
 export async function refreshTerminalState(
@@ -194,7 +302,7 @@ export async function refreshTerminalState(
   const tracks = await populateTrackPanel(state.tracks, summary, client);
   const runs = await populateRunPanel(state.runs, summary, client);
 
-  return {
+  return syncRunEventSelection({
     ...state,
     summary,
     loading: false,
@@ -202,7 +310,7 @@ export async function refreshTerminalState(
     statusLine: `Refreshed ${summary.tracks.length} tracks and ${summary.runs.length} runs at ${summary.fetchedAt}.`,
     tracks,
     runs,
-  };
+  });
 }
 
 async function populateTrackPanel(
@@ -306,7 +414,7 @@ function updateSelection(state: TerminalAppState, delta: number): TerminalAppSta
   if (state.screen === "runs") {
     const nextIndex = clampIndex(state.runs.selectedIndex + delta, state.summary.runs.length);
     const selectedId = state.summary.runs[nextIndex]?.id ?? null;
-    return {
+    return syncRunEventSelection({
       ...state,
       statusLine: selectedId ? `Selected run ${selectedId}. Press r to refresh details.` : state.statusLine,
       runs: {
@@ -316,10 +424,22 @@ function updateSelection(state: TerminalAppState, delta: number): TerminalAppSta
         data: state.runs.data?.run.id === selectedId ? state.runs.data : null,
         error: null,
       },
-    };
+    });
   }
 
   return state;
+}
+
+export function syncRunEventSelection(state: TerminalAppState): TerminalAppState {
+  const selectedId = state.runs.selectedId;
+  if (selectedId === state.runEvents.runId) {
+    return state;
+  }
+
+  return {
+    ...state,
+    runEvents: createEmptyRunEventFeedState(selectedId),
+  };
 }
 
 export function renderAppShell(state: TerminalAppState): string {
@@ -364,7 +484,7 @@ function renderScreenBody(state: TerminalAppState): string[] {
         `- API base URL: ${state.apiBaseUrl}`,
         `- Refresh interval: ${state.refreshIntervalMs}ms`,
         "- Navigation: use j/k or arrow keys to move through track/run selections.",
-        "- Next step: add persisted operator preferences and view-specific filters.",
+        "- Runs view tails live SSE events with automatic reconnect attempts.",
       ];
     case "home":
     default:
@@ -375,6 +495,7 @@ function renderScreenBody(state: TerminalAppState): string[] {
         `- Last fetch: ${state.summary.fetchedAt}`,
         `- Selected track: ${state.tracks.selectedId ?? "none"}`,
         `- Selected run: ${state.runs.selectedId ?? "none"}`,
+        `- Run stream: ${state.runEvents.runId ? `${state.runEvents.connection} (${state.runEvents.items.length} events cached)` : "idle"}`,
         state.error ? `- Last refresh error: ${state.error}` : "- Last refresh error: none",
       ];
   }
@@ -397,6 +518,8 @@ function renderTracksScreen(state: TerminalAppState): string[] {
 
 function renderRunsScreen(state: TerminalAppState): string[] {
   const selectedRun = state.summary?.runs[state.runs.selectedIndex] ?? null;
+  const detail = selectedRun?.id === state.runs.data?.run.id ? state.runs.data : null;
+
   return [
     `Runs (${state.summary?.runs.length ?? 0})`,
     ...renderSelectableList(
@@ -408,7 +531,7 @@ function renderRunsScreen(state: TerminalAppState): string[] {
     ),
     "",
     "Run detail",
-    ...renderRunDetail(selectedRun?.id === state.runs.data?.run.id ? state.runs.data : null, state.runs, selectedRun?.id ?? null),
+    ...renderRunDetail(detail, state.runs, selectedRun?.id ?? null, state.runEvents),
   ];
 }
 
@@ -456,6 +579,7 @@ function renderRunDetail(
   detail: RunDetailSnapshot | null,
   panel: DetailPanelState<RunDetailSnapshot>,
   selectedId: string | null,
+  feed: RunEventFeedState,
 ): string[] {
   if (!selectedId) {
     return ["- No run selected."];
@@ -469,20 +593,100 @@ function renderRunDetail(
     return ["- Detail unavailable. Press r to reload the selected run."];
   }
 
+  const run = detail.run;
+  const terminal = isTerminalRunStatus(run.status);
+  const lastEvent = feed.runId === run.id ? feed.items.at(-1) ?? null : null;
+  const recentFailure = feed.runId === run.id ? [...feed.items].reverse().find((event) => isFailureEvent(event)) ?? null : null;
+
   return [
-    `- id: ${detail.run.id}`,
-    `- track: ${detail.run.trackId}`,
-    `- status: ${detail.run.status}`,
-    `- backend/profile: ${detail.run.backend ?? "default"} / ${detail.run.profile ?? "default"}`,
-    `- branch: ${detail.run.branchName ?? "unknown"}`,
-    `- workspace: ${detail.run.workspacePath ?? "unknown"}`,
-    `- session: ${detail.run.sessionRef ?? "none"}`,
-    `- planning session: ${detail.run.planningSessionId ?? "none"}`,
-    `- planning context stale: ${detail.run.planningContextStale ? "yes" : "no"}`,
-    `- stale reason: ${detail.run.planningContextStaleReason ?? "none"}`,
-    `- started: ${detail.run.startedAt ?? detail.run.createdAt ?? "unknown"}`,
-    `- finished: ${detail.run.finishedAt ?? "not finished"}`,
+    `- id: ${run.id}`,
+    `- track: ${run.trackId}`,
+    `- status: ${run.status}`,
+    `- backend/profile: ${run.backend ?? "default"} / ${run.profile ?? "default"}`,
+    `- branch: ${run.branchName ?? "unknown"}`,
+    `- workspace: ${run.workspacePath ?? "unknown"}`,
+    `- session: ${run.sessionRef ?? "none"}`,
+    `- planning session: ${run.planningSessionId ?? "none"}`,
+    `- planning context stale: ${run.planningContextStale ? "yes" : "no"}`,
+    `- stale reason: ${run.planningContextStaleReason ?? "none"}`,
+    `- planning context updated: ${run.planningContextUpdatedAt ?? "unknown"}`,
+    `- started: ${run.startedAt ?? run.createdAt ?? "unknown"}`,
+    `- finished: ${run.finishedAt ?? "not finished"}`,
+    `- event summary: ${formatEventSummary(run, feed)}`,
+    `- last event: ${lastEvent ? formatEventLine(lastEvent) : run.summary?.lastEventSummary ?? "none"}`,
+    `- failure focus: ${recentFailure ? formatFailureFocus(recentFailure) : terminal && run.status === "failed" ? "run failed, inspect recent provider events" : "none"}`,
+    `- stream: ${formatStreamStatus(feed, terminal)}`,
+    "- recent activity:",
+    ...renderRecentRunEvents(feed, run.id),
   ];
+}
+
+function renderRecentRunEvents(feed: RunEventFeedState, runId: string): string[] {
+  if (feed.runId !== runId) {
+    return ["  - waiting for selected run monitor..."];
+  }
+
+  if (feed.items.length === 0) {
+    if (feed.lastError) {
+      return [`  - stream error: ${feed.lastError}`];
+    }
+
+    return ["  - no run events yet"];
+  }
+
+  return feed.items.slice(-6).map((event) => `  - ${formatEventLine(event)}`);
+}
+
+function formatEventSummary(run: RunListItem, feed: RunEventFeedState): string {
+  const eventCount = feed.runId === run.id ? feed.items.length : 0;
+  const sourceCount = eventCount > 0 ? eventCount : run.summary?.eventCount ?? 0;
+  const lastAt = (feed.runId === run.id ? feed.lastEventAt : null) ?? run.summary?.lastEventAt;
+  return `${sourceCount} event${sourceCount === 1 ? "" : "s"}${lastAt ? `, last at ${lastAt}` : ""}`;
+}
+
+function formatFailureFocus(event: ExecutionEvent): string {
+  const exitCode = typeof event.payload?.exitCode === "number" ? `exit ${event.payload.exitCode}` : null;
+  const signal = typeof event.payload?.signal === "string" ? `signal ${event.payload.signal}` : null;
+  const extra = [exitCode, signal].filter(Boolean).join(", ");
+  return extra ? `${event.summary} (${extra})` : event.summary;
+}
+
+function formatStreamStatus(feed: RunEventFeedState, terminal: boolean): string {
+  const suffix = feed.lastError ? `, last error: ${feed.lastError}` : "";
+  if (feed.connection === "reconnecting") {
+    return `reconnecting (attempt ${feed.reconnectAttempts})${suffix}`;
+  }
+
+  if (feed.connection === "closed" && terminal) {
+    return `closed after terminal run${suffix}`;
+  }
+
+  return `${feed.connection}${feed.reconnectAttempts > 0 ? `, retries ${feed.reconnectAttempts}` : ""}${suffix}`;
+}
+
+function formatEventLine(event: ExecutionEvent): string {
+  const status = readEventStatus(event);
+  const parts = [event.timestamp, event.type];
+  if (event.subtype) {
+    parts.push(event.subtype);
+  }
+  if (status) {
+    parts.push(`status=${status}`);
+  }
+  return `${parts.join(" | ")} | ${previewText(event.summary, 120)}`;
+}
+
+function readEventStatus(event: ExecutionEvent): string | null {
+  const status = event.payload?.status;
+  return typeof status === "string" ? status : null;
+}
+
+function isFailureEvent(event: ExecutionEvent): boolean {
+  return readEventStatus(event) === "failed" || event.type === "approval_requested";
+}
+
+function isTerminalRunStatus(status: string): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 function previewText(value: string, maxLength = 80): string {
@@ -500,10 +704,126 @@ export async function runTerminalApp(
 ): Promise<void> {
   const client = new SpecRailTerminalApiClient(config.apiBaseUrl);
   let state = createEmptyTerminalState(config);
+  let disposed = false;
+  let monitorSerial = 0;
+  let monitorAbort: AbortController | null = null;
 
   const render = () => {
     io.stdout.write("\u001Bc");
     io.stdout.write(`${renderAppShell(state)}\n`);
+  };
+
+  const updateState = (nextState: TerminalAppState) => {
+    state = nextState;
+    render();
+    syncRunMonitor();
+  };
+
+  const patchRunFeed = (patch: Partial<RunEventFeedState>) => {
+    state = {
+      ...state,
+      runEvents: {
+        ...state.runEvents,
+        ...patch,
+      },
+    };
+    render();
+  };
+
+  const syncRunMonitor = () => {
+    const selectedRunId = state.runs.selectedId;
+    const detailRun = state.runs.data?.run;
+    const isSelectedDetail = detailRun?.id === selectedRunId ? detailRun : null;
+
+    if (!selectedRunId) {
+      if (monitorAbort) {
+        monitorAbort.abort();
+        monitorAbort = null;
+      }
+      if (state.runEvents.runId !== null || state.runEvents.connection !== "idle") {
+        patchRunFeed(createEmptyRunEventFeedState(null));
+      }
+      return;
+    }
+
+    if (state.runEvents.runId === selectedRunId && (state.runEvents.connection === "live" || state.runEvents.connection === "connecting" || state.runEvents.connection === "reconnecting")) {
+      return;
+    }
+
+    if (monitorAbort) {
+      monitorAbort.abort();
+      monitorAbort = null;
+    }
+
+    const controller = new AbortController();
+    monitorAbort = controller;
+    const serial = ++monitorSerial;
+    const seenIds = new Set<string>();
+    patchRunFeed({ ...createEmptyRunEventFeedState(selectedRunId), connection: "connecting" });
+
+    const runLoop = async () => {
+      let attempts = 0;
+
+      while (!disposed && !controller.signal.aborted) {
+        try {
+          patchRunFeed({ connection: attempts === 0 ? "connecting" : "reconnecting", reconnectAttempts: attempts, lastError: null });
+
+          for await (const event of client.streamRunEvents(selectedRunId, controller.signal)) {
+            if (controller.signal.aborted || disposed || serial !== monitorSerial) {
+              return;
+            }
+
+            if (seenIds.has(event.id)) {
+              continue;
+            }
+
+            seenIds.add(event.id);
+            state = {
+              ...state,
+              runEvents: appendRunEvents(
+                {
+                  ...state.runEvents,
+                  runId: selectedRunId,
+                  connection: "live",
+                  reconnectAttempts: attempts,
+                  lastError: null,
+                },
+                [event],
+              ),
+            };
+            render();
+          }
+
+          const latestStatus = state.runs.data?.run.id === selectedRunId ? state.runs.data.run.status : isSelectedDetail?.status;
+          if (latestStatus && isTerminalRunStatus(latestStatus)) {
+            patchRunFeed({ connection: "closed" });
+            return;
+          }
+
+          attempts += 1;
+          patchRunFeed({ connection: "reconnecting", reconnectAttempts: attempts, lastError: "stream ended, retrying" });
+          await delay(Math.min(1000 * attempts, 5000), controller.signal);
+        } catch (error) {
+          if (controller.signal.aborted || disposed || serial !== monitorSerial) {
+            return;
+          }
+
+          attempts += 1;
+          patchRunFeed({
+            connection: "reconnecting",
+            reconnectAttempts: attempts,
+            lastError: error instanceof Error ? error.message : "Run event stream failed",
+          });
+          await delay(Math.min(1000 * attempts, 5000), controller.signal);
+        }
+      }
+    };
+
+    void runLoop().catch((error) => {
+      if (!controller.signal.aborted && !disposed && serial === monitorSerial) {
+        patchRunFeed({ connection: "error", lastError: error instanceof Error ? error.message : String(error) });
+      }
+    });
   };
 
   const refresh = async () => {
@@ -511,17 +831,15 @@ export async function runTerminalApp(
     render();
 
     try {
-      state = state.summary ? await refreshTerminalState(state, client) : await bootstrapTerminalState(config, client);
+      updateState(state.summary ? await refreshTerminalState(state, client) : await bootstrapTerminalState(config, client));
     } catch (error) {
-      state = {
+      updateState({
         ...state,
         loading: false,
         error: error instanceof Error ? error.message : "Failed to refresh terminal snapshot.",
         statusLine: error instanceof Error ? error.message : "Failed to refresh terminal snapshot.",
-      };
+      });
     }
-
-    render();
   };
 
   await refresh();
@@ -538,6 +856,10 @@ export async function runTerminalApp(
 
   await new Promise<void>((resolve) => {
     const cleanup = () => {
+      disposed = true;
+      if (monitorAbort) {
+        monitorAbort.abort();
+      }
       if (interval) {
         clearInterval(interval);
       }
@@ -565,28 +887,46 @@ export async function runTerminalApp(
       }
 
       if (key.name === "j" || key.name === "down") {
-        state = selectNextItem(state);
-        render();
+        updateState(selectNextItem(state));
         return;
       }
 
       if (key.name === "k" || key.name === "up") {
-        state = selectPreviousItem(state);
-        render();
+        updateState(selectPreviousItem(state));
         return;
       }
 
       if (key.name === "1" || key.name === "2" || key.name === "3" || key.name === "4") {
-        state = {
+        updateState({
           ...state,
           screen: ({ "1": "home", "2": "tracks", "3": "runs", "4": "settings" } as const)[key.name],
           statusLine: `Switched to ${({ "1": "home", "2": "tracks", "3": "runs", "4": "settings" } as const)[key.name]} screen.`,
-        };
-        render();
+        });
       }
     };
 
     io.stdin.on("keypress", onKeypress);
+  });
+}
+
+async function delay(durationMs: number, signal: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, durationMs);
+
+    const onAbort = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("aborted"));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  }).catch((error) => {
+    if (!signal.aborted) {
+      throw error;
+    }
   });
 }
 
