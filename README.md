@@ -245,7 +245,7 @@ Notes:
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /runs/:runId`
   - return persisted run metadata
-  - also returns `githubRunCommentSync` for the parent track and `githubRunCommentSyncForRun` filtered to entries last published for that run
+  - also returns `githubRunCommentSync` for the parent track, `githubRunCommentSyncForRun` filtered to entries last published for that run, and `completionVerification` for terminal-state corroboration
 - `POST /runs/:runId/resume`
   - resume an existing run
   - body: `{ prompt }`
@@ -382,6 +382,29 @@ Suggested operator flow:
 2. only dispatch when the decision is `dispatch`
 3. call `markHeartbeatTaskStarted(...)` immediately after handing work off
 4. call `markHeartbeatTaskCompleted(...)` when the delegated work really finishes, then let the cooldown absorb duplicate heartbeat cycles
+
+### Completion verification policy
+
+The automation loop should not trust a completion event by itself.
+
+When a run reaches a terminal state, SpecRail now derives `completionVerification` from multiple signals and treats the persisted run record as the minimum required anchor:
+
+1. `run_record` must confirm a terminal run status plus `finishedAt`
+2. then at least one corroborating fallback signal should also agree, such as:
+   - a matching terminal `task_status_changed` event
+   - a terminal-looking persisted run summary
+   - reconciled track status (`completed -> review`, `failed -> failed`, `cancelled -> blocked`)
+   - successful linked GitHub run-summary sync for the same run, when GitHub targets exist
+
+Interpretation:
+- `verified`: persisted run state is terminal and at least one fallback corroboration passed with no contradictions
+- `needs_review`: the terminal claim exists, but fallback checks are missing or contradictory
+- `not_applicable`: the run is not terminal yet
+
+Recommended automation flow:
+1. inspect the run via `GET /runs/:runId` or `specrail-admin runs inspect --run-id <id>`
+2. require `completionVerification.status === "verified"` before treating a completion signal as automation-safe
+3. if status is `needs_review`, reconcile repo/GitHub/operator state before marking the delegated task complete in the outer loop
 
 ## Domain model snapshot
 

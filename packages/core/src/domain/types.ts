@@ -243,6 +243,29 @@ export interface RunInspection {
   run: Execution;
   githubRunCommentSync: GitHubRunCommentSyncState | null;
   githubRunCommentSyncForRun: GitHubRunCommentSyncRecord[];
+  completionVerification: CompletionVerification;
+}
+
+export type CompletionVerificationStatus = "verified" | "needs_review" | "not_applicable";
+
+export interface CompletionVerificationSignal {
+  key:
+    | "terminal_event"
+    | "run_record"
+    | "run_summary"
+    | "track_reconciliation"
+    | "github_sync";
+  source: "events" | "run" | "track" | "github";
+  status: "passed" | "failed" | "missing";
+  detail: string;
+}
+
+export interface CompletionVerification {
+  status: CompletionVerificationStatus;
+  checkedAt: string;
+  terminalStatus?: Extract<ExecutionStatus, "completed" | "failed" | "cancelled">;
+  summary: string;
+  signals: CompletionVerificationSignal[];
 }
 
 export type ExecutionStatus =

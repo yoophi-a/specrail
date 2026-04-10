@@ -1355,6 +1355,12 @@ test("SpecRailService exposes track and run inspections with persisted GitHub sy
       lastSyncStatus: "success",
     },
   ]);
+  assert.deepEqual(runInspection?.completionVerification, {
+    status: "not_applicable",
+    checkedAt: "2026-04-10T00:00:00.000Z",
+    summary: "Run is running, so terminal completion verification is not applicable yet.",
+    signals: [],
+  });
 
   const integrationsInspection = await service.getTrackIntegrationsInspection(track.id);
   assert.equal(integrationsInspection?.trackId, track.id);
@@ -1384,6 +1390,175 @@ test("SpecRailService exposes track and run inspections with persisted GitHub sy
     lastPublishedAt: "2026-04-10T00:25:00.000Z",
     lastSyncStatus: "success",
   });
+});
+
+test("SpecRailService verifies completed runs with fallback reconciliation signals", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-completion-verify-"));
+  const stateDir = path.join(rootDir, "state");
+  const projectRepository = new FileProjectRepository(stateDir);
+  const trackRepository = new FileTrackRepository(stateDir);
+  const executionRepository = new FileExecutionRepository(stateDir);
+  const eventStore = new JsonlEventStore(stateDir);
+  const syncStore = new FileGitHubRunCommentSyncStore(stateDir);
+  const service = new SpecRailService({
+    projectRepository,
+    trackRepository,
+    executionRepository,
+    eventStore,
+    githubRunCommentSyncStore: syncStore,
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("should not be called");
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: { id: "project-default", name: "SpecRail" },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => "2026-04-10T00:40:00.000Z",
+  });
+
+  const track = await service.createTrack({
+    title: "Verify completion",
+    description: "Do not trust completion events alone.",
+    githubIssue: { number: 58, url: "https://github.com/yoophi-a/specrail/issues/58" },
+  });
+  await service.updateTrack({ trackId: track.id, status: "review" });
+
+  const run = {
+    id: "run-verified",
+    trackId: track.id,
+    backend: "codex",
+    profile: "default",
+    workspacePath: path.join(rootDir, "workspaces", "run-verified"),
+    branchName: "specrail/run-verified",
+    sessionRef: "session:run-verified",
+    summary: {
+      eventCount: 2,
+      lastEventSummary: "Run completed",
+      lastEventAt: "2026-04-10T00:31:00.000Z",
+    },
+    status: "completed" as const,
+    createdAt: "2026-04-10T00:10:00.000Z",
+    startedAt: "2026-04-10T00:11:00.000Z",
+    finishedAt: "2026-04-10T00:31:00.000Z",
+  };
+  await executionRepository.create(run);
+  await eventStore.append({
+    id: "run-verified:summary",
+    executionId: run.id,
+    type: "summary",
+    timestamp: "2026-04-10T00:31:00.000Z",
+    source: "codex",
+    summary: "Run completed",
+  });
+  await syncStore.upsert({
+    id: track.id,
+    trackId: track.id,
+    updatedAt: "2026-04-10T00:32:00.000Z",
+    comments: [
+      {
+        target: { kind: "issue", number: 58, url: "https://github.com/yoophi-a/specrail/issues/58" },
+        commentId: 5801,
+        lastRunId: run.id,
+        lastRunStatus: "completed",
+        lastPublishedAt: "2026-04-10T00:32:00.000Z",
+        lastSyncStatus: "success",
+      },
+    ],
+  });
+
+  const inspection = await service.getRunInspection(run.id);
+  assert.equal(inspection?.completionVerification.status, "verified");
+  assert.equal(inspection?.completionVerification.terminalStatus, "completed");
+  assert.match(inspection?.completionVerification.summary ?? "", /corroborated/);
+  assert.deepEqual(
+    inspection?.completionVerification.signals.map((signal) => [signal.key, signal.status]),
+    [
+      ["terminal_event", "missing"],
+      ["run_record", "passed"],
+      ["run_summary", "passed"],
+      ["track_reconciliation", "passed"],
+      ["github_sync", "passed"],
+    ],
+  );
+});
+
+test("SpecRailService flags completed runs that only have a completion event claim", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-completion-review-"));
+  const stateDir = path.join(rootDir, "state");
+  const projectRepository = new FileProjectRepository(stateDir);
+  const trackRepository = new FileTrackRepository(stateDir);
+  const executionRepository = new FileExecutionRepository(stateDir);
+  const eventStore = new JsonlEventStore(stateDir);
+  const service = new SpecRailService({
+    projectRepository,
+    trackRepository,
+    executionRepository,
+    eventStore,
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("should not be called");
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: { id: "project-default", name: "SpecRail" },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: () => "2026-04-10T00:40:00.000Z",
+  });
+
+  const track = await service.createTrack({
+    title: "Review completion",
+    description: "Terminal event alone should not be trusted.",
+  });
+
+  const run = {
+    id: "run-needs-review",
+    trackId: track.id,
+    backend: "codex",
+    profile: "default",
+    workspacePath: path.join(rootDir, "workspaces", "run-needs-review"),
+    branchName: "specrail/run-needs-review",
+    status: "completed" as const,
+    createdAt: "2026-04-10T00:10:00.000Z",
+  };
+  await executionRepository.create(run);
+  await eventStore.append({
+    id: "run-needs-review:completed",
+    executionId: run.id,
+    type: "task_status_changed",
+    timestamp: "2026-04-10T00:20:00.000Z",
+    source: "codex",
+    summary: "Run completed",
+    payload: { status: "completed" },
+  });
+
+  const inspection = await service.getRunInspection(run.id);
+  assert.equal(inspection?.completionVerification.status, "needs_review");
+  assert.match(inspection?.completionVerification.summary ?? "", /needs operator review/);
+  assert.deepEqual(
+    inspection?.completionVerification.signals.map((signal) => [signal.key, signal.status]),
+    [
+      ["terminal_event", "passed"],
+      ["run_record", "failed"],
+      ["run_summary", "missing"],
+      ["track_reconciliation", "failed"],
+      ["github_sync", "passed"],
+    ],
+  );
 });
 
 test("SpecRailService exposes empty GitHub integration inspection summaries without sync state", async () => {

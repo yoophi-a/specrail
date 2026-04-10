@@ -33,6 +33,8 @@ import type {
   GitHubIssueReference,
   GitHubPullRequestReference,
   GitHubRunCommentSyncState,
+  CompletionVerification,
+  CompletionVerificationSignal,
   HeartbeatActiveTask,
   HeartbeatDispatchDecision,
   HeartbeatSessionContext,
@@ -646,6 +648,114 @@ function mapTrackStatusFromExecution(status: ExecutionStatus): TrackStatus | nul
     default:
       return null;
   }
+}
+
+function isTerminalExecutionStatus(status: ExecutionStatus): status is Extract<ExecutionStatus, "completed" | "failed" | "cancelled"> {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+function buildCompletionVerification(input: {
+  now: string;
+  run: Execution;
+  events: ExecutionEvent[];
+  track?: Track;
+  githubRunCommentSync: GitHubRunCommentSyncState | null;
+}): CompletionVerification {
+  if (!isTerminalExecutionStatus(input.run.status)) {
+    return {
+      status: "not_applicable",
+      checkedAt: input.now,
+      summary: `Run is ${input.run.status}, so terminal completion verification is not applicable yet.`,
+      signals: [],
+    };
+  }
+
+  const terminalStatus = input.run.status;
+  const terminalEvent = [...input.events].reverse().find((event) => event.type === "task_status_changed" && event.payload?.status === terminalStatus);
+  const expectedTrackStatus = mapTrackStatusFromExecution(terminalStatus);
+  const linkedTargetCount = (input.track?.githubIssue ? 1 : 0) + (input.track?.githubPullRequest ? 1 : 0);
+  const githubSignals = input.githubRunCommentSync?.comments.filter((comment) => comment.lastRunId === input.run.id) ?? [];
+  const githubSyncPassed =
+    linkedTargetCount === 0
+    || (githubSignals.length === linkedTargetCount
+      && githubSignals.every((comment) => comment.lastRunStatus === terminalStatus && comment.lastSyncStatus === "success"));
+  const summaryLooksTerminal = input.run.summary?.lastEventAt !== undefined
+    && input.run.summary.lastEventSummary !== undefined
+    && input.run.summary.lastEventAt >= (terminalEvent?.timestamp ?? input.run.finishedAt ?? input.run.createdAt);
+
+  const signals: CompletionVerificationSignal[] = [
+    {
+      key: "terminal_event",
+      source: "events",
+      status: terminalEvent ? "passed" : "missing",
+      detail: terminalEvent
+        ? `Found terminal task_status_changed event for ${terminalStatus} at ${terminalEvent.timestamp}.`
+        : `No terminal task_status_changed event for ${terminalStatus} was found.`,
+    },
+    {
+      key: "run_record",
+      source: "run",
+      status: input.run.finishedAt ? "passed" : "failed",
+      detail: input.run.finishedAt
+        ? `Run record is terminal with finishedAt=${input.run.finishedAt}.`
+        : "Run record is terminal but finishedAt is missing.",
+    },
+    {
+      key: "run_summary",
+      source: "run",
+      status: summaryLooksTerminal ? "passed" : "missing",
+      detail: summaryLooksTerminal
+        ? `Run summary reached ${input.run.summary?.lastEventSummary ?? "a terminal update"} at ${input.run.summary?.lastEventAt}.`
+        : "Run summary does not yet provide an independent terminal confirmation.",
+    },
+    {
+      key: "track_reconciliation",
+      source: "track",
+      status:
+        !input.track || !expectedTrackStatus
+          ? "missing"
+          : input.track.status === expectedTrackStatus
+            ? "passed"
+            : "failed",
+      detail:
+        !input.track
+          ? "Track record was unavailable for reconciliation."
+          : !expectedTrackStatus
+            ? `No track reconciliation policy exists for ${terminalStatus}.`
+            : input.track.status === expectedTrackStatus
+              ? `Track status reconciled to ${input.track.status}.`
+              : `Track status is ${input.track.status}, expected ${expectedTrackStatus}.`,
+    },
+    {
+      key: "github_sync",
+      source: "github",
+      status: githubSyncPassed ? "passed" : linkedTargetCount > 0 ? "failed" : "missing",
+      detail:
+        linkedTargetCount === 0
+          ? "No linked GitHub targets were configured, so GitHub reconciliation was skipped."
+          : githubSyncPassed
+            ? `GitHub run summary sync recorded ${githubSignals.length}/${linkedTargetCount} successful target updates for this terminal run.`
+            : `GitHub run summary sync recorded ${githubSignals.length}/${linkedTargetCount} matching target updates for this terminal run.`,
+    },
+  ];
+
+  const corroboratingPassCount = signals.filter((signal) => signal.key !== "terminal_event" && signal.status === "passed").length;
+  const requiredRunRecordPassed = signals.find((signal) => signal.key === "run_record")?.status === "passed";
+  const hasContradiction = signals.some((signal) => signal.status === "failed");
+  const verified = requiredRunRecordPassed && corroboratingPassCount > 0 && !hasContradiction;
+  const eventOnlyClaim = Boolean(terminalEvent) && corroboratingPassCount === 0;
+
+  return {
+    status: verified ? "verified" : "needs_review",
+    checkedAt: input.now,
+    terminalStatus,
+    summary: verified
+      ? `Terminal ${terminalStatus} state is corroborated by persisted run state and fallback checks.`
+      : eventOnlyClaim
+        ? `Terminal ${terminalStatus} event exists, but fallback checks did not corroborate it.`
+        : `Terminal ${terminalStatus} state needs operator review because one or more verification checks are missing or contradictory.`,
+    signals,
+  };
 }
 
 function compareValues(left: string | undefined, right: string | undefined, sortOrder: SortOrder): number {
@@ -1584,12 +1694,21 @@ export class SpecRailService {
       return null;
     }
 
+    const track = await this.dependencies.trackRepository.getById(run.trackId);
+    const events = await this.dependencies.eventStore.listByExecution(run.id);
     const githubRunCommentSync = (await this.dependencies.githubRunCommentSyncStore?.getByTrackId(run.trackId)) ?? null;
 
     return {
       run,
       githubRunCommentSync,
       githubRunCommentSyncForRun: githubRunCommentSync?.comments.filter((comment) => comment.lastRunId === run.id) ?? [],
+      completionVerification: buildCompletionVerification({
+        now: this.now(),
+        run,
+        events,
+        track: track ?? undefined,
+        githubRunCommentSync,
+      }),
     };
   }
 

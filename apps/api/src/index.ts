@@ -927,6 +927,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           run: inspection.run,
           githubRunCommentSync: inspection.githubRunCommentSync,
           githubRunCommentSyncForRun: inspection.githubRunCommentSyncForRun,
+          completionVerification: inspection.completionVerification,
         });
         return;
       }

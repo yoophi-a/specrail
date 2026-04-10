@@ -723,6 +723,14 @@ function printRunInspection(result: RunInspection): void {
   if (result.run.summary) {
     console.log(`- summary: events=${result.run.summary.eventCount}, lastEvent=${result.run.summary.lastEventSummary ?? "none"}, lastEventAt=${result.run.summary.lastEventAt ?? "none"}`);
   }
+  console.log(`- completionVerification: ${result.completionVerification.status}`);
+  console.log(`  - summary: ${result.completionVerification.summary}`);
+  if (result.completionVerification.terminalStatus) {
+    console.log(`  - terminalStatus: ${result.completionVerification.terminalStatus}`);
+  }
+  for (const signal of result.completionVerification.signals) {
+    console.log(`  - signal:${signal.key} [${signal.status}] ${signal.detail}`);
+  }
   console.log(`- githubRunCommentSync: ${result.githubRunCommentSync?.comments.length ?? 0} track target(s)`);
   console.log(`- githubRunCommentSyncForRun: ${result.githubRunCommentSyncForRun.length} matching target(s)`);
 }

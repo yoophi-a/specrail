@@ -437,6 +437,7 @@ test("CLI inspects track and run payloads", async () => {
   );
   assert.match(runInspectResult.stdout, /Run inspection for run_cli_inspect/);
   assert.match(runInspectResult.stdout, /status: waiting_approval/);
+  assert.match(runInspectResult.stdout, /completionVerification: not_applicable/);
   assert.match(runInspectResult.stdout, /githubRunCommentSyncForRun: 1 matching target/);
 });
 

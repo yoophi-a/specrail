@@ -482,6 +482,7 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
     const getRunPayload = (await getRunResponse.json()) as {
       githubRunCommentSync: { comments: Array<{ commentId?: number; lastRunId: string }> } | null;
       githubRunCommentSyncForRun: Array<{ commentId?: number; lastRunId: string }>;
+      completionVerification: { status: string; summary: string; signals: unknown[]; checkedAt: string; terminalStatus?: string };
     };
     assert.equal(getRunPayload.githubRunCommentSync?.comments[0]?.commentId, 3201);
     assert.deepEqual(getRunPayload.githubRunCommentSyncForRun, [
@@ -499,6 +500,10 @@ test("API exposes GitHub sync metadata on track and run inspection routes", asyn
         lastSyncError: "GitHub temporarily unavailable",
       },
     ]);
+    assert.equal(getRunPayload.completionVerification.status, "not_applicable");
+    assert.equal(getRunPayload.completionVerification.summary, "Run is running, so terminal completion verification is not applicable yet.");
+    assert.deepEqual(getRunPayload.completionVerification.signals, []);
+    assert.match(getRunPayload.completionVerification.checkedAt, /^2026-04-10T/);
   });
 });
 
