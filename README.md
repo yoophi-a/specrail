@@ -249,9 +249,10 @@ pnpm dev:terminal
 
 Current shell behavior:
 - loads recent tracks and runs from the API
-- renders a basic navigable screen shell
-- supports `1-4` to switch screens, `r` to refresh, `q` to quit
-- leaves room for follow-up issue work on richer track/run inspection views
+- renders navigable track and run list views with selected detail panes
+- auto-selects the current track/run and refreshes detail snapshots from the API
+- supports `1-4` to switch screens, `j/k` or arrow keys to move selection, `r` to refresh, `q` to quit
+- surfaces loading and refresh failures in the status line and detail panes
 
 ## Claude Code backend
 
