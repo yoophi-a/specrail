@@ -141,11 +141,13 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const getTrackPayload = (await getTrackResponse.json()) as {
       track: { id: string };
       artifacts: { spec: string; plan: string; tasks: string };
+      planningContext: { hasPendingChanges: boolean };
     };
     assert.equal(getTrackPayload.track.id, trackPayload.track.id);
     assert.match(getTrackPayload.artifacts.spec, /# Spec — Executor MVP/);
     assert.match(getTrackPayload.artifacts.plan, /# Plan/);
     assert.match(getTrackPayload.artifacts.tasks, /# Tasks — Executor MVP/);
+    assert.equal(getTrackPayload.planningContext.hasPendingChanges, false);
 
     const repoVisibleSync = JSON.parse(
       await readFile(path.join(paths.repoArtifactDir, "tracks", trackPayload.track.id, "sync.json"), "utf8"),
@@ -185,6 +187,30 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(planningMessagesPayload.messages.length, 1);
     assert.equal(planningMessagesPayload.messages[0]?.body, "Can we separate planning state from run events?");
 
+    const proposedPlanRevisionResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        content: "# Approved plan\n\nUse the linked planning context.",
+        createdBy: "agent",
+      }),
+    });
+    assert.equal(proposedPlanRevisionResponse.status, 201);
+    const proposedPlanRevisionPayload = (await proposedPlanRevisionResponse.json()) as {
+      revision: { id: string };
+      approvalRequest: { id: string };
+    };
+
+    const approvePlanResponse = await fetch(
+      `${baseUrl}/approval-requests/${proposedPlanRevisionPayload.approvalRequest.id}/approve`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decidedBy: "user", comment: "approved" }),
+      },
+    );
+    assert.equal(approvePlanResponse.status, 200);
+
     const runResponse = await fetch(`${baseUrl}/runs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -192,12 +218,18 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
         trackId: trackPayload.track.id,
         prompt: "Implement the issue",
         profile: "default",
+        planningSessionId: planningSessionPayload.planningSession.id,
       }),
     });
 
     assert.equal(runResponse.status, 201);
-    const runPayload = (await runResponse.json()) as { run: { id: string; sessionRef?: string } };
+    const runPayload = (await runResponse.json()) as {
+      run: { id: string; sessionRef?: string; planningSessionId?: string; planRevisionId?: string; planningContextStale?: boolean };
+    };
     assert.ok(runPayload.run.sessionRef);
+    assert.equal(runPayload.run.planningSessionId, planningSessionPayload.planningSession.id);
+    assert.equal(runPayload.run.planRevisionId, proposedPlanRevisionPayload.revision.id);
+    assert.equal(runPayload.run.planningContextStale, false);
 
     const getRunResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}`);
     assert.equal(getRunResponse.status, 200);
@@ -335,6 +367,43 @@ test("API supports resuming and cancelling a run", async () => {
     assert.match(eventsPayload.events[1]?.summary ?? "", /Spawned Codex session/);
     assert.match(eventsPayload.events[2]?.summary ?? "", /Resumed Codex session/);
     assert.match(eventsPayload.events[3]?.summary ?? "", /Cancelled Codex session/);
+  });
+});
+
+test("API blocks run start when planning revisions are still pending approval", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Blocked by pending plan",
+        description: "Do not start until approval lands.",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const pendingPlanResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        content: "# Plan waiting approval",
+        createdBy: "agent",
+      }),
+    });
+    assert.equal(pendingPlanResponse.status, 201);
+
+    const runResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        prompt: "Start anyway",
+      }),
+    });
+
+    assert.equal(runResponse.status, 422);
+    const payload = (await runResponse.json()) as { error: { message: string } };
+    assert.match(payload.error.message, /pending planning changes/);
   });
 });
 

@@ -813,3 +813,154 @@ test("SpecRailService versions artifact revisions and applies approval transitio
     /already approved/,
   );
 });
+
+test("SpecRailService links runs to the latest approved planning context and detects stale context", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-planning-context-"));
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [
+            {
+              id: `${input.executionId}:started`,
+              executionId: input.executionId,
+              type: "task_status_changed",
+              timestamp: "2026-04-10T02:10:00.000Z",
+              source: "codex",
+              summary: "Run started",
+              payload: { status: "running" },
+            },
+          ],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = [
+        "2026-04-10T02:00:00.000Z",
+        "2026-04-10T02:00:00.000Z",
+        "2026-04-10T02:01:00.000Z",
+        "2026-04-10T02:02:00.000Z",
+        "2026-04-10T02:03:00.000Z",
+        "2026-04-10T02:04:00.000Z",
+        "2026-04-10T02:05:00.000Z",
+        "2026-04-10T02:06:00.000Z",
+        "2026-04-10T02:07:00.000Z",
+        "2026-04-10T02:08:00.000Z",
+        "2026-04-10T02:09:00.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-10T02:09:00.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-ctx", "plan-session", "plan-rev-1", "plan-approval-1", "run-ctx", "plan-rev-2", "plan-approval-2"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({ title: "Planning-linked run", description: "Attach approved plan context" });
+  const planningSession = await service.createPlanningSession({ trackId: track.id, status: "approved" });
+
+  const planV1 = await service.proposeArtifactRevision({
+    trackId: track.id,
+    artifact: "plan",
+    content: "# Plan v1",
+    createdBy: "agent",
+  });
+  await service.approveApprovalRequest({ approvalRequestId: planV1.approvalRequest.id, decidedBy: "user" });
+
+  const run = await service.startRun({ trackId: track.id, prompt: "Ship it", planningSessionId: planningSession.id });
+  assert.equal(run.planningSessionId, planningSession.id);
+  assert.equal(run.planRevisionId, planV1.revision.id);
+  assert.equal(run.planningContextStale, false);
+
+  const planV2 = await service.proposeArtifactRevision({
+    trackId: track.id,
+    artifact: "plan",
+    content: "# Plan v2",
+    createdBy: "agent",
+  });
+  await service.approveApprovalRequest({ approvalRequestId: planV2.approvalRequest.id, decidedBy: "user" });
+
+  const staleRun = await service.getRun(run.id);
+  assert.equal(staleRun?.planningContextStale, true);
+  assert.equal(staleRun?.planningContextStaleReason, "Approved planning context changed for: plan");
+
+  const planningContext = await service.getTrackPlanningContext(track.id);
+  assert.equal(planningContext.planRevisionId, planV2.revision.id);
+  assert.equal(planningContext.planningSessionId, planningSession.id);
+});
+
+test("SpecRailService blocks run start when planning revisions are pending approval", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-pending-planning-"));
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("should not be called");
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    idGenerator: (() => {
+      const values = ["track-pending", "plan-rev-1", "approval-1"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({ title: "Pending plan", description: "Do not run yet" });
+  await service.proposeArtifactRevision({
+    trackId: track.id,
+    artifact: "plan",
+    content: "# Plan candidate",
+    createdBy: "agent",
+  });
+
+  await assert.rejects(() => service.startRun({ trackId: track.id, prompt: "Start anyway" }), /pending planning changes/);
+});

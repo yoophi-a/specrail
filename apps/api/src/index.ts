@@ -23,6 +23,7 @@ import {
   JsonlEventStore,
   JsonlPlanningMessageStore,
   NotFoundError,
+  ValidationError,
   PLANNING_MESSAGE_KINDS,
   PLANNING_SESSION_STATUSES,
   getStatePaths,
@@ -54,6 +55,7 @@ interface RunRequestBody {
   trackId: string;
   prompt: string;
   profile?: string;
+  planningSessionId?: string;
 }
 
 interface UpdateTrackRequestBody {
@@ -411,6 +413,13 @@ function assertValidRunCreateBody(body: RunRequestBody): void {
     }
   }
 
+  if (body.planningSessionId !== undefined) {
+    const planningSessionIdDetail = getNonEmptyStringDetail("planningSessionId", body.planningSessionId);
+    if (planningSessionIdDetail) {
+      details.push(planningSessionIdDetail);
+    }
+  }
+
   if (details.length > 0) {
     throw new RequestValidationError("request validation failed", details);
   }
@@ -722,7 +731,8 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         }
 
         const artifacts = await readTrackArtifacts(deps.artifactRoot, track.id);
-        sendJson(response, 200, { track, artifacts });
+        const planningContext = await deps.service.getTrackPlanningContext(track.id);
+        sendJson(response, 200, { track, artifacts, planningContext });
         return;
       }
 
@@ -959,6 +969,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (error instanceof NotFoundError) {
         sendError(response, 404, "not_found", error.message);
+        return;
+      }
+
+      if (error instanceof ValidationError) {
+        sendError(response, 422, "validation_error", error.message);
         return;
       }
 

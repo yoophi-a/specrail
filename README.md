@@ -73,6 +73,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
+  - response also includes inferred `planningContext` with the latest approved revision references and pending-change flag
 - `PATCH /tracks/:trackId`
   - update workflow state
   - body: any of `{ status, specStatus, planStatus }`
@@ -80,7 +81,8 @@ Current endpoints in `apps/api/src/index.ts`:
 ### Runs
 - `POST /runs`
   - start a run for a track
-  - body: `{ trackId, prompt, profile? }`
+  - body: `{ trackId, prompt, profile?, planningSessionId? }`
+  - runs infer and persist the latest approved planning context, and reject starts while newer planning revisions are still pending approval
 - `GET /runs`
   - list runs with pagination and explicit sorting
   - default sort: `sortBy=createdAt&sortOrder=desc`
@@ -155,7 +157,7 @@ Notes:
 - status values include `created`, `queued`, `running`, `waiting_approval`, `completed`, `failed`, `cancelled`
 - current API actively exercises `running`, `completed`, `failed`, and `cancelled`
 - terminal run states reconcile back into track status with a first-pass policy: `completed -> review`, `failed -> failed`, `cancelled -> blocked`
-- run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, and event summary
+- run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, event summary, and linked planning-context references (`planningSessionId`, approved revision ids, stale flag)
 
 ### Event types
 Normalized event types currently defined in core:

@@ -158,6 +158,13 @@ export interface Execution {
   sessionRef?: string;
   command?: CommandExecutionMetadata;
   summary?: ExecutionSummary;
+  planningSessionId?: string;
+  specRevisionId?: string;
+  planRevisionId?: string;
+  tasksRevisionId?: string;
+  planningContextStale?: boolean;
+  planningContextUpdatedAt?: string;
+  planningContextStaleReason?: string;
   status: ExecutionStatus;
   createdAt: string;
   startedAt?: string;

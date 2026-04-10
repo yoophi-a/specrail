@@ -27,7 +27,7 @@ import type {
   Track,
   TrackStatus,
 } from "../domain/types.js";
-import { NotFoundError } from "../errors.js";
+import { NotFoundError, ValidationError } from "../errors.js";
 import type {
   EventStore,
   ExecutionRepository,
@@ -119,6 +119,7 @@ export interface StartRunInput {
   trackId: string;
   prompt: string;
   profile?: string;
+  planningSessionId?: string;
 }
 
 export interface UpdateTrackInput {
@@ -194,6 +195,15 @@ export interface ListPageMeta {
 export interface ListPageResult<T> {
   items: T[];
   meta: ListPageMeta;
+}
+
+export interface PlanningContextSnapshot {
+  planningSessionId?: string;
+  specRevisionId?: string;
+  planRevisionId?: string;
+  tasksRevisionId?: string;
+  hasPendingChanges: boolean;
+  updatedAt?: string;
 }
 
 function buildExecutionSummary(events: ExecutionEvent[]): Execution["summary"] {
@@ -416,6 +426,16 @@ export class SpecRailService {
     return this.dependencies.planningSessionRepository.listByTrack(trackId);
   }
 
+  async getTrackPlanningContext(trackId: string, planningSessionId?: string): Promise<PlanningContextSnapshot> {
+    const track = await this.dependencies.trackRepository.getById(trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${trackId}`);
+    }
+
+    return this.resolvePlanningContext(track, planningSessionId);
+  }
+
   async appendPlanningMessage(input: AppendPlanningMessageInput): Promise<PlanningMessage> {
     const session = await this.dependencies.planningSessionRepository.getById(input.planningSessionId);
 
@@ -520,6 +540,7 @@ export class SpecRailService {
       throw new NotFoundError(`Track not found: ${input.trackId}`);
     }
 
+    const planningContext = await this.resolvePlanningContextForStart(track, input.planningSessionId);
     const executionId = `run-${this.idGenerator()}`;
     const createdAt = this.now();
     const workspacePath = path.join(this.dependencies.workspaceRoot, executionId);
@@ -541,6 +562,12 @@ export class SpecRailService {
       branchName: `specrail/${executionId}`,
       sessionRef: launch.sessionRef,
       command: launch.command,
+      planningSessionId: planningContext.planningSessionId,
+      specRevisionId: planningContext.specRevisionId,
+      planRevisionId: planningContext.planRevisionId,
+      tasksRevisionId: planningContext.tasksRevisionId,
+      planningContextStale: false,
+      planningContextUpdatedAt: planningContext.updatedAt,
       status: "running",
       createdAt,
       startedAt: createdAt,
@@ -559,7 +586,7 @@ export class SpecRailService {
     await this.dependencies.executionRepository.update(execution);
     await this.reconcileTrackStatusFromRun(track.id, execution);
 
-    return execution;
+    return this.hydrateExecutionPlanningContext(execution);
   }
 
   async resumeRun(input: ResumeRunInput): Promise<Execution> {
@@ -598,7 +625,7 @@ export class SpecRailService {
     await this.dependencies.executionRepository.update(reconciledExecution);
     await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
 
-    return reconciledExecution;
+    return this.hydrateExecutionPlanningContext(reconciledExecution);
   }
 
   async cancelRun(input: CancelRunInput): Promise<Execution> {
@@ -624,16 +651,21 @@ export class SpecRailService {
     await this.dependencies.executionRepository.update(cancelledExecution);
     await this.reconcileTrackStatusFromRun(cancelledExecution.trackId, cancelledExecution);
 
-    return cancelledExecution;
+    return this.hydrateExecutionPlanningContext(cancelledExecution);
   }
 
-  getRun(runId: string): Promise<Execution | null> {
-    return this.dependencies.executionRepository.getById(runId);
+  async getRun(runId: string): Promise<Execution | null> {
+    const execution = await this.dependencies.executionRepository.getById(runId);
+    if (!execution) {
+      return null;
+    }
+
+    return this.hydrateExecutionPlanningContext(execution);
   }
 
   async listRuns(input: ListRunsInput = {}): Promise<Execution[]> {
     const result = await this.listRunsPage(input);
-    return result.items;
+    return Promise.all(result.items.map((execution) => this.hydrateExecutionPlanningContext(execution)));
   }
 
   async listRunsPage(input: ListRunsInput = {}): Promise<ListPageResult<Execution>> {
@@ -664,7 +696,11 @@ export class SpecRailService {
         return primary || compareValues(left.startedAt, right.startedAt, "desc") || compareValues(left.id, right.id, "desc");
       });
 
-    return buildListPageResult(sorted, page, pageSize);
+    const result = buildListPageResult(sorted, page, pageSize);
+    return {
+      items: await Promise.all(result.items.map((execution) => this.hydrateExecutionPlanningContext(execution))),
+      meta: result.meta,
+    };
   }
 
   listRunEvents(runId: string): Promise<ExecutionEvent[]> {
@@ -683,8 +719,101 @@ export class SpecRailService {
       execution,
       await this.dependencies.eventStore.listByExecution(event.executionId),
     );
-    await this.dependencies.executionRepository.update(reconciledExecution);
+    await this.dependencies.executionRepository.update(await this.hydrateExecutionPlanningContext(reconciledExecution));
     await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
+  }
+
+  private async resolvePlanningContext(track: Track, planningSessionId?: string): Promise<PlanningContextSnapshot> {
+    const [sessions, specRevisions, planRevisions, tasksRevisions] = await Promise.all([
+      this.dependencies.planningSessionRepository.listByTrack(track.id),
+      this.dependencies.artifactRevisionRepository.listByTrack(track.id, "spec"),
+      this.dependencies.artifactRevisionRepository.listByTrack(track.id, "plan"),
+      this.dependencies.artifactRevisionRepository.listByTrack(track.id, "tasks"),
+    ]);
+
+    const latestApprovedSpec = specRevisions.find((revision) => revision.approvedAt);
+    const latestApprovedPlan = planRevisions.find((revision) => revision.approvedAt);
+    const latestApprovedTasks = tasksRevisions.find((revision) => revision.approvedAt);
+    const selectedSession = planningSessionId
+      ? sessions.find((session) => session.id === planningSessionId)
+      : sessions[0];
+
+    if (planningSessionId && !selectedSession) {
+      throw new ValidationError(`Planning session does not belong to track: ${planningSessionId}`);
+    }
+
+    const hasPendingChanges = [specRevisions, planRevisions, tasksRevisions].some((revisions) => {
+      const latestApprovedAt = revisions.find((revision) => revision.approvedAt)?.approvedAt;
+      return revisions.some((revision) => !revision.approvedAt && (!latestApprovedAt || revision.createdAt >= latestApprovedAt));
+    });
+
+    const timestamps = [
+      selectedSession?.updatedAt,
+      latestApprovedSpec?.approvedAt,
+      latestApprovedPlan?.approvedAt,
+      latestApprovedTasks?.approvedAt,
+    ].filter((value): value is string => Boolean(value));
+
+    return {
+      planningSessionId: selectedSession?.id,
+      specRevisionId: latestApprovedSpec?.id,
+      planRevisionId: latestApprovedPlan?.id,
+      tasksRevisionId: latestApprovedTasks?.id,
+      hasPendingChanges,
+      updatedAt: timestamps.sort((left, right) => right.localeCompare(left))[0],
+    };
+  }
+
+  private async resolvePlanningContextForStart(track: Track, planningSessionId?: string): Promise<PlanningContextSnapshot> {
+    const planningContext = await this.resolvePlanningContext(track, planningSessionId);
+    const hasRevisionHistory = Boolean(
+      planningContext.specRevisionId || planningContext.planRevisionId || planningContext.tasksRevisionId,
+    );
+
+    if (planningContext.hasPendingChanges) {
+      throw new ValidationError(`Track has pending planning changes and cannot start a run: ${track.id}`);
+    }
+
+    if ((hasRevisionHistory || track.planStatus === "approved") && !planningContext.planRevisionId) {
+      throw new ValidationError(`Track requires an approved plan revision before starting a run: ${track.id}`);
+    }
+
+    return planningContext;
+  }
+
+  private async hydrateExecutionPlanningContext(execution: Execution): Promise<Execution> {
+    if (!execution.planningSessionId && !execution.specRevisionId && !execution.planRevisionId && !execution.tasksRevisionId) {
+      return {
+        ...execution,
+        planningContextStale: false,
+      };
+    }
+
+    const track = await this.dependencies.trackRepository.getById(execution.trackId);
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${execution.trackId}`);
+    }
+
+    const planningContext = await this.resolvePlanningContext(track, execution.planningSessionId);
+    const staleArtifacts: string[] = [];
+
+    if (execution.specRevisionId && planningContext.specRevisionId && execution.specRevisionId !== planningContext.specRevisionId) {
+      staleArtifacts.push("spec");
+    }
+    if (execution.planRevisionId && planningContext.planRevisionId && execution.planRevisionId !== planningContext.planRevisionId) {
+      staleArtifacts.push("plan");
+    }
+    if (execution.tasksRevisionId && planningContext.tasksRevisionId && execution.tasksRevisionId !== planningContext.tasksRevisionId) {
+      staleArtifacts.push("tasks");
+    }
+
+    return {
+      ...execution,
+      planningContextStale: staleArtifacts.length > 0,
+      planningContextUpdatedAt: planningContext.updatedAt ?? execution.planningContextUpdatedAt,
+      planningContextStaleReason:
+        staleArtifacts.length > 0 ? `Approved planning context changed for: ${staleArtifacts.join(", ")}` : undefined,
+    };
   }
 
   private async reconcileTrackStatusFromRun(trackId: string, execution: Execution): Promise<void> {
