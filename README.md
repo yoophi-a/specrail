@@ -210,6 +210,7 @@ Claude Code now additionally promotes important `stream-json` provider events in
 specrail/
   apps/
     api/                  # Node HTTP API with JSON + SSE routes
+    terminal/             # Operator-facing terminal shell over the SpecRail API
     telegram/             # Thin Telegram webhook frontend over the SpecRail API
   packages/
     core/                 # Domain types, file repositories, service orchestration
@@ -226,8 +227,31 @@ specrail/
 pnpm install
 pnpm test
 pnpm dev:api
+pnpm dev:terminal
 pnpm dev:telegram
 ```
+
+## Terminal client skeleton
+
+SpecRail now includes a runnable terminal client skeleton in `apps/terminal`.
+
+Operator environment:
+- `SPECRAIL_API_BASE_URL` default `http://127.0.0.1:4000`
+- `SPECRAIL_TERMINAL_REFRESH_MS` default `5000`
+- `SPECRAIL_TERMINAL_INITIAL_SCREEN` one of `home`, `tracks`, `runs`, `settings`
+
+Run it locally:
+
+```bash
+pnpm dev:api
+pnpm dev:terminal
+```
+
+Current shell behavior:
+- loads recent tracks and runs from the API
+- renders a basic navigable screen shell
+- supports `1-4` to switch screens, `r` to refresh, `q` to quit
+- leaves room for follow-up issue work on richer track/run inspection views
 
 ## Claude Code backend
 
