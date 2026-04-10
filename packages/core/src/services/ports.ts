@@ -1,4 +1,11 @@
-import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.js";
+import type {
+  Execution,
+  ExecutionEvent,
+  PlanningMessage,
+  PlanningSession,
+  Project,
+  Track,
+} from "../domain/types.js";
 
 export interface ProjectRepository {
   create(project: Project): Promise<void>;
@@ -10,6 +17,18 @@ export interface TrackRepository {
   getById(trackId: string): Promise<Track | null>;
   list(): Promise<Track[]>;
   update(track: Track): Promise<void>;
+}
+
+export interface PlanningSessionRepository {
+  create(session: PlanningSession): Promise<void>;
+  getById(sessionId: string): Promise<PlanningSession | null>;
+  listByTrack(trackId: string): Promise<PlanningSession[]>;
+  update(session: PlanningSession): Promise<void>;
+}
+
+export interface PlanningMessageStore {
+  append(message: PlanningMessage): Promise<void>;
+  listBySession(planningSessionId: string): Promise<PlanningMessage[]>;
 }
 
 export interface ExecutionRepository {

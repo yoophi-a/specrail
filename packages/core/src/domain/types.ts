@@ -23,6 +23,29 @@ export const APPROVAL_STATUSES = ["draft", "pending", "approved", "rejected"] as
 
 export type ApprovalStatus = "draft" | "pending" | "approved" | "rejected";
 
+export const PLANNING_SYSTEMS = ["native", "openspec", "speckit"] as const;
+
+export type PlanningSystem = "native" | "openspec" | "speckit";
+
+export const PLANNING_SESSION_STATUSES = [
+  "active",
+  "waiting_user",
+  "waiting_agent",
+  "approved",
+  "archived",
+] as const;
+
+export type PlanningSessionStatus =
+  | "active"
+  | "waiting_user"
+  | "waiting_agent"
+  | "approved"
+  | "archived";
+
+export const PLANNING_MESSAGE_KINDS = ["message", "question", "decision", "note"] as const;
+
+export type PlanningMessageKind = "message" | "question" | "decision" | "note";
+
 export type ExecutionStatus =
   | "created"
   | "queued"
@@ -38,6 +61,7 @@ export interface Project {
   repoUrl?: string;
   localRepoPath?: string;
   defaultWorkflowPolicy?: string;
+  defaultPlanningSystem?: PlanningSystem;
   createdAt: string;
   updatedAt: string;
 }
@@ -51,8 +75,28 @@ export interface Track {
   specStatus: ApprovalStatus;
   planStatus: ApprovalStatus;
   priority: "low" | "medium" | "high";
+  planningSystem?: PlanningSystem;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PlanningSession {
+  id: string;
+  trackId: string;
+  status: PlanningSessionStatus;
+  createdAt: string;
+  updatedAt: string;
+  latestRevisionId?: string;
+}
+
+export interface PlanningMessage {
+  id: string;
+  planningSessionId: string;
+  authorType: "user" | "agent" | "system";
+  kind: PlanningMessageKind;
+  body: string;
+  relatedArtifact?: "spec" | "plan" | "tasks";
+  createdAt: string;
 }
 
 export interface CommandExecutionMetadata {

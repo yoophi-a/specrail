@@ -7,9 +7,11 @@ import test from "node:test";
 import type { ExecutionEvent } from "../../domain/types.js";
 import {
   FileExecutionRepository,
+  FilePlanningSessionRepository,
   FileProjectRepository,
   FileTrackRepository,
   JsonlEventStore,
+  JsonlPlanningMessageStore,
 } from "../file-repositories.js";
 import { SpecRailService } from "../specrail-service.js";
 
@@ -21,6 +23,8 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: {
@@ -112,12 +116,14 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
       const values = [
         "2026-04-09T03:00:00.000Z",
         "2026-04-09T03:00:00.000Z",
+        "2026-04-09T03:01:00.000Z",
+        "2026-04-09T03:02:00.000Z",
         "2026-04-09T03:10:00.000Z",
       ];
       return () => values.shift() ?? "2026-04-09T03:10:00.000Z";
     })(),
     idGenerator: (() => {
-      const values = ["track-a", "run-a"];
+      const values = ["track-a", "planning-a", "message-a", "run-a"];
       return () => values.shift() ?? "extra";
     })(),
   });
@@ -133,6 +139,24 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
 
   const specContent = await readFile(path.join(artifactRoot, track.id, "spec.md"), "utf8");
   assert.match(specContent, /# Spec — Build executor MVP/);
+  assert.equal(track.planningSystem, "native");
+
+  const planningSession = await service.createPlanningSession({ trackId: track.id });
+  assert.equal(planningSession.trackId, track.id);
+  assert.equal(planningSession.status, "active");
+
+  const planningMessage = await service.appendPlanningMessage({
+    planningSessionId: planningSession.id,
+    authorType: "user",
+    kind: "question",
+    body: "Please clarify the approval flow before execution.",
+    relatedArtifact: "plan",
+  });
+  assert.equal(planningMessage.planningSessionId, planningSession.id);
+
+  const planningMessages = await service.listPlanningMessages(planningSession.id);
+  assert.equal(planningMessages.length, 1);
+  assert.equal(planningMessages[0]?.body, "Please clarify the approval flow before execution.");
 
   const run = await service.startRun({
     trackId: track.id,
@@ -193,6 +217,8 @@ test("SpecRailService throws when starting a run for a missing track", async () 
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: { async write() {} },
@@ -215,6 +241,12 @@ test("SpecRailService throws when starting a run for a missing track", async () 
     workspaceRoot: path.join(rootDir, "workspaces"),
   });
 
+  await assert.rejects(() => service.createPlanningSession({ trackId: "missing-track" }), /Track not found/);
+  await assert.rejects(
+    () => service.appendPlanningMessage({ planningSessionId: "missing-session", authorType: "user", body: "hello" }),
+    /Planning session not found/,
+  );
+  await assert.rejects(() => service.listPlanningMessages("missing-session"), /Planning session not found/);
   await assert.rejects(() => service.startRun({ trackId: "missing-track", prompt: "nope" }), /Track not found/);
   await assert.rejects(() => service.resumeRun({ runId: "missing-run", prompt: "nope" }), /Run not found/);
   await assert.rejects(() => service.cancelRun({ runId: "missing-run" }), /Run not found/);
@@ -241,6 +273,8 @@ test("SpecRailService applies explicit sorting and pagination for track and run 
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: { async write() {} },
@@ -465,6 +499,8 @@ test("SpecRailService updates track workflow and approval state", async () => {
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: { async write() {} },
@@ -524,6 +560,8 @@ test("SpecRailService lists tracks and runs with basic filters", async () => {
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: { async write() {} },

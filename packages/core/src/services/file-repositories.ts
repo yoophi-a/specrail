@@ -1,10 +1,19 @@
 import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.js";
+import type {
+  Execution,
+  ExecutionEvent,
+  PlanningMessage,
+  PlanningSession,
+  Project,
+  Track,
+} from "../domain/types.js";
 import type {
   EventStore,
   ExecutionRepository,
+  PlanningMessageStore,
+  PlanningSessionRepository,
   ProjectRepository,
   TrackRepository,
 } from "./ports.js";
@@ -12,6 +21,8 @@ import type {
 interface FileStatePaths {
   projectsDir: string;
   tracksDir: string;
+  planningSessionsDir: string;
+  planningMessagesDir: string;
   executionsDir: string;
   eventsDir: string;
 }
@@ -20,6 +31,8 @@ export function getStatePaths(rootDir: string): FileStatePaths {
   return {
     projectsDir: path.join(rootDir, "projects"),
     tracksDir: path.join(rootDir, "tracks"),
+    planningSessionsDir: path.join(rootDir, "planning-sessions"),
+    planningMessagesDir: path.join(rootDir, "planning-messages"),
     executionsDir: path.join(rootDir, "executions"),
     eventsDir: path.join(rootDir, "events"),
   };
@@ -126,6 +139,65 @@ export class FileTrackRepository implements TrackRepository {
 
   update(track: Track): Promise<void> {
     return this.repository.update(track);
+  }
+}
+
+export class FilePlanningSessionRepository implements PlanningSessionRepository {
+  private readonly repository: JsonFileRepository<PlanningSession>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<PlanningSession>(getStatePaths(rootDir).planningSessionsDir);
+  }
+
+  create(session: PlanningSession): Promise<void> {
+    return this.repository.create(session);
+  }
+
+  getById(sessionId: string): Promise<PlanningSession | null> {
+    return this.repository.getById(sessionId);
+  }
+
+  async listByTrack(trackId: string): Promise<PlanningSession[]> {
+    const sessions = await this.repository.list();
+    return sessions
+      .filter((session) => session.trackId === trackId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id));
+  }
+
+  update(session: PlanningSession): Promise<void> {
+    return this.repository.update(session);
+  }
+}
+
+export class JsonlPlanningMessageStore implements PlanningMessageStore {
+  private readonly messagesDir: string;
+
+  constructor(rootDir: string) {
+    this.messagesDir = getStatePaths(rootDir).planningMessagesDir;
+  }
+
+  async append(message: PlanningMessage): Promise<void> {
+    const filePath = path.join(this.messagesDir, `${message.planningSessionId}.jsonl`);
+    await ensureDir(path.dirname(filePath));
+    await appendFile(filePath, `${JSON.stringify(message)}\n`, "utf8");
+  }
+
+  async listBySession(planningSessionId: string): Promise<PlanningMessage[]> {
+    const filePath = path.join(this.messagesDir, `${planningSessionId}.jsonl`);
+
+    try {
+      const content = await readFile(filePath, "utf8");
+      return content
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as PlanningMessage);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return [];
+      }
+
+      throw error;
+    }
   }
 }
 

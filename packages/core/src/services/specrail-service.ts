@@ -15,12 +15,23 @@ import type {
   Execution,
   ExecutionEvent,
   ExecutionStatus,
+  PlanningMessage,
+  PlanningMessageKind,
+  PlanningSession,
+  PlanningSessionStatus,
   Project,
   Track,
   TrackStatus,
 } from "../domain/types.js";
 import { NotFoundError } from "../errors.js";
-import type { EventStore, ExecutionRepository, ProjectRepository, TrackRepository } from "./ports.js";
+import type {
+  EventStore,
+  ExecutionRepository,
+  PlanningMessageStore,
+  PlanningSessionRepository,
+  ProjectRepository,
+  TrackRepository,
+} from "./ports.js";
 
 export interface TrackArtifactWriterInput {
   track: Track;
@@ -66,6 +77,8 @@ export interface ExecutionBackend {
 export interface SpecRailServiceDependencies {
   projectRepository: ProjectRepository;
   trackRepository: TrackRepository;
+  planningSessionRepository: PlanningSessionRepository;
+  planningMessageStore: PlanningMessageStore;
   executionRepository: ExecutionRepository;
   eventStore: EventStore;
   artifactWriter: TrackArtifactWriter;
@@ -99,6 +112,19 @@ export interface UpdateTrackInput {
   status?: TrackStatus;
   specStatus?: ApprovalStatus;
   planStatus?: ApprovalStatus;
+}
+
+export interface CreatePlanningSessionInput {
+  trackId: string;
+  status?: PlanningSessionStatus;
+}
+
+export interface AppendPlanningMessageInput {
+  planningSessionId: string;
+  authorType: PlanningMessage["authorType"];
+  kind?: PlanningMessageKind;
+  body: string;
+  relatedArtifact?: PlanningMessage["relatedArtifact"];
 }
 
 export interface ResumeRunInput {
@@ -255,6 +281,7 @@ export class SpecRailService {
       specStatus: "draft",
       planStatus: "draft",
       priority: input.priority ?? "medium",
+      planningSystem: project.defaultPlanningSystem ?? "native",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -331,6 +358,71 @@ export class SpecRailService {
     await this.dependencies.trackRepository.update(nextTrack);
 
     return nextTrack;
+  }
+
+  async createPlanningSession(input: CreatePlanningSessionInput): Promise<PlanningSession> {
+    const track = await this.dependencies.trackRepository.getById(input.trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${input.trackId}`);
+    }
+
+    const timestamp = this.now();
+    const session: PlanningSession = {
+      id: `planning-session-${this.idGenerator()}`,
+      trackId: track.id,
+      status: input.status ?? "active",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    await this.dependencies.planningSessionRepository.create(session);
+    return session;
+  }
+
+  getPlanningSession(sessionId: string): Promise<PlanningSession | null> {
+    return this.dependencies.planningSessionRepository.getById(sessionId);
+  }
+
+  listPlanningSessions(trackId: string): Promise<PlanningSession[]> {
+    return this.dependencies.planningSessionRepository.listByTrack(trackId);
+  }
+
+  async appendPlanningMessage(input: AppendPlanningMessageInput): Promise<PlanningMessage> {
+    const session = await this.dependencies.planningSessionRepository.getById(input.planningSessionId);
+
+    if (!session) {
+      throw new NotFoundError(`Planning session not found: ${input.planningSessionId}`);
+    }
+
+    const timestamp = this.now();
+    const message: PlanningMessage = {
+      id: `planning-message-${this.idGenerator()}`,
+      planningSessionId: session.id,
+      authorType: input.authorType,
+      kind: input.kind ?? "message",
+      body: input.body,
+      relatedArtifact: input.relatedArtifact,
+      createdAt: timestamp,
+    };
+
+    await this.dependencies.planningMessageStore.append(message);
+    await this.dependencies.planningSessionRepository.update({
+      ...session,
+      updatedAt: timestamp,
+    });
+
+    return message;
+  }
+
+  async listPlanningMessages(planningSessionId: string): Promise<PlanningMessage[]> {
+    const session = await this.dependencies.planningSessionRepository.getById(planningSessionId);
+
+    if (!session) {
+      throw new NotFoundError(`Planning session not found: ${planningSessionId}`);
+    }
+
+    return this.dependencies.planningMessageStore.listBySession(planningSessionId);
   }
 
   async startRun(input: StartRunInput): Promise<Execution> {
@@ -549,6 +641,7 @@ export class SpecRailService {
       repoUrl: this.dependencies.defaultProject.repoUrl,
       localRepoPath: this.dependencies.defaultProject.localRepoPath,
       defaultWorkflowPolicy: this.dependencies.defaultProject.defaultWorkflowPolicy,
+      defaultPlanningSystem: "native",
       createdAt: timestamp,
       updatedAt: timestamp,
     };

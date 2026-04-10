@@ -120,7 +120,7 @@ async function openSseStream(url: string): Promise<{
   });
 }
 
-test("API supports creating tracks, starting runs, and listing run events", async () => {
+test("API supports creating tracks, planning sessions, messages, starting runs, and listing run events", async () => {
   await withServer(async (baseUrl, paths) => {
     const trackResponse = await fetch(`${baseUrl}/tracks`, {
       method: "POST",
@@ -133,7 +133,7 @@ test("API supports creating tracks, starting runs, and listing run events", asyn
     });
 
     assert.equal(trackResponse.status, 201);
-    const trackPayload = (await trackResponse.json()) as { track: { id: string; title: string } };
+    const trackPayload = (await trackResponse.json()) as { track: { id: string; title: string; planningSystem: string } };
     assert.equal(trackPayload.track.title, "Executor MVP");
 
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
@@ -152,6 +152,38 @@ test("API supports creating tracks, starting runs, and listing run events", asyn
     ) as { trackId: string; source: { runtimeDataRoot: string } };
     assert.equal(repoVisibleSync.trackId, trackPayload.track.id);
     assert.equal(repoVisibleSync.source.runtimeDataRoot, "../artifacts");
+    assert.equal(trackPayload.track.planningSystem, "native");
+
+    const planningSessionResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/planning-sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "active" }),
+    });
+    assert.equal(planningSessionResponse.status, 201);
+    const planningSessionPayload = (await planningSessionResponse.json()) as {
+      planningSession: { id: string; trackId: string; status: string };
+    };
+    assert.equal(planningSessionPayload.planningSession.trackId, trackPayload.track.id);
+
+    const planningMessageResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authorType: "user",
+        kind: "question",
+        relatedArtifact: "plan",
+        body: "Can we separate planning state from run events?",
+      }),
+    });
+    assert.equal(planningMessageResponse.status, 201);
+
+    const planningMessagesResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`);
+    assert.equal(planningMessagesResponse.status, 200);
+    const planningMessagesPayload = (await planningMessagesResponse.json()) as {
+      messages: Array<{ body: string }>;
+    };
+    assert.equal(planningMessagesPayload.messages.length, 1);
+    assert.equal(planningMessagesPayload.messages[0]?.body, "Can we separate planning state from run events?");
 
     const runResponse = await fetch(`${baseUrl}/runs`, {
       method: "POST",

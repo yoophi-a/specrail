@@ -13,15 +13,22 @@ import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@s
 import {
   APPROVAL_STATUSES,
   FileExecutionRepository,
+  FilePlanningSessionRepository,
   FileProjectRepository,
   FileTrackRepository,
   JsonlEventStore,
+  JsonlPlanningMessageStore,
   NotFoundError,
+  PLANNING_MESSAGE_KINDS,
+  PLANNING_SESSION_STATUSES,
   getStatePaths,
   SpecRailService,
   TRACK_STATUSES,
   type ExecutionEvent,
   type ApprovalStatus,
+  type PlanningMessage,
+  type PlanningMessageKind,
+  type PlanningSessionStatus,
   type SpecRailServiceDependencies,
   type TrackStatus,
 } from "@specrail/core";
@@ -48,6 +55,17 @@ interface UpdateTrackRequestBody {
   status?: TrackStatus;
   specStatus?: ApprovalStatus;
   planStatus?: ApprovalStatus;
+}
+
+interface CreatePlanningSessionRequestBody {
+  status?: PlanningSessionStatus;
+}
+
+interface AppendPlanningMessageRequestBody {
+  authorType: PlanningMessage["authorType"];
+  kind?: PlanningMessageKind;
+  body: string;
+  relatedArtifact?: PlanningMessage["relatedArtifact"];
 }
 
 interface ResumeRunRequestBody {
@@ -122,12 +140,16 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
   const eventStore = new JsonlEventStore(stateDir);
   const projectRepository = new FileProjectRepository(stateDir);
   const trackRepository = new FileTrackRepository(stateDir);
+  const planningSessionRepository = new FilePlanningSessionRepository(stateDir);
+  const planningMessageStore = new JsonlPlanningMessageStore(stateDir);
   const executionRepository = new FileExecutionRepository(stateDir);
   let service: SpecRailService | null = null;
 
   const serviceDependencies: SpecRailServiceDependencies = {
     projectRepository,
     trackRepository,
+    planningSessionRepository,
+    planningMessageStore,
     executionRepository,
     eventStore,
     artifactWriter: {
@@ -235,6 +257,14 @@ function isTrackStatus(value: unknown): value is TrackStatus {
 
 function isApprovalStatus(value: unknown): value is ApprovalStatus {
   return typeof value === "string" && APPROVAL_STATUSES.includes(value as ApprovalStatus);
+}
+
+function isPlanningSessionStatus(value: unknown): value is PlanningSessionStatus {
+  return typeof value === "string" && PLANNING_SESSION_STATUSES.includes(value as PlanningSessionStatus);
+}
+
+function isPlanningMessageKind(value: unknown): value is PlanningMessageKind {
+  return typeof value === "string" && PLANNING_MESSAGE_KINDS.includes(value as PlanningMessageKind);
 }
 
 function parsePositiveInteger(value: string | null): number | undefined {
@@ -350,6 +380,45 @@ function assertValidRunCreateBody(body: RunRequestBody): void {
 
   if (details.length > 0) {
     throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidCreatePlanningSessionBody(body: CreatePlanningSessionRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (body.status !== undefined && !isPlanningSessionStatus(body.status)) {
+    details.push({
+      field: "status",
+      message: `status must be one of: ${PLANNING_SESSION_STATUSES.join(", ")}`,
+    });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("invalid planning session payload", details);
+  }
+}
+
+function assertValidAppendPlanningMessageBody(body: AppendPlanningMessageRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (body.authorType !== "user" && body.authorType !== "agent" && body.authorType !== "system") {
+    details.push({ field: "authorType", message: "authorType must be one of: user, agent, system" });
+  }
+
+  if (typeof body.body !== "string" || body.body.trim().length === 0) {
+    details.push({ field: "body", message: "body is required" });
+  }
+
+  if (body.kind !== undefined && !isPlanningMessageKind(body.kind)) {
+    details.push({ field: "kind", message: `kind must be one of: ${PLANNING_MESSAGE_KINDS.join(", ")}` });
+  }
+
+  if (body.relatedArtifact !== undefined && !["spec", "plan", "tasks"].includes(body.relatedArtifact)) {
+    details.push({ field: "relatedArtifact", message: "relatedArtifact must be one of: spec, plan, tasks" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("invalid planning message payload", details);
   }
 }
 
@@ -593,6 +662,64 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           planStatus: body.planStatus,
         });
         sendJson(response, 200, { track });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "tracks" && segments[2] === "planning-sessions") {
+        const body = await readJson<CreatePlanningSessionRequestBody>(request);
+        assertValidCreatePlanningSessionBody(body);
+
+        const planningSession = await deps.service.createPlanningSession({
+          trackId: segments[1] ?? "",
+          status: body.status,
+        });
+        sendJson(response, 201, { planningSession });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "tracks" && segments[2] === "planning-sessions") {
+        const track = await deps.service.getTrack(segments[1] ?? "");
+
+        if (!track) {
+          sendError(response, 404, "not_found", "track not found");
+          return;
+        }
+
+        const planningSessions = await deps.service.listPlanningSessions(track.id);
+        sendJson(response, 200, { planningSessions });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 2 && segments[0] === "planning-sessions") {
+        const planningSession = await deps.service.getPlanningSession(segments[1] ?? "");
+
+        if (!planningSession) {
+          sendError(response, 404, "not_found", "planning session not found");
+          return;
+        }
+
+        sendJson(response, 200, { planningSession });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "planning-sessions" && segments[2] === "messages") {
+        const body = await readJson<AppendPlanningMessageRequestBody>(request);
+        assertValidAppendPlanningMessageBody(body);
+
+        const message = await deps.service.appendPlanningMessage({
+          planningSessionId: segments[1] ?? "",
+          authorType: body.authorType,
+          kind: body.kind,
+          body: body.body,
+          relatedArtifact: body.relatedArtifact,
+        });
+        sendJson(response, 201, { message });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "planning-sessions" && segments[2] === "messages") {
+        const messages = await deps.service.listPlanningMessages(segments[1] ?? "");
+        sendJson(response, 200, { messages });
         return;
       }
 
