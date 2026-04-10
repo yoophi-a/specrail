@@ -164,8 +164,14 @@ pnpm --filter @specrail/api track:inspect:integrations -- --track-id track_123 -
 # list runs for a track
 pnpm --filter @specrail/api runs:list -- --track-id track_123 --status running --page-size 10
 
+# list runs from a remote SpecRail API
+pnpm --filter @specrail/api runs:list -- --track-id track_123 --status running --page-size 10 --api-url http://127.0.0.1:4000
+
 # inspect persisted run event history
 pnpm --filter @specrail/api runs:events -- --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20
+
+# inspect persisted run event history from a remote SpecRail API
+pnpm --filter @specrail/api runs:events -- --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20 --api-url http://127.0.0.1:4000
 
 # tail the latest persisted run events
 pnpm --filter @specrail/api runs:tail -- --run-id run_123 --limit 10 --json
@@ -178,6 +184,9 @@ pnpm --filter @specrail/api runs:tail -- --run-id run_123 --limit 10 --follow --
 
 # inspect a persisted run payload
 pnpm --filter @specrail/api run:inspect -- --run-id run_123
+
+# inspect a persisted run payload from a remote SpecRail API
+pnpm --filter @specrail/api run:inspect -- --run-id run_123 --api-url http://127.0.0.1:4000
 ```
 
 Notes:
@@ -189,12 +198,12 @@ Notes:
 - export history supports `--page`/`--page-size` plus `--track-id`, `--target-path`, `--overwrite-only`/`--no-overwrite-only`, `--after`, and `--before`
 - `tracks:list` mirrors `GET /tracks` with `--status`, `--priority`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, and `--json`
 - track inspection supports `--page`/`--page-size` for both import and export history together, plus `--import-page`, `--import-page-size`, `--export-page`, and `--export-page-size` when operators want to page each side independently
-- `runs:list` mirrors `GET /runs` with `--track-id`, `--status`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, and `--json`
-- `runs:events` mirrors `GET /runs/:runId/events` with shell-friendly filtering via `--after`, `--before`, `--type`, `--limit`, and `--json`
-- `runs:tail` focuses on the latest persisted events for a run and reuses the same `--type`, `--limit`, and `--json` switches
+- `runs:list` mirrors `GET /runs` with `--track-id`, `--status`, `--page`, `--page-size`, `--sort-by`, `--sort-order`, `--api-url`, and `--json`
+- `runs:events` mirrors `GET /runs/:runId/events` with shell-friendly filtering via `--after`, `--before`, `--type`, `--limit`, `--api-url`, and `--json`
+- `runs:tail` focuses on the latest persisted events for a run and reuses the same `--type`, `--limit`, `--api-url`, and `--json` switches
 - add `--follow` to keep the tail open and stream newly appended events; by default this tails the local JSONL event log, and with `--api-url <base-url>` (or `SPECRAIL_API_BASE_URL`) it switches to the remote `/runs/:id/events/stream` SSE endpoint for API-driven environments
 - in `--json` mode follow output emits newline-delimited JSON event envelopes for shell pipelines
-- `track:inspect` mirrors `GET /tracks/:trackId`, `track:inspect:integrations` mirrors `GET /tracks/:trackId/integrations`, and `run:inspect` mirrors `GET /runs/:runId`
+- `track:inspect` mirrors `GET /tracks/:trackId`, `track:inspect:integrations` mirrors `GET /tracks/:trackId/integrations`, and `run:inspect` mirrors `GET /runs/:runId`; `run:inspect` also accepts `--api-url` (or `SPECRAIL_API_BASE_URL`) for remote inspection
 - JSON output is available with `--json` for scripting or operator tooling
 
 ### Runs

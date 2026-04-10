@@ -111,9 +111,9 @@ Usage:
   specrail-admin tracks list [--status <status>] [--priority <priority>] [--page <n>] [--page-size <count>] [--sort-by <updatedAt|createdAt|title|priority|status>] [--sort-order <asc|desc>] [--json]
   specrail-admin tracks inspect --track-id <track-id> [--json]
   specrail-admin tracks inspect integrations --track-id <track-id> [--page <n>] [--page-size <count>] [--import-page <n>] [--import-page-size <count>] [--export-page <n>] [--export-page-size <count>] [--json]
-  specrail-admin runs list [--track-id <track-id>] [--status <status>] [--page <n>] [--page-size <count>] [--sort-by <createdAt|startedAt|finishedAt|status>] [--sort-order <asc|desc>] [--json]
-  specrail-admin runs inspect --run-id <run-id> [--json]
-  specrail-admin runs events --run-id <run-id> [--after <iso>] [--before <iso>] [--type <event-type>] [--limit <count>] [--json]
+  specrail-admin runs list [--track-id <track-id>] [--status <status>] [--page <n>] [--page-size <count>] [--sort-by <createdAt|startedAt|finishedAt|status>] [--sort-order <asc|desc>] [--api-url <url>] [--json]
+  specrail-admin runs inspect --run-id <run-id> [--api-url <url>] [--json]
+  specrail-admin runs events --run-id <run-id> [--after <iso>] [--before <iso>] [--type <event-type>] [--limit <count>] [--api-url <url>] [--json]
   specrail-admin runs tail --run-id <run-id> [--type <event-type>] [--limit <count>] [--follow] [--api-url <url>] [--json]
 
 Examples:
@@ -129,9 +129,9 @@ Examples:
   specrail-admin tracks list --status ready --sort-by title --sort-order asc
   specrail-admin tracks inspect --track-id track_123
   specrail-admin tracks inspect integrations --track-id track_123 --page-size 5
-  specrail-admin runs list --track-id track_123 --status running --page-size 10
-  specrail-admin runs inspect --run-id run_123
-  specrail-admin runs events --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20
+  specrail-admin runs list --track-id track_123 --status running --page-size 10 --api-url http://127.0.0.1:4000
+  specrail-admin runs inspect --run-id run_123 --api-url http://127.0.0.1:4000
+  specrail-admin runs events --run-id run_123 --after 2026-04-10T00:00:00.000Z --limit 20 --api-url http://127.0.0.1:4000
   specrail-admin runs tail --run-id run_123 --limit 10 --json
   specrail-admin runs tail --run-id run_123 --follow --api-url http://127.0.0.1:4000
   specrail-admin runs tail --run-id run_123 --follow
@@ -664,9 +664,41 @@ async function fetchJson<T>(url: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function buildQueryString(entries: Array<[string, string | number | undefined]>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of entries) {
+    if (value === undefined || value === "") {
+      continue;
+    }
+    params.set(key, String(value));
+  }
+
+  const query = params.toString();
+  return query.length > 0 ? `?${query}` : "";
+}
+
 async function getRemoteRun(apiBaseUrl: string, runId: string): Promise<Execution> {
   const payload = await fetchJson<{ run: Execution }>(`${normalizeApiBaseUrl(apiBaseUrl)}/runs/${encodeURIComponent(runId)}`);
   return payload.run;
+}
+
+async function getRemoteRunInspection(apiBaseUrl: string, runId: string): Promise<RunInspection> {
+  return fetchJson<RunInspection>(`${normalizeApiBaseUrl(apiBaseUrl)}/runs/${encodeURIComponent(runId)}`);
+}
+
+async function listRemoteRuns(
+  apiBaseUrl: string,
+  args: Pick<ParsedArgs, "trackId" | "status" | "page" | "pageSize" | "sortBy" | "sortOrder">,
+): Promise<{ runs: Execution[]; meta: { page: number; pageSize: number; total: number; totalPages: number; hasNextPage: boolean; hasPrevPage: boolean; sortBy: string; sortOrder: "asc" | "desc" } }> {
+  const query = buildQueryString([
+    ["trackId", args.trackId],
+    ["status", args.status],
+    ["page", args.page],
+    ["pageSize", args.pageSize],
+    ["sortBy", args.sortBy],
+    ["sortOrder", args.sortOrder],
+  ]);
+  return fetchJson(`${normalizeApiBaseUrl(apiBaseUrl)}/runs${query}`);
 }
 
 async function listRemoteRunEvents(apiBaseUrl: string, runId: string): Promise<ExecutionEvent[]> {
@@ -1170,6 +1202,18 @@ async function run(): Promise<void> {
   }
 
   if (args.command === "run-list") {
+    const apiBaseUrl = resolveApiBaseUrl(args);
+    if (apiBaseUrl) {
+      const result = await listRemoteRuns(apiBaseUrl, args);
+      if (args.json) {
+        console.log(JSON.stringify({ config: loadConfig(), result }, null, 2));
+        return;
+      }
+
+      printRunList({ items: result.runs, meta: result.meta }, { ...args, page: result.meta.page, pageSize: result.meta.pageSize });
+      return;
+    }
+
     const result = await service.listRunsPage({
       trackId: args.trackId,
       status: args.status as Execution["status"] | undefined,
@@ -1213,7 +1257,8 @@ async function run(): Promise<void> {
       throw new Error("Missing required option: --run-id");
     }
 
-    const result = await service.getRunInspection(args.runId);
+    const apiBaseUrl = resolveApiBaseUrl(args);
+    const result = apiBaseUrl ? await getRemoteRunInspection(apiBaseUrl, args.runId) : await service.getRunInspection(args.runId);
     if (!result) {
       throw new Error(`Run not found: ${args.runId}`);
     }

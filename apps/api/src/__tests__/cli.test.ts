@@ -695,6 +695,105 @@ test("CLI follows appended run events in human and json modes", async () => {
   await once(jsonFollow, "exit");
 });
 
+test("CLI supports remote run list, inspect, and events across shared API mode", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-run-remote-"));
+
+  await withServer(rootDir, async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "CLI remote run commands",
+        description: "Exercise shared remote API mode",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const createRunResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        prompt: "Start remote shared mode test",
+      }),
+    });
+    const runPayload = (await createRunResponse.json()) as { run: { id: string } };
+
+    const cwd = path.resolve(import.meta.dirname, "../..");
+    const env = {
+      ...process.env,
+      SPECRAIL_DATA_DIR: path.join(rootDir, "missing-data"),
+      SPECRAIL_REPO_ARTIFACT_DIR: path.join(rootDir, "missing-repo-visible"),
+      SPECRAIL_API_BASE_URL: baseUrl,
+    };
+
+    const listResult = await execFileAsync("pnpm", [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "runs",
+      "list",
+      "--track-id",
+      trackPayload.track.id,
+      "--json",
+    ], { cwd, env });
+    const listPayload = JSON.parse(listResult.stdout) as {
+      result: { runs: Array<{ id: string; trackId: string }>; meta: { total: number; page: number; pageSize: number } };
+    };
+    assert.deepEqual(listPayload.result.runs.map((run) => run.id), [runPayload.run.id]);
+    assert.equal(listPayload.result.runs[0]?.trackId, trackPayload.track.id);
+    assert.equal(listPayload.result.meta.total, 1);
+    assert.equal(listPayload.result.meta.page, 1);
+    assert.equal(listPayload.result.meta.pageSize, 20);
+
+    const inspectResult = await execFileAsync("pnpm", [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "runs",
+      "inspect",
+      "--run-id",
+      runPayload.run.id,
+      "--api-url",
+      baseUrl,
+      "--json",
+    ], { cwd, env: { ...env, SPECRAIL_API_BASE_URL: undefined } });
+    const inspectPayload = JSON.parse(inspectResult.stdout) as {
+      result: { run: { id: string; trackId: string; summary?: { eventCount: number } } };
+    };
+    assert.equal(inspectPayload.result.run.id, runPayload.run.id);
+    assert.equal(inspectPayload.result.run.trackId, trackPayload.track.id);
+    assert.ok((inspectPayload.result.run.summary?.eventCount ?? 0) >= 1);
+
+    const eventsResult = await execFileAsync("pnpm", [
+      "exec",
+      "tsx",
+      "--tsconfig",
+      "../../tsconfig.base.json",
+      "src/cli.ts",
+      "runs",
+      "events",
+      "--run-id",
+      runPayload.run.id,
+      "--limit",
+      "1",
+      "--json",
+    ], { cwd, env });
+    const eventsPayload = JSON.parse(eventsResult.stdout) as {
+      result: { run: { id: string }; events: Array<{ executionId: string }>; meta: { mode: string; total: number; limit: number } };
+    };
+    assert.equal(eventsPayload.result.run.id, runPayload.run.id);
+    assert.equal(eventsPayload.result.events.length, 1);
+    assert.equal(eventsPayload.result.events[0]?.executionId, runPayload.run.id);
+    assert.equal(eventsPayload.result.meta.mode, "history");
+    assert.equal(eventsPayload.result.meta.limit, 1);
+  });
+});
+
 test("CLI follows run events over remote SSE when api-url is provided", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-cli-run-follow-remote-"));
 
