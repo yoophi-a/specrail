@@ -302,6 +302,145 @@ test("SpecRailService throws when starting a run for a missing track", async () 
   await assert.rejects(() => service.cancelRun({ runId: "missing-run" }), /Run not found/);
 });
 
+test("SpecRailService routes run start and resume through the selected backend and profile", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-backends-"));
+  const stateDir = path.join(rootDir, "state");
+  const workspaceRoot = path.join(rootDir, "workspaces");
+  const spawnCalls: Array<{ backend: string; profile: string }> = [];
+  const resumeCalls: Array<{ backend: string; profile?: string }> = [];
+
+  const createExecutor = (backend: string) => ({
+    name: backend,
+    async spawn(input: { executionId: string; prompt: string; workspacePath: string; profile: string }) {
+      spawnCalls.push({ backend, profile: input.profile });
+      return {
+        sessionRef: `${backend}:${input.executionId}`,
+        command: {
+          command: backend,
+          args: [input.prompt],
+          cwd: input.workspacePath,
+          prompt: input.prompt,
+        },
+        events: [
+          {
+            id: `${input.executionId}:${backend}:started`,
+            executionId: input.executionId,
+            type: "task_status_changed" as const,
+            timestamp: "2026-04-10T11:00:00.000Z",
+            source: backend,
+            summary: `Run started (${backend})`,
+            payload: { status: "running", backend, profile: input.profile },
+          },
+        ],
+      };
+    },
+    async resume(input: { executionId?: string; sessionRef: string; prompt: string; workspacePath?: string; profile?: string }) {
+      resumeCalls.push({ backend, profile: input.profile });
+      return {
+        sessionRef: input.sessionRef,
+        command: {
+          command: backend,
+          args: [input.prompt],
+          cwd: input.workspacePath ?? workspaceRoot,
+          prompt: input.prompt,
+          resumeSessionRef: input.sessionRef,
+        },
+        events: [
+          {
+            id: `${input.executionId}:${backend}:resumed`,
+            executionId: input.executionId ?? "unknown",
+            type: "task_status_changed" as const,
+            timestamp: "2026-04-10T11:05:00.000Z",
+            source: backend,
+            summary: `Run resumed (${backend})`,
+            payload: { status: "running", backend, profile: input.profile },
+          },
+        ],
+      };
+    },
+    async cancel(input: { executionId?: string; sessionRef: string }) {
+      return {
+        id: `${input.executionId}:${backend}:cancelled`,
+        executionId: input.executionId ?? "unknown",
+        type: "task_status_changed" as const,
+        timestamp: "2026-04-10T11:10:00.000Z",
+        source: backend,
+        summary: `Run cancelled (${backend})`,
+        payload: { status: "cancelled", sessionRef: input.sessionRef },
+      };
+    },
+  });
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(stateDir),
+    trackRepository: new FileTrackRepository(stateDir),
+    planningSessionRepository: new FilePlanningSessionRepository(stateDir),
+    planningMessageStore: new JsonlPlanningMessageStore(stateDir),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(stateDir),
+    approvalRequestRepository: new FileApprovalRequestRepository(stateDir),
+    channelBindingRepository: new FileChannelBindingRepository(stateDir),
+    attachmentReferenceRepository: new FileAttachmentReferenceRepository(stateDir),
+    executionRepository: new FileExecutionRepository(stateDir),
+    eventStore: new JsonlEventStore(stateDir),
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
+    executors: {
+      codex: createExecutor("codex"),
+      claude_code: createExecutor("claude_code"),
+    },
+    defaultExecutionBackend: "codex",
+    defaultExecutionProfile: "default",
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot,
+    now: (() => {
+      const values = [
+        "2026-04-10T11:00:00.000Z",
+        "2026-04-10T11:00:00.000Z",
+        "2026-04-10T11:05:00.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-10T11:05:00.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-a", "run-a"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Claude backend",
+    description: "Verify backend routing.",
+  });
+
+  const run = await service.startRun({
+    trackId: track.id,
+    prompt: "Use Claude Code",
+    backend: "claude_code",
+    profile: "claude-sonnet-4",
+  });
+
+  assert.equal(run.backend, "claude_code");
+  assert.equal(run.profile, "claude-sonnet-4");
+  assert.deepEqual(spawnCalls, [{ backend: "claude_code", profile: "claude-sonnet-4" }]);
+
+  const resumedRun = await service.resumeRun({
+    runId: run.id,
+    prompt: "Continue with Opus",
+    backend: "claude_code",
+    profile: "claude-opus-4-1",
+  });
+
+  assert.equal(resumedRun.backend, "claude_code");
+  assert.equal(resumedRun.profile, "claude-opus-4-1");
+  assert.deepEqual(resumeCalls, [{ backend: "claude_code", profile: "claude-opus-4-1" }]);
+
+  await assert.rejects(
+    () => service.resumeRun({ runId: run.id, prompt: "Switch backend", backend: "codex" }),
+    /Run .* is backed by claude_code, not codex/,
+  );
+});
+
 test("SpecRailService applies explicit sorting and pagination for track and run listings", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-listing-"));
 

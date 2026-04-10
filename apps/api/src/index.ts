@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..", "..");
 
-import { CodexAdapter } from "@specrail/adapters";
+import { ClaudeCodeAdapter, CodexAdapter } from "@specrail/adapters";
 import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts, writeApprovedTrackArtifact } from "@specrail/config";
 import {
   APPROVAL_STATUSES,
@@ -58,6 +58,7 @@ interface TrackRequestBody {
 interface RunRequestBody {
   trackId: string;
   prompt: string;
+  backend?: string;
   profile?: string;
   planningSessionId?: string;
 }
@@ -81,7 +82,11 @@ interface AppendPlanningMessageRequestBody {
 
 interface ResumeRunRequestBody {
   prompt: string;
+  backend?: string;
+  profile?: string;
 }
+
+const EXECUTION_BACKENDS = ["codex", "claude_code"] as const;
 
 interface ProposeArtifactRevisionRequestBody {
   content: string;
@@ -191,6 +196,30 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
   const executionRepository = new FileExecutionRepository(stateDir);
   let service: SpecRailService | null = null;
 
+  const codexExecutor = new CodexAdapter({
+    sessionsDir,
+    onEvent: async (event) => {
+      if (service) {
+        await service.recordExecutionEvent(event);
+        return;
+      }
+
+      await eventStore.append(event);
+    },
+  });
+
+  const claudeCodeExecutor = new ClaudeCodeAdapter({
+    sessionsDir,
+    onEvent: async (event) => {
+      if (service) {
+        await service.recordExecutionEvent(event);
+        return;
+      }
+
+      await eventStore.append(event);
+    },
+  });
+
   const serviceDependencies: SpecRailServiceDependencies = {
     projectRepository,
     trackRepository,
@@ -227,17 +256,13 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
         });
       },
     },
-    executor: new CodexAdapter({
-      sessionsDir,
-      onEvent: async (event) => {
-        if (service) {
-          await service.recordExecutionEvent(event);
-          return;
-        }
-
-        await eventStore.append(event);
-      },
-    }),
+    executor: codexExecutor,
+    executors: {
+      codex: codexExecutor,
+      claude_code: claudeCodeExecutor,
+    },
+    defaultExecutionBackend: loadConfig().executionBackend,
+    defaultExecutionProfile: loadConfig().executionProfile,
     defaultProject: {
       id: "project-default",
       name: "SpecRail",
@@ -434,6 +459,15 @@ function assertValidRunCreateBody(body: RunRequestBody): void {
     details.push(promptDetail);
   }
 
+  if (body.backend !== undefined) {
+    const backendDetail = getNonEmptyStringDetail("backend", body.backend);
+    if (backendDetail) {
+      details.push(backendDetail);
+    } else if (!EXECUTION_BACKENDS.includes(body.backend as (typeof EXECUTION_BACKENDS)[number])) {
+      details.push({ field: "backend", message: `must be one of: ${EXECUTION_BACKENDS.join(", ")}` });
+    }
+  }
+
   if (body.profile !== undefined) {
     const profileDetail = getNonEmptyStringDetail("profile", body.profile);
     if (profileDetail) {
@@ -493,10 +527,32 @@ function assertValidAppendPlanningMessageBody(body: AppendPlanningMessageRequest
 }
 
 function assertValidResumeRunBody(body: ResumeRunRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
   const promptDetail = getNonEmptyStringDetail("prompt", body.prompt);
 
   if (promptDetail) {
-    throw new RequestValidationError("request validation failed", [promptDetail]);
+    details.push(promptDetail);
+  }
+
+  if (body.backend !== undefined) {
+    const backendDetail = getNonEmptyStringDetail("backend", body.backend);
+    if (backendDetail) {
+      details.push(backendDetail);
+    } else if (!EXECUTION_BACKENDS.includes(body.backend as (typeof EXECUTION_BACKENDS)[number])) {
+      details.push({ field: "backend", message: `must be one of: ${EXECUTION_BACKENDS.join(", ")}` });
+    }
+  }
+
+  if (body.profile !== undefined) {
+    const profileDetail = getNonEmptyStringDetail("profile", body.profile);
+    if (profileDetail) {
+      details.push(profileDetail);
+    }
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
   }
 }
 
@@ -1057,7 +1113,12 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const body = await readJson<ResumeRunRequestBody>(request);
         assertValidResumeRunBody(body);
 
-        const run = await deps.service.resumeRun({ runId: segments[1] ?? "", prompt: body.prompt });
+        const run = await deps.service.resumeRun({
+          runId: segments[1] ?? "",
+          prompt: body.prompt,
+          backend: body.backend,
+          profile: body.profile,
+        });
         sendJson(response, 200, { run });
         return;
       }

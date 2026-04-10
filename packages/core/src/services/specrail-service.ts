@@ -102,7 +102,10 @@ export interface SpecRailServiceDependencies {
   executionRepository: ExecutionRepository;
   eventStore: EventStore;
   artifactWriter: TrackArtifactWriter;
-  executor: ExecutionBackend;
+  executor?: ExecutionBackend;
+  executors?: Record<string, ExecutionBackend>;
+  defaultExecutionBackend?: string;
+  defaultExecutionProfile?: string;
   defaultProject: {
     id: string;
     name: string;
@@ -124,6 +127,7 @@ export interface CreateTrackInput {
 export interface StartRunInput {
   trackId: string;
   prompt: string;
+  backend?: string;
   profile?: string;
   planningSessionId?: string;
 }
@@ -151,6 +155,8 @@ export interface AppendPlanningMessageInput {
 export interface ResumeRunInput {
   runId: string;
   prompt: string;
+  backend?: string;
+  profile?: string;
 }
 
 export interface CancelRunInput {
@@ -327,6 +333,38 @@ function buildListPageResult<T>(items: T[], page: number, pageSize: number): Lis
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
+
+  private listExecutors(): Record<string, ExecutionBackend> {
+    if (this.dependencies.executors && Object.keys(this.dependencies.executors).length > 0) {
+      return this.dependencies.executors;
+    }
+
+    if (this.dependencies.executor) {
+      return { [this.dependencies.executor.name]: this.dependencies.executor };
+    }
+
+    throw new Error("SpecRailService requires at least one execution backend");
+  }
+
+  private resolveExecutor(name?: string): ExecutionBackend {
+    const executors = this.listExecutors();
+    const backendName = name ?? this.dependencies.defaultExecutionBackend ?? this.dependencies.executor?.name;
+
+    if (!backendName) {
+      throw new ValidationError("Execution backend is required");
+    }
+
+    const executor = executors[backendName];
+    if (!executor) {
+      throw new ValidationError(`Unsupported execution backend: ${backendName}`);
+    }
+
+    return executor;
+  }
+
+  private resolveExecutionProfile(profile?: string): string {
+    return profile ?? this.dependencies.defaultExecutionProfile ?? "default";
+  }
 
   constructor(private readonly dependencies: SpecRailServiceDependencies) {
     this.now = dependencies.now ?? (() => new Date().toISOString());
@@ -678,24 +716,26 @@ export class SpecRailService {
       throw new NotFoundError(`Track not found: ${input.trackId}`);
     }
 
+    const executor = this.resolveExecutor(input.backend);
+    const profile = this.resolveExecutionProfile(input.profile);
     const planningContext = await this.resolvePlanningContextForStart(track, input.planningSessionId);
     const executionId = `run-${this.idGenerator()}`;
     const createdAt = this.now();
     const workspacePath = path.join(this.dependencies.workspaceRoot, executionId);
     await mkdir(workspacePath, { recursive: true });
 
-    const launch = await this.dependencies.executor.spawn({
+    const launch = await executor.spawn({
       executionId,
       prompt: input.prompt,
       workspacePath,
-      profile: input.profile ?? "default",
+      profile,
     });
 
     const initialExecution: Execution = {
       id: executionId,
       trackId: track.id,
-      backend: this.dependencies.executor.name,
-      profile: input.profile ?? "default",
+      backend: executor.name,
+      profile,
       workspacePath,
       branchName: `specrail/${executionId}`,
       sessionRef: launch.sessionRef,
@@ -730,20 +770,28 @@ export class SpecRailService {
   async resumeRun(input: ResumeRunInput): Promise<Execution> {
     const execution = await this.requireRun(input.runId);
 
+    if (input.backend && input.backend !== execution.backend) {
+      throw new ValidationError(`Run ${input.runId} is backed by ${execution.backend}, not ${input.backend}`);
+    }
+
     if (!execution.sessionRef) {
       throw new Error(`Run is missing sessionRef: ${input.runId}`);
     }
 
-    const launch = await this.dependencies.executor.resume({
+    const executor = this.resolveExecutor(execution.backend);
+    const profile = this.resolveExecutionProfile(input.profile ?? execution.profile);
+
+    const launch = await executor.resume({
       executionId: execution.id,
       sessionRef: execution.sessionRef,
       prompt: input.prompt,
       workspacePath: execution.workspacePath,
-      profile: execution.profile,
+      profile,
     });
 
     const resumedExecution: Execution = {
       ...execution,
+      profile,
       command: launch.command,
       status: "running",
       startedAt: execution.startedAt ?? this.now(),
@@ -773,7 +821,7 @@ export class SpecRailService {
       throw new Error(`Run is missing sessionRef: ${input.runId}`);
     }
 
-    const cancellationEvent = await this.dependencies.executor.cancel({
+    const cancellationEvent = await this.resolveExecutor(execution.backend).cancel({
       executionId: execution.id,
       sessionRef: execution.sessionRef,
       workspacePath: execution.workspacePath,

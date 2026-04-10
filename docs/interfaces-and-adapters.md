@@ -222,6 +222,14 @@ sequenceDiagram
 
 이 계약 덕분에 API/service 레이어는 Codex와 Claude Code를 같은 execution model로 다룰 수 있습니다.
 
+현재 SpecRail API는 이 shared shape를 그대로 노출합니다.
+
+- `POST /runs` → `{ trackId, prompt, backend?, profile?, planningSessionId? }`
+- `POST /runs/:runId/resume` → `{ prompt, backend?, profile? }`
+- persisted run metadata에는 `backend`, `profile`, `providerSessionId`, `providerInvocationId`, `resumeSessionRef`, `providerMetadata`가 함께 남습니다.
+
+즉, caller는 provider-specific route를 따로 알 필요 없이 `backend: "claude_code"`와 원하는 profile만 넘기면 됩니다.
+
 ## CodexAdapter
 
 `packages/adapters/src/providers/codex-adapter.stub.ts`에 위치한 Codex 백엔드 어댑터입니다.

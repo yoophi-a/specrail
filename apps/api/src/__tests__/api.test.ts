@@ -746,17 +746,32 @@ test("API returns structured validation and bad-request errors", async () => {
       body: JSON.stringify({
         trackId: "",
         prompt: "",
+        backend: "wat",
         profile: "",
       }),
     });
     assert.equal(invalidRunResponse.status, 422);
+    const invalidRunPayload = (await invalidRunResponse.json()) as {
+      error: { details: Array<{ field: string }> };
+    };
+    assert.deepEqual(
+      invalidRunPayload.error.details.map((detail) => detail.field),
+      ["trackId", "prompt", "backend", "profile"],
+    );
 
     const invalidResumeResponse = await fetch(`${baseUrl}/runs/run-1/resume`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: "" }),
+      body: JSON.stringify({ prompt: "", backend: "wat", profile: "" }),
     });
     assert.equal(invalidResumeResponse.status, 422);
+    const invalidResumePayload = (await invalidResumeResponse.json()) as {
+      error: { details: Array<{ field: string }> };
+    };
+    assert.deepEqual(
+      invalidResumePayload.error.details.map((detail) => detail.field),
+      ["prompt", "backend", "profile"],
+    );
 
     const invalidTrackListResponse = await fetch(`${baseUrl}/tracks?priority=urgent&status=wat`);
     assert.equal(invalidTrackListResponse.status, 422);

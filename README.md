@@ -30,7 +30,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 ## What the current MVP can already do
 - create track records and materialize `spec.md`, `plan.md`, and `tasks.md`
 - persist project, track, run, and event state on local files
-- start a Codex-backed run with durable session metadata
+- start a Codex-backed or Claude Code-backed run with durable session metadata
 - resume and cancel a run
 - expose run events through JSON and SSE APIs
 - list tracks and runs with filtering, pagination, and sorting
@@ -51,11 +51,10 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - automated API/config/adapter/frontend tests
 
 ### Not implemented yet
-- authentication and multi-user access control
 - database-backed persistence
 - real approval broker or approval event workflow
 - worktree or branch orchestration beyond metadata/workspace path allocation
-- process-backed non-Codex executor adapters (Claude Code contract is defined, runtime implementation still pending)
+- authentication and multi-user access control
 - web UI or GitHub app/webhooks
 - artifact editing endpoints
 - automatic track reconciliation from terminal run outcomes beyond the current first-pass policy
@@ -83,7 +82,8 @@ Current endpoints in `apps/api/src/index.ts`:
 ### Runs
 - `POST /runs`
   - start a run for a track
-  - body: `{ trackId, prompt, profile?, planningSessionId? }`
+  - body: `{ trackId, prompt, backend?, profile?, planningSessionId? }`
+  - `backend` currently supports `codex` and `claude_code`
   - runs infer and persist the latest approved planning context, and reject starts while newer planning revisions are still pending approval
 - `GET /runs`
   - list runs with pagination and explicit sorting
@@ -94,7 +94,8 @@ Current endpoints in `apps/api/src/index.ts`:
   - return persisted run metadata
 - `POST /runs/:runId/resume`
   - resume an existing run
-  - body: `{ prompt }`
+  - body: `{ prompt, backend?, profile? }`
+  - `backend` is optional and must match the run's persisted backend when provided
 - `POST /runs/:runId/cancel`
   - cancel a running run
 - `GET /runs/:runId/events`
@@ -176,6 +177,7 @@ Notes:
 - current API actively exercises `running`, `completed`, `failed`, and `cancelled`
 - terminal run states reconcile back into track status with a first-pass policy: `completed -> review`, `failed -> failed`, `cancelled -> blocked`
 - run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, normalized provider session metadata (`providerSessionId`, `providerInvocationId`, `resumeSessionRef`, `parentSessionRef`, `providerMetadata`), event summary, and linked planning-context references (`planningSessionId`, approved revision ids, stale flag)
+- Claude Code runs additionally surface provider metadata such as resolved model, transcript/log path, and working directory through the shared `providerMetadata` shape
 
 ### Event types
 Normalized event types currently defined in core:
@@ -221,6 +223,8 @@ pnpm dev:telegram
 ```
 
 For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`.
+
+For the API server, you can set `SPECRAIL_EXECUTION_BACKEND` and `SPECRAIL_EXECUTION_PROFILE` to choose the default executor/backend and profile used when callers omit them.
 
 Then call the API locally, for example:
 
