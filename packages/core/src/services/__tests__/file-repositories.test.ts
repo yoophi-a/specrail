@@ -6,6 +6,7 @@ import test from "node:test";
 
 import type { Execution, ExecutionEvent, Project, Track } from "../../domain/types.js";
 import {
+  FileHeartbeatStateStore,
   FileGitHubRunCommentSyncStore,
   FileExecutionRepository,
   FileProjectRepository,
@@ -163,4 +164,49 @@ test("github run comment sync store persists comment metadata by track id", asyn
     ],
   });
   assert.equal(await syncStore.getByTrackId("missing-track"), null);
+});
+
+test("heartbeat state store persists automation heartbeat snapshots", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-heartbeat-state-"));
+  const heartbeatStore = new FileHeartbeatStateStore(rootDir);
+
+  await heartbeatStore.put({
+    id: "specrail-automation",
+    updatedAt: "2026-04-10T01:00:00.000Z",
+    lastStartedTask: {
+      task: { trackId: "track-56", runId: "run-56", taskId: "issue-56", title: "Add heartbeat state tracking" },
+      timestamp: "2026-04-10T00:55:00.000Z",
+      session: { sessionRef: "session:run-56", executionId: "run-56", profile: "default" },
+    },
+    lastCompletedTask: {
+      task: { trackId: "track-55", runId: "run-55", taskId: "issue-55", title: "Publish run summaries" },
+      timestamp: "2026-04-10T00:40:00.000Z",
+    },
+    lastReportAt: "2026-04-10T00:58:00.000Z",
+    activeTask: {
+      task: { trackId: "track-56", runId: "run-56", taskId: "issue-56", title: "Add heartbeat state tracking" },
+      startedAt: "2026-04-10T00:55:00.000Z",
+      session: { sessionRef: "session:run-56", executionId: "run-56", workspacePath: "/tmp/specrail/run-56" },
+    },
+  });
+
+  assert.deepEqual(await heartbeatStore.get(), {
+    id: "specrail-automation",
+    updatedAt: "2026-04-10T01:00:00.000Z",
+    lastStartedTask: {
+      task: { trackId: "track-56", runId: "run-56", taskId: "issue-56", title: "Add heartbeat state tracking" },
+      timestamp: "2026-04-10T00:55:00.000Z",
+      session: { sessionRef: "session:run-56", executionId: "run-56", profile: "default" },
+    },
+    lastCompletedTask: {
+      task: { trackId: "track-55", runId: "run-55", taskId: "issue-55", title: "Publish run summaries" },
+      timestamp: "2026-04-10T00:40:00.000Z",
+    },
+    lastReportAt: "2026-04-10T00:58:00.000Z",
+    activeTask: {
+      task: { trackId: "track-56", runId: "run-56", taskId: "issue-56", title: "Add heartbeat state tracking" },
+      startedAt: "2026-04-10T00:55:00.000Z",
+      session: { sessionRef: "session:run-56", executionId: "run-56", workspacePath: "/tmp/specrail/run-56" },
+    },
+  });
 });

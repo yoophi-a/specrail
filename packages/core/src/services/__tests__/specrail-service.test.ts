@@ -6,6 +6,7 @@ import test from "node:test";
 
 import type { ExecutionEvent } from "../../domain/types.js";
 import {
+  FileHeartbeatStateStore,
   FileGitHubRunCommentSyncStore,
   FileExecutionRepository,
   FileProjectRepository,
@@ -13,6 +14,67 @@ import {
   JsonlEventStore,
 } from "../file-repositories.js";
 import { SpecRailService } from "../specrail-service.js";
+
+test("SpecRailService updates durable heartbeat state for start, report, and completion", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-heartbeat-"));
+  const stateDir = path.join(rootDir, "state");
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(stateDir),
+    trackRepository: new FileTrackRepository(stateDir),
+    executionRepository: new FileExecutionRepository(stateDir),
+    eventStore: new JsonlEventStore(stateDir),
+    heartbeatStateStore: new FileHeartbeatStateStore(stateDir),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("not used");
+      },
+      async resume() {
+        throw new Error("not used");
+      },
+      async cancel() {
+        throw new Error("not used");
+      },
+    },
+    defaultProject: { id: "project-default", name: "SpecRail" },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = [
+        "2026-04-10T00:00:00.000Z",
+        "2026-04-10T00:05:00.000Z",
+        "2026-04-10T00:10:00.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-10T00:10:00.000Z";
+    })(),
+  });
+
+  const started = await service.markHeartbeatTaskStarted({
+    task: { trackId: "track-56", runId: "run-56", taskId: "issue-56", title: "Add heartbeat state tracking" },
+    session: { sessionRef: "session:run-56", executionId: "run-56", profile: "default" },
+  });
+  assert.equal(started.lastStartedTask?.task.taskId, "issue-56");
+  assert.equal(started.activeTask?.session?.sessionRef, "session:run-56");
+
+  const reported = await service.markHeartbeatReported();
+  assert.equal(reported.lastReportAt, "2026-04-10T00:05:00.000Z");
+  assert.equal(reported.activeTask?.task.taskId, "issue-56");
+
+  const completed = await service.markHeartbeatTaskCompleted();
+  assert.equal(completed.activeTask, undefined);
+  assert.equal(completed.lastCompletedTask?.task.taskId, "issue-56");
+  assert.equal(completed.lastCompletedTask?.session?.sessionRef, "session:run-56");
+
+  const persisted = await service.getHeartbeatState();
+  assert.equal(persisted?.activeTask, undefined);
+  assert.deepEqual(persisted, {
+    id: "specrail-automation",
+    updatedAt: "2026-04-10T00:10:00.000Z",
+    lastStartedTask: completed.lastStartedTask,
+    lastCompletedTask: completed.lastCompletedTask,
+    lastReportAt: "2026-04-10T00:05:00.000Z",
+  });
+});
 
 test("SpecRailService creates tracks, artifacts, runs, and execution events", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-"));

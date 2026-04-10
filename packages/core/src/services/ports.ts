@@ -1,4 +1,4 @@
-import type { Execution, ExecutionEvent, GitHubRunCommentSyncState, Project, Track } from "../domain/types.js";
+import type { Execution, ExecutionEvent, GitHubRunCommentSyncState, HeartbeatState, Project, Track } from "../domain/types.js";
 
 export interface GitHubRunCommentTarget {
   kind: "issue" | "pull_request";
@@ -49,4 +49,9 @@ export interface ExecutionRepository {
 export interface EventStore {
   append(event: ExecutionEvent): Promise<void>;
   listByExecution(executionId: string): Promise<ExecutionEvent[]>;
+}
+
+export interface HeartbeatStateStore {
+  get(): Promise<HeartbeatState | null>;
+  put(state: HeartbeatState): Promise<void>;
 }

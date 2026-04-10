@@ -290,6 +290,8 @@ At runtime the API writes under `SPECRAIL_DATA_DIR` (default from config), with 
       <runId>.json
     events/
       <runId>.jsonl
+    automation/
+      heartbeat-state.json
     github-run-comment-sync/
       <trackId>.json
   sessions/
@@ -303,8 +305,64 @@ At runtime the API writes under `SPECRAIL_DATA_DIR` (default from config), with 
 Notes:
 - `artifacts/tracks/<trackId>/events.jsonl` is materialized as part of the artifact contract.
 - the current API reads run events from `state/events/<runId>.jsonl`.
+- automation heartbeat loop state is persisted at `state/automation/heartbeat-state.json`.
 - GitHub run summary sync metadata is persisted under `state/github-run-comment-sync/<trackId>.json`.
 - session-level executor logs are also persisted separately under `sessions/`.
+
+### Automation heartbeat state
+
+SpecRail now reserves a small durable state file for heartbeat-driven automation re-entry:
+
+```json
+{
+  "id": "specrail-automation",
+  "updatedAt": "2026-04-10T01:00:00.000Z",
+  "lastStartedTask": {
+    "task": {
+      "trackId": "track-56",
+      "runId": "run-56",
+      "taskId": "issue-56",
+      "title": "Add heartbeat state tracking"
+    },
+    "timestamp": "2026-04-10T00:55:00.000Z",
+    "session": {
+      "sessionRef": "session:run-56",
+      "executionId": "run-56",
+      "profile": "default"
+    }
+  },
+  "lastCompletedTask": {
+    "task": {
+      "trackId": "track-55",
+      "runId": "run-55",
+      "taskId": "issue-55",
+      "title": "Publish run summaries"
+    },
+    "timestamp": "2026-04-10T00:40:00.000Z"
+  },
+  "lastReportAt": "2026-04-10T00:58:00.000Z",
+  "activeTask": {
+    "task": {
+      "trackId": "track-56",
+      "runId": "run-56",
+      "taskId": "issue-56",
+      "title": "Add heartbeat state tracking"
+    },
+    "startedAt": "2026-04-10T00:55:00.000Z",
+    "session": {
+      "sessionRef": "session:run-56",
+      "executionId": "run-56",
+      "workspacePath": "/tmp/specrail/run-56"
+    }
+  }
+}
+```
+
+Intended usage:
+- `lastStartedTask` records the most recent delegated item
+- `lastCompletedTask` records the most recent finished item
+- `lastReportAt` tracks the last heartbeat/report emission time
+- `activeTask` keeps the currently running task plus session context when available
 
 ## Domain model snapshot
 

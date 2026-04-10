@@ -1,11 +1,12 @@
 import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.js";
+import type { Execution, ExecutionEvent, HeartbeatState, Project, Track } from "../domain/types.js";
 import type {
   EventStore,
   ExecutionRepository,
   GitHubRunCommentSyncStore,
+  HeartbeatStateStore,
   ProjectRepository,
   TrackRepository,
 } from "./ports.js";
@@ -17,6 +18,7 @@ interface FileStatePaths {
   executionsDir: string;
   eventsDir: string;
   githubRunCommentSyncDir: string;
+  automationDir: string;
 }
 
 export function getStatePaths(rootDir: string): FileStatePaths {
@@ -26,6 +28,7 @@ export function getStatePaths(rootDir: string): FileStatePaths {
     executionsDir: path.join(rootDir, "executions"),
     eventsDir: path.join(rootDir, "events"),
     githubRunCommentSyncDir: path.join(rootDir, "github-run-comment-sync"),
+    automationDir: path.join(rootDir, "automation"),
   };
 }
 
@@ -202,5 +205,21 @@ export class FileGitHubRunCommentSyncStore implements GitHubRunCommentSyncStore 
 
   upsert(state: GitHubRunCommentSyncState): Promise<void> {
     return this.repository.update(state);
+  }
+}
+
+export class FileHeartbeatStateStore implements HeartbeatStateStore {
+  private readonly filePath: string;
+
+  constructor(rootDir: string) {
+    this.filePath = path.join(getStatePaths(rootDir).automationDir, "heartbeat-state.json");
+  }
+
+  get(): Promise<HeartbeatState | null> {
+    return readJsonFile<HeartbeatState>(this.filePath);
+  }
+
+  put(state: HeartbeatState): Promise<void> {
+    return writeJsonFile(this.filePath, state);
   }
 }

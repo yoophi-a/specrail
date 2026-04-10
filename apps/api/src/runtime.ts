@@ -1,6 +1,7 @@
 import { CodexAdapter, FileOpenSpecAdapter, GitHubRunCommentGhPublisher } from "@specrail/adapters";
 import { loadConfig, materializeTrackArtifacts } from "@specrail/config";
 import {
+  FileHeartbeatStateStore,
   FileExecutionRepository,
   FileGitHubRunCommentSyncStore,
   FileProjectRepository,
@@ -51,6 +52,7 @@ export function createDependencies(dataDir: string, repoArtifactRoot: string, gi
 
   const eventStore = new JsonlEventStore(stateDir);
   const githubRunCommentSyncStore = new FileGitHubRunCommentSyncStore(stateDir);
+  const heartbeatStateStore = new FileHeartbeatStateStore(stateDir);
   const projectRepository = new FileProjectRepository(stateDir);
   const trackRepository = new FileTrackRepository(stateDir);
   const executionRepository = new FileExecutionRepository(stateDir);
@@ -106,6 +108,7 @@ export function createDependencies(dataDir: string, repoArtifactRoot: string, gi
     openSpecAdapter: new FileOpenSpecAdapter(),
     githubRunCommentPublisher: githubPublishEnabled ? new GitHubRunCommentGhPublisher() : undefined,
     githubRunCommentSyncStore,
+    heartbeatStateStore,
   };
 
   service = new SpecRailService(serviceDependencies);

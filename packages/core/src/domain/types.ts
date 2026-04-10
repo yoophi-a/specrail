@@ -335,3 +335,38 @@ export interface ExecutionEvent {
   summary: string;
   payload?: Record<string, unknown>;
 }
+
+export interface HeartbeatTaskReference {
+  trackId?: string;
+  runId?: string;
+  taskId?: string;
+  title: string;
+}
+
+export interface HeartbeatSessionContext {
+  sessionRef?: string;
+  executionId?: string;
+  profile?: string;
+  workspacePath?: string;
+}
+
+export interface HeartbeatTaskSnapshot {
+  task: HeartbeatTaskReference;
+  timestamp: string;
+  session?: HeartbeatSessionContext;
+}
+
+export interface HeartbeatActiveTask {
+  task: HeartbeatTaskReference;
+  startedAt: string;
+  session?: HeartbeatSessionContext;
+}
+
+export interface HeartbeatState {
+  id: "specrail-automation";
+  updatedAt: string;
+  lastStartedTask?: HeartbeatTaskSnapshot;
+  lastCompletedTask?: HeartbeatTaskSnapshot;
+  lastReportAt?: string;
+  activeTask?: HeartbeatActiveTask;
+}

@@ -33,6 +33,11 @@ import type {
   GitHubIssueReference,
   GitHubPullRequestReference,
   GitHubRunCommentSyncState,
+  HeartbeatActiveTask,
+  HeartbeatSessionContext,
+  HeartbeatState,
+  HeartbeatTaskReference,
+  HeartbeatTaskSnapshot,
   Project,
   RunInspection,
   Track,
@@ -48,6 +53,7 @@ import type {
   GitHubRunCommentPublishResult,
   GitHubRunCommentPublisher,
   GitHubRunCommentSyncStore,
+  HeartbeatStateStore,
   ProjectRepository,
   TrackRepository,
 } from "./ports.js";
@@ -407,8 +413,23 @@ export interface SpecRailServiceDependencies {
   workspaceRoot: string;
   githubRunCommentPublisher?: GitHubRunCommentPublisher;
   githubRunCommentSyncStore?: GitHubRunCommentSyncStore;
+  heartbeatStateStore?: HeartbeatStateStore;
   now?: () => string;
   idGenerator?: () => string;
+}
+
+export interface MarkHeartbeatTaskStartedInput {
+  task: HeartbeatTaskReference;
+  session?: HeartbeatSessionContext;
+}
+
+export interface MarkHeartbeatTaskCompletedInput {
+  task?: HeartbeatTaskReference;
+  session?: HeartbeatSessionContext;
+}
+
+export interface UpdateHeartbeatReportInput {
+  reportedAt?: string;
 }
 
 export interface CreateTrackInput {
@@ -840,6 +861,22 @@ function summarizeGitHubIntegration(
   };
 }
 
+function buildHeartbeatTaskSnapshot(task: HeartbeatTaskReference, timestamp: string, session?: HeartbeatSessionContext): HeartbeatTaskSnapshot {
+  return {
+    task,
+    timestamp,
+    ...(session ? { session } : {}),
+  };
+}
+
+function buildHeartbeatActiveTask(task: HeartbeatTaskReference, startedAt: string, session?: HeartbeatSessionContext): HeartbeatActiveTask {
+  return {
+    task,
+    startedAt,
+    ...(session ? { session } : {}),
+  };
+}
+
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
@@ -847,6 +884,66 @@ export class SpecRailService {
   constructor(private readonly dependencies: SpecRailServiceDependencies) {
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.idGenerator = dependencies.idGenerator ?? randomUUID;
+  }
+
+  getHeartbeatState(): Promise<HeartbeatState | null> {
+    return this.dependencies.heartbeatStateStore?.get() ?? Promise.resolve(null);
+  }
+
+  async markHeartbeatTaskStarted(input: MarkHeartbeatTaskStartedInput): Promise<HeartbeatState> {
+    const timestamp = this.now();
+    const nextState: HeartbeatState = {
+      ...(await this.getHeartbeatStateSnapshot(timestamp)),
+      updatedAt: timestamp,
+      lastStartedTask: buildHeartbeatTaskSnapshot(input.task, timestamp, input.session),
+      activeTask: buildHeartbeatActiveTask(input.task, timestamp, input.session),
+    };
+
+    await this.putHeartbeatState(nextState);
+    return nextState;
+  }
+
+  async markHeartbeatTaskCompleted(input: MarkHeartbeatTaskCompletedInput = {}): Promise<HeartbeatState> {
+    const timestamp = this.now();
+    const previous = await this.getHeartbeatStateSnapshot(timestamp);
+    const task = input.task ?? previous.activeTask?.task ?? previous.lastStartedTask?.task;
+
+    const nextState: HeartbeatState = {
+      ...previous,
+      updatedAt: timestamp,
+      activeTask: undefined,
+      ...(task ? { lastCompletedTask: buildHeartbeatTaskSnapshot(task, timestamp, input.session ?? previous.activeTask?.session) } : {}),
+    };
+
+    await this.putHeartbeatState(nextState);
+    return nextState;
+  }
+
+  async markHeartbeatReported(input: UpdateHeartbeatReportInput = {}): Promise<HeartbeatState> {
+    const timestamp = input.reportedAt ?? this.now();
+    const nextState: HeartbeatState = {
+      ...(await this.getHeartbeatStateSnapshot(timestamp)),
+      updatedAt: timestamp,
+      lastReportAt: timestamp,
+    };
+
+    await this.putHeartbeatState(nextState);
+    return nextState;
+  }
+
+  private async getHeartbeatStateSnapshot(fallbackTimestamp: string): Promise<HeartbeatState> {
+    return (await this.dependencies.heartbeatStateStore?.get()) ?? {
+      id: "specrail-automation",
+      updatedAt: fallbackTimestamp,
+    };
+  }
+
+  private async putHeartbeatState(state: HeartbeatState): Promise<void> {
+    if (!this.dependencies.heartbeatStateStore) {
+      throw new Error("Heartbeat state store is not configured");
+    }
+
+    await this.dependencies.heartbeatStateStore.put(state);
   }
 
   async createTrack(input: CreateTrackInput): Promise<Track> {
