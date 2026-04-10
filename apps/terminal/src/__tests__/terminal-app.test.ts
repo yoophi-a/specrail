@@ -83,6 +83,28 @@ test("SpecRailTerminalApiClient loads planning workspace details for a track", a
   assert.equal(detail.planningWorkspace?.selectedApprovalRequestId, "approval-1");
 });
 
+test("SpecRailTerminalApiClient surfaces API validation details for execution actions", async () => {
+  const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
+    const url = String(input);
+
+    if (url.endsWith("/runs") && init?.method === "POST") {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: "request validation failed",
+            details: [{ field: "prompt", message: "must not be empty" }],
+          },
+        }),
+        { status: 422 },
+      );
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  await assert.rejects(() => client.startRun({ trackId: "track-1", prompt: "" }), /request validation failed \(prompt: must not be empty\)/);
+});
+
 test("SpecRailTerminalApiClient parses SSE frames from run event streams", async () => {
   const encoder = new TextEncoder();
   const chunks = [
@@ -208,6 +230,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
     },
     runEvents: createEmptyRunEventFeedState(),
     pendingTrackAction: null,
+    pendingExecutionAction: null,
     summary: {
       fetchedAt: "2026-04-10T12:00:00.000Z",
       tracks: [{ id: "track-1", title: "Terminal shell", status: "ready", priority: "high" }],
@@ -225,8 +248,9 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /Need approval\?/);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
+  assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, s start, e resume, c cancel, a approve, x reject, r refresh, q quit/);
 });
 
 test("renderAppShell renders run event monitor details", () => {
@@ -284,6 +308,7 @@ test("renderAppShell renders run event monitor details", () => {
       ],
     ),
     pendingTrackAction: null,
+    pendingExecutionAction: null,
     summary: {
       fetchedAt: "2026-04-10T12:06:00.000Z",
       tracks: [{ id: "track-1", title: "Terminal shell", status: "failed" }],
@@ -294,6 +319,7 @@ test("renderAppShell renders run event monitor details", () => {
   assert.match(rendered, /event summary: 1 event, last at 2026-04-10T12:04:00.000Z/);
   assert.match(rendered, /failure focus: Failed Claude Code session run-1-claude \(exit 1\)/);
   assert.match(rendered, /stream: reconnecting \(attempt 2\)/);
+  assert.match(rendered, /operator actions: press e to resume this run/);
   assert.match(rendered, /recent activity:/);
   assert.match(rendered, /task_status_changed \| status=failed \| Failed Claude Code session run-1-claude/);
 });
@@ -334,6 +360,7 @@ test("selectNextItem advances run selection on runs screen", () => {
       },
     ]),
     pendingTrackAction: null,
+    pendingExecutionAction: null,
     summary: {
       fetchedAt: "2026-04-10T12:00:00.000Z",
       tracks: [{ id: "track-1", title: "Terminal shell", status: "ready" }],
@@ -376,6 +403,7 @@ test("refreshTerminalState preserves selection and surfaces detail load errors",
       },
       runEvents: createEmptyRunEventFeedState("run-1"),
       pendingTrackAction: null,
+    pendingExecutionAction: null,
       summary: {
         fetchedAt: "2026-04-10T12:00:00.000Z",
         tracks: [
@@ -469,6 +497,7 @@ test("appendRunEvents deduplicates by event id and syncRunEventSelection resets 
     runs: { selectedId: "run-2", selectedIndex: 1, loading: false, error: null, data: null },
     runEvents: { ...feed, runId: "run-1", connection: "live" },
     pendingTrackAction: null,
+    pendingExecutionAction: null,
     summary: {
       fetchedAt: "2026-04-10T12:02:00.000Z",
       tracks: [],

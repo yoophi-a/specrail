@@ -5,6 +5,13 @@ import { loadTerminalClientConfig, type SpecRailTerminalClientConfig } from "@sp
 export type TerminalScreenId = "home" | "tracks" | "runs" | "settings";
 export type RunEventConnectionState = "idle" | "connecting" | "live" | "reconnecting" | "closed" | "error";
 export type ArtifactKind = "spec" | "plan" | "tasks";
+export type ExecutionActionKind = "start" | "resume" | "cancel";
+
+const EXECUTION_BACKEND_OPTIONS = ["codex", "claude_code"] as const;
+const EXECUTION_PROFILE_OPTIONS: Record<string, string[]> = {
+  codex: ["default", "gpt-5.4", "gpt-5.4-mini"],
+  claude_code: ["default", "sonnet", "opus"],
+};
 
 export interface TrackListItem {
   id: string;
@@ -155,6 +162,19 @@ export interface PendingTrackActionState {
   approvalRequestId: string;
 }
 
+export interface PendingExecutionActionState {
+  kind: ExecutionActionKind;
+  scope: "track" | "run";
+  trackId?: string;
+  runId?: string;
+  planningSessionId?: string;
+  backend: string;
+  profile: string;
+  prompt: string;
+  submitting: boolean;
+  message: string | null;
+}
+
 export interface TerminalAppState {
   screen: TerminalScreenId;
   statusLine: string;
@@ -167,6 +187,7 @@ export interface TerminalAppState {
   runs: DetailPanelState<RunDetailSnapshot>;
   runEvents: RunEventFeedState;
   pendingTrackAction: PendingTrackActionState | null;
+  pendingExecutionAction: PendingExecutionActionState | null;
 }
 
 interface TracksResponse {
@@ -200,19 +221,50 @@ interface RunDetailResponse {
   run: RunListItem;
 }
 
+interface ApiErrorResponse {
+  error?: {
+    message?: string;
+    details?: Array<{ field?: string; message?: string }>;
+  };
+}
+
 export class SpecRailTerminalApiClient {
   constructor(
     private readonly baseUrl: string,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  private async request<T>(pathname: string): Promise<T> {
-    const response = await this.fetchImpl(new URL(pathname, this.baseUrl));
+  private async request<T>(pathname: string, init?: RequestInit): Promise<T> {
+    const response = await this.fetchImpl(new URL(pathname, this.baseUrl), init);
     if (!response.ok) {
-      throw new Error(`SpecRail API request failed (${response.status}) for ${pathname}`);
+      throw new Error(await this.buildRequestError(response, pathname));
     }
 
     return (await response.json()) as T;
+  }
+
+  private async buildRequestError(response: Response, pathname: string): Promise<string> {
+    const fallback = `SpecRail API request failed (${response.status}) for ${pathname}`;
+
+    try {
+      const payload = (await response.json()) as ApiErrorResponse;
+      const message = payload.error?.message?.trim();
+      const details = payload.error?.details
+        ?.map((detail) => [detail.field, detail.message].filter(Boolean).join(": "))
+        .filter((detail) => detail.length > 0);
+
+      if (message && details && details.length > 0) {
+        return `${message} (${details.join("; ")})`;
+      }
+
+      if (message) {
+        return message;
+      }
+    } catch {
+      // ignore parse failures and fall back to the generic message
+    }
+
+    return fallback;
   }
 
   async loadSummary(): Promise<TerminalSummarySnapshot> {
@@ -268,19 +320,43 @@ export class SpecRailTerminalApiClient {
   }
 
   async decideApprovalRequest(approvalRequestId: string, decision: "approve" | "reject"): Promise<void> {
-    const response = await this.fetchImpl(new URL(`/approval-requests/${approvalRequestId}/${decision}`, this.baseUrl), {
+    await this.request(`/approval-requests/${approvalRequestId}/${decision}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ decidedBy: "terminal" }),
     });
-
-    if (!response.ok) {
-      throw new Error(`SpecRail API request failed (${response.status}) for /approval-requests/${approvalRequestId}/${decision}`);
-    }
   }
 
   async loadRunDetail(runId: string): Promise<RunDetailSnapshot> {
     const payload = await this.request<RunDetailResponse>(`/runs/${runId}`);
+    return { run: payload.run };
+  }
+
+  async startRun(input: { trackId: string; prompt: string; backend?: string; profile?: string; planningSessionId?: string }): Promise<RunDetailSnapshot> {
+    const payload = await this.request<RunDetailResponse>("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+
+    return { run: payload.run };
+  }
+
+  async resumeRun(input: { runId: string; prompt: string; backend?: string; profile?: string }): Promise<RunDetailSnapshot> {
+    const payload = await this.request<RunDetailResponse>(`/runs/${input.runId}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: input.prompt, backend: input.backend, profile: input.profile }),
+    });
+
+    return { run: payload.run };
+  }
+
+  async cancelRun(runId: string): Promise<RunDetailSnapshot> {
+    const payload = await this.request<RunDetailResponse>(`/runs/${runId}/cancel`, {
+      method: "POST",
+    });
+
     return { run: payload.run };
   }
 
@@ -376,6 +452,32 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     runs: createEmptyDetailState<RunDetailSnapshot>(),
     runEvents: createEmptyRunEventFeedState(),
     pendingTrackAction: null,
+    pendingExecutionAction: null,
+  };
+}
+
+export function createExecutionActionDraft(input: {
+  kind: ExecutionActionKind;
+  scope: "track" | "run";
+  trackId?: string;
+  runId?: string;
+  planningSessionId?: string;
+  backend?: string;
+  profile?: string;
+  prompt?: string;
+  message?: string | null;
+}): PendingExecutionActionState {
+  return {
+    kind: input.kind,
+    scope: input.scope,
+    trackId: input.trackId,
+    runId: input.runId,
+    planningSessionId: input.planningSessionId,
+    backend: input.backend ?? "codex",
+    profile: input.profile ?? "default",
+    prompt: input.prompt ?? "",
+    submitting: false,
+    message: input.message ?? null,
   };
 }
 
@@ -409,6 +511,7 @@ export async function bootstrapTerminalState(
     runs,
     runEvents: createEmptyRunEventFeedState(runs.selectedId),
     pendingTrackAction: null,
+    pendingExecutionAction: null,
   });
 }
 
@@ -429,6 +532,7 @@ export async function refreshTerminalState(
     tracks,
     runs,
     pendingTrackAction: null,
+    pendingExecutionAction: null,
   });
 }
 
@@ -586,8 +690,42 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, s start, e resume, c cancel, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    ...renderExecutionActionComposer(state.pendingExecutionAction),
   ].join("\n");
+}
+
+function renderExecutionActionComposer(action: PendingExecutionActionState | null): string[] {
+  if (!action) {
+    return [];
+  }
+
+  const title = action.kind === "start"
+    ? `Execution action: start track ${action.trackId ?? "unknown"}`
+    : action.kind === "resume"
+      ? `Execution action: resume run ${action.runId ?? "unknown"}`
+      : `Execution action: cancel run ${action.runId ?? "unknown"}`;
+
+  if (action.kind === "cancel") {
+    return [
+      "",
+      title,
+      `- backend/profile: ${action.backend} / ${action.profile}`,
+      `- confirmation: press Enter to cancel, Esc to abort${action.submitting ? " (submitting...)" : ""}`,
+      action.message ? `- note: ${action.message}` : "- note: this is a best-effort local cancellation request",
+    ];
+  }
+
+  return [
+    "",
+    title,
+    `- backend: ${action.backend}${action.kind === "resume" ? " (locked to run backend)" : " (press b to cycle)"}`,
+    `- profile: ${action.profile}`,
+    `- prompt: ${action.prompt || "(required, type to edit)"}`,
+    `- planning session: ${action.planningSessionId ?? "auto/latest approved"}`,
+    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, abort: Esc, backspace deletes`,
+    action.message ? `- note: ${action.message}` : "- note: printable keys edit prompt, p cycles profile presets",
+  ];
 }
 
 function renderScreenBody(state: TerminalAppState): string[] {
@@ -616,6 +754,7 @@ function renderScreenBody(state: TerminalAppState): string[] {
         "- Navigation: use j/k or arrow keys to move through track/run selections.",
         "- Tracks view surfaces planning sessions, revision history, and pending approvals.",
         "- Press a/x on the tracks screen to approve or reject the next pending request.",
+        "- Press s on tracks to start a run, e on runs to resume, c on runs to cancel.",
         "- Runs view tails live SSE events with automatic reconnect attempts.",
       ];
     case "home":
@@ -628,6 +767,7 @@ function renderScreenBody(state: TerminalAppState): string[] {
         `- Selected track: ${state.tracks.selectedId ?? "none"}`,
         `- Selected run: ${state.runs.selectedId ?? "none"}`,
         `- Run stream: ${state.runEvents.runId ? `${state.runEvents.connection} (${state.runEvents.items.length} events cached)` : "idle"}`,
+        `- Pending execution action: ${state.pendingExecutionAction ? `${state.pendingExecutionAction.kind} ${state.pendingExecutionAction.scope}` : "none"}`,
         state.error ? `- Last refresh error: ${state.error}` : "- Last refresh error: none",
       ];
   }
@@ -718,6 +858,7 @@ function renderTrackDetail(
     `- revision preview: ${selectedRevision ? previewText(selectedRevision.content, 120) : "none"}`,
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
     `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
+    `- execution actions: press s to start a run for this track${detail.planningContext?.hasPendingChanges ? " (currently blocked until approvals land)" : ""}`,
   ];
 }
 
@@ -789,9 +930,28 @@ function renderRunDetail(
     `- last event: ${lastEvent ? formatEventLine(lastEvent) : run.summary?.lastEventSummary ?? "none"}`,
     `- failure focus: ${recentFailure ? formatFailureFocus(recentFailure) : terminal && run.status === "failed" ? "run failed, inspect recent provider events" : "none"}`,
     `- stream: ${formatStreamStatus(feed, terminal)}`,
+    `- operator actions: ${formatRunOperatorActions(run)}`,
     "- recent activity:",
     ...renderRecentRunEvents(feed, run.id),
   ];
+}
+
+function nextProfileOption(backend: string, currentProfile: string): string {
+  const options = EXECUTION_PROFILE_OPTIONS[backend] ?? ["default"];
+  const currentIndex = options.findIndex((option) => option === currentProfile);
+  return options[(currentIndex + 1 + options.length) % options.length] ?? currentProfile;
+}
+
+function formatRunOperatorActions(run: RunListItem): string {
+  if (run.status === "running" || run.status === "waiting_approval") {
+    return "press c to cancel this run";
+  }
+
+  if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
+    return "press e to resume this run";
+  }
+
+  return "resume/cancel unavailable for the current run state";
 }
 
 function renderRecentRunEvents(feed: RunEventFeedState, runId: string): string[] {
@@ -1052,6 +1212,207 @@ export async function runTerminalApp(
     }
   };
 
+  const beginExecutionAction = (action: PendingExecutionActionState) => {
+    updateState({
+      ...state,
+      pendingExecutionAction: action,
+      statusLine:
+        action.kind === "start"
+          ? `Composing run start for ${action.trackId}.`
+          : action.kind === "resume"
+            ? `Composing run resume for ${action.runId}.`
+            : `Confirm cancellation for ${action.runId}.`,
+    });
+  };
+
+  const openStartRunComposer = () => {
+    if (state.screen !== "tracks") {
+      updateState({ ...state, statusLine: "Switch to the tracks screen to start a run." });
+      return;
+    }
+
+    const detail = state.tracks.data;
+    if (!detail || detail.track.id !== state.tracks.selectedId) {
+      updateState({ ...state, statusLine: "Track detail is still loading. Press r and try again." });
+      return;
+    }
+
+    beginExecutionAction(createExecutionActionDraft({
+      kind: "start",
+      scope: "track",
+      trackId: detail.track.id,
+      planningSessionId: detail.planningContext?.planningSessionId,
+      backend: "codex",
+      profile: "default",
+      prompt: `Implement ${detail.track.title}`,
+      message: detail.planningContext?.hasPendingChanges ? "This track currently has pending planning changes. Start will fail until approvals are resolved." : null,
+    }));
+  };
+
+  const openResumeRunComposer = () => {
+    if (state.screen !== "runs") {
+      updateState({ ...state, statusLine: "Switch to the runs screen to resume a run." });
+      return;
+    }
+
+    const run = state.runs.data?.run;
+    if (!run || run.id !== state.runs.selectedId) {
+      updateState({ ...state, statusLine: "Run detail is still loading. Press r and try again." });
+      return;
+    }
+
+    if (!(run.status === "completed" || run.status === "failed" || run.status === "cancelled")) {
+      updateState({ ...state, statusLine: `Run ${run.id} is ${run.status}; resume is only available after a terminal state.` });
+      return;
+    }
+
+    beginExecutionAction(createExecutionActionDraft({
+      kind: "resume",
+      scope: "run",
+      runId: run.id,
+      trackId: run.trackId,
+      planningSessionId: run.planningSessionId,
+      backend: run.backend ?? "codex",
+      profile: run.profile ?? "default",
+      prompt: `Continue run ${run.id}`,
+      message: run.planningContextStale ? `Planning context is stale: ${run.planningContextStaleReason ?? "approved plan changed after launch"}` : null,
+    }));
+  };
+
+  const openCancelRunComposer = () => {
+    if (state.screen !== "runs") {
+      updateState({ ...state, statusLine: "Switch to the runs screen to cancel a run." });
+      return;
+    }
+
+    const run = state.runs.data?.run;
+    if (!run || run.id !== state.runs.selectedId) {
+      updateState({ ...state, statusLine: "Run detail is still loading. Press r and try again." });
+      return;
+    }
+
+    if (!(run.status === "running" || run.status === "waiting_approval")) {
+      updateState({ ...state, statusLine: `Run ${run.id} is ${run.status}; cancel is only available while it is active.` });
+      return;
+    }
+
+    beginExecutionAction(createExecutionActionDraft({
+      kind: "cancel",
+      scope: "run",
+      runId: run.id,
+      trackId: run.trackId,
+      backend: run.backend ?? "codex",
+      profile: run.profile ?? "default",
+      message: "SpecRail will ask the backend adapter to stop the active session.",
+    }));
+  };
+
+  const updateExecutionComposer = (next: PendingExecutionActionState | null, statusLine = state.statusLine) => {
+    updateState({ ...state, pendingExecutionAction: next, statusLine });
+  };
+
+  const editExecutionPrompt = (updater: (value: string) => string) => {
+    const action = state.pendingExecutionAction;
+    if (!action || action.kind === "cancel" || action.submitting) {
+      return;
+    }
+
+    updateExecutionComposer({ ...action, prompt: updater(action.prompt), message: null });
+  };
+
+  const editExecutionProfile = (updater: (value: string) => string) => {
+    const action = state.pendingExecutionAction;
+    if (!action || action.kind === "cancel" || action.submitting) {
+      return;
+    }
+
+    updateExecutionComposer({ ...action, profile: updater(action.profile), message: null });
+  };
+
+  const cycleExecutionBackend = () => {
+    const action = state.pendingExecutionAction;
+    if (!action || action.kind !== "start" || action.submitting) {
+      return;
+    }
+
+    const currentIndex = EXECUTION_BACKEND_OPTIONS.findIndex((backend) => backend === action.backend);
+    const nextBackend = EXECUTION_BACKEND_OPTIONS[(currentIndex + 1 + EXECUTION_BACKEND_OPTIONS.length) % EXECUTION_BACKEND_OPTIONS.length] ?? action.backend;
+    updateExecutionComposer({ ...action, backend: nextBackend, message: `Backend switched to ${nextBackend}.` }, `Backend switched to ${nextBackend}.`);
+  };
+
+  const submitExecutionAction = async () => {
+    const action = state.pendingExecutionAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    if ((action.kind === "start" || action.kind === "resume") && action.prompt.trim().length === 0) {
+      updateExecutionComposer({ ...action, message: "Prompt is required." }, "Prompt is required.");
+      return;
+    }
+
+    state = {
+      ...state,
+      pendingExecutionAction: { ...action, submitting: true, message: null },
+      statusLine: `${action.kind === "cancel" ? "Cancelling" : action.kind === "resume" ? "Resuming" : "Starting"} execution...`,
+    };
+    render();
+
+    try {
+      let runDetail: RunDetailSnapshot;
+      if (action.kind === "start") {
+        runDetail = await client.startRun({
+          trackId: action.trackId ?? "",
+          prompt: action.prompt.trim(),
+          backend: action.backend,
+          profile: action.profile.trim() || undefined,
+          planningSessionId: action.planningSessionId,
+        });
+      } else if (action.kind === "resume") {
+        runDetail = await client.resumeRun({
+          runId: action.runId ?? "",
+          prompt: action.prompt.trim(),
+          backend: action.backend,
+          profile: action.profile.trim() || undefined,
+        });
+      } else {
+        runDetail = await client.cancelRun(action.runId ?? "");
+      }
+
+      const refreshed = await refreshTerminalState({ ...state, pendingExecutionAction: null }, client);
+      const runId = runDetail.run.id;
+      const selectedIndex = Math.max(0, refreshed.summary?.runs.findIndex((run) => run.id === runId) ?? 0);
+      updateState(syncRunEventSelection({
+        ...refreshed,
+        screen: "runs",
+        runs: {
+          ...refreshed.runs,
+          selectedId: runId,
+          selectedIndex,
+          data: runDetail,
+          error: null,
+        },
+        statusLine:
+          action.kind === "start"
+            ? `Started run ${runId} with ${runDetail.run.backend ?? action.backend}/${runDetail.run.profile ?? action.profile}.`
+            : action.kind === "resume"
+              ? `Resumed run ${runId} with ${runDetail.run.backend ?? action.backend}/${runDetail.run.profile ?? action.profile}.`
+              : `Cancelled run ${runId}.`,
+      }));
+    } catch (error) {
+      updateState({
+        ...state,
+        pendingExecutionAction: {
+          ...action,
+          submitting: false,
+          message: error instanceof Error ? error.message : `Failed to ${action.kind} execution.`,
+        },
+        error: error instanceof Error ? error.message : `Failed to ${action.kind} execution.`,
+        statusLine: error instanceof Error ? error.message : `Failed to ${action.kind} execution.`,
+      });
+    }
+  };
+
   await refresh();
 
   if (!io.stdin.isTTY) {
@@ -1080,10 +1441,44 @@ export async function runTerminalApp(
       resolve();
     };
 
-    const onKeypress = (_: string, key: { name?: string; ctrl?: boolean }) => {
+    const onKeypress = (input: string, key: { name?: string; ctrl?: boolean }) => {
       if (key.ctrl && key.name === "c") {
         cleanup();
         return;
+      }
+
+      if (state.pendingExecutionAction) {
+        if (key.name === "escape") {
+          updateState({ ...state, pendingExecutionAction: null, statusLine: "Execution action cancelled." });
+          return;
+        }
+
+        if (key.name === "return" || key.name === "enter") {
+          void submitExecutionAction();
+          return;
+        }
+
+        if (state.pendingExecutionAction.kind !== "cancel") {
+          if (key.name === "backspace") {
+            editExecutionPrompt((value) => value.slice(0, -1));
+            return;
+          }
+
+          if (key.name === "b") {
+            cycleExecutionBackend();
+            return;
+          }
+
+          if (key.name === "p") {
+            editExecutionProfile((value) => nextProfileOption(state.pendingExecutionAction?.backend ?? "codex", value || "default"));
+            return;
+          }
+
+          if (input.length === 1 && !key.ctrl) {
+            editExecutionPrompt((value) => `${value}${input}`);
+            return;
+          }
+        }
       }
 
       if (key.name === "q") {
@@ -1093,6 +1488,21 @@ export async function runTerminalApp(
 
       if (key.name === "r") {
         void refresh();
+        return;
+      }
+
+      if (key.name === "s") {
+        openStartRunComposer();
+        return;
+      }
+
+      if (key.name === "e") {
+        openResumeRunComposer();
+        return;
+      }
+
+      if (key.name === "c") {
+        openCancelRunComposer();
         return;
       }
 
