@@ -39,6 +39,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 
 ### Implemented now
 - artifact-first control plane with file-backed state
+- ACP stdio edge adapter that maps ACP sessions onto SpecRail runs without replacing the HTTP API
 - default project bootstrap on first track creation
 - track creation and track state updates
 - generated per-track artifacts
@@ -210,6 +211,7 @@ Claude Code now additionally promotes important `stream-json` provider events in
 specrail/
   apps/
     api/                  # Node HTTP API with JSON + SSE routes
+    acp-server/           # ACP stdio edge adapter over SpecRail runs
     terminal/             # Operator-facing terminal shell over the SpecRail API
     telegram/             # Thin Telegram webhook frontend over the SpecRail API
   packages/
@@ -227,6 +229,7 @@ specrail/
 pnpm install
 pnpm test
 pnpm dev:api
+pnpm dev:acp
 pnpm dev:terminal
 pnpm dev:telegram
 ```

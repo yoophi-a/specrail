@@ -8,10 +8,11 @@
     "build": "pnpm -r build",
     "check": "pnpm -r check",
     "dev:api": "pnpm --filter @specrail/api dev",
+    "dev:acp": "pnpm --filter @specrail/acp-server dev",
     "dev:terminal": "pnpm --filter @specrail/terminal dev",
     "dev:telegram": "pnpm --filter @specrail/telegram dev",
     "lint": "pnpm -r lint",
-    "test": "tsx --tsconfig tsconfig.base.json --test packages/core/src/domain/__tests__/*.test.ts packages/core/src/services/__tests__/*.test.ts packages/config/src/__tests__/*.test.ts packages/adapters/src/__tests__/*.test.ts apps/api/src/__tests__/*.test.ts apps/telegram/src/__tests__/*.test.ts apps/terminal/src/__tests__/*.test.ts",
+    "test": "tsx --tsconfig tsconfig.base.json --test packages/core/src/domain/__tests__/*.test.ts packages/core/src/services/__tests__/*.test.ts packages/config/src/__tests__/*.test.ts packages/adapters/src/__tests__/*.test.ts apps/api/src/__tests__/*.test.ts apps/acp-server/src/__tests__/*.test.ts apps/telegram/src/__tests__/*.test.ts apps/terminal/src/__tests__/*.test.ts",
     "test:claude-smoke": "tsx --tsconfig tsconfig.base.json --test packages/adapters/src/__tests__/claude-code.smoke.test.ts"
   },
   "devDependencies": {
