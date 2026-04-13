@@ -1,0 +1,55 @@
+name: Claude smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+jobs:
+  claude-smoke:
+    if: ${{ vars.SPECRAIL_ENABLE_CLAUDE_SMOKE == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      SPECRAIL_RUN_CLAUDE_SMOKE: "1"
+      SPECRAIL_CLAUDE_SMOKE_STRICT: "1"
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CLAUDE_SMOKE_MODEL: ${{ vars.CLAUDE_SMOKE_MODEL || 'default' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Claude Code CLI
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version
+
+      - name: Run Claude smoke
+        run: bash scripts/run-claude-smoke-ci.sh
+
+      - name: Upload smoke artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-smoke-debug
+          if-no-files-found: ignore
+          path: |
+            .specrail-data/**
+            /tmp/specrail-claude-smoke-*/**

@@ -211,12 +211,30 @@ claude --permission-mode bypassPermissions --print --output-format stream-json '
 
 ### CI guidance
 
-For CI, wire `pnpm test:claude-smoke` into a separate opt-in job that only runs on runners where:
-- the `claude` CLI is installed
-- authentication is already available for the runner user
-- `SPECRAIL_RUN_CLAUDE_SMOKE=1` is explicitly set
+Keep Claude smoke coverage in a separate opt-in workflow so default `pnpm test`, `pnpm check`, and `pnpm build` stay deterministic.
 
-If those preconditions are not guaranteed, keep the smoke command disabled and rely on the default unit/integration suite plus the adapter contract tests.
+Runner requirements for the smoke job:
+- Node.js 22 and pnpm 10.x
+- the `claude` CLI installed on the runner, for example `npm install -g @anthropic-ai/claude-code`
+- Claude authentication already available to the runner user, typically via `CLAUDE_CODE_OAUTH_TOKEN` or another supported non-interactive auth path
+- network egress that allows Claude Code to reach Anthropic services
+- `SPECRAIL_RUN_CLAUDE_SMOKE=1` explicitly set for the smoke step
+
+Repository wiring now includes:
+- `.github/workflows/claude-smoke.yml` as an opt-in workflow stub
+- `scripts/run-claude-smoke-ci.sh` as the shared CI entrypoint that writes a GitHub step summary
+
+How the workflow stays non-brittle by default:
+- the workflow job only runs when repository variable `SPECRAIL_ENABLE_CLAUDE_SMOKE=1` is set
+- the smoke logic is isolated from the default validation workflow instead of being folded into `pnpm test`
+- the helper script can emit a clear skip reason when smoke mode is not requested, while strict CI mode can still fail intentionally when the dedicated smoke workflow is enabled
+
+How smoke results should surface:
+- success or skip reasons are written to the job log and `GITHUB_STEP_SUMMARY`
+- failures happen only inside the dedicated smoke workflow/job, not in the default repository validation path
+- failure-time artifacts can be uploaded from temp/session directories for debugging when the runner supports them
+
+If those preconditions are not guaranteed, keep the smoke workflow disabled and rely on the default unit/integration suite plus the adapter contract tests.
 
 ## Source of truth in code
 
