@@ -27,9 +27,11 @@
 
 The runs screen now does more than snapshot inspection:
 
+- filters the visible runs between all, active, and terminal states
 - keeps the selected run detail panel in sync with periodic refreshes
 - opens an SSE stream against `/runs/:id/events/stream` for the selected run
 - caches the most recent run events in-memory for a tail-style activity view
+- lets operators pause and resume the live tail without changing selection
 - deduplicates replayed events after reconnect because the API replays prior history on each SSE connection
 - retries dropped streams with bounded backoff for non-terminal runs
 - stops reconnecting once the selected run reaches `completed`, `failed`, or `cancelled`
@@ -60,8 +62,6 @@ This is intentionally still lightweight:
 ## Follow-up direction
 
 Good next steps after the live monitor baseline:
-- filters for active vs terminal runs
-- pausing/resuming the live tail without changing selection
 - richer provider-specific event formatting for long stdout/stderr payloads
 - richer planning interaction, including targeted revision selection and proposal authoring
 - operator actions from the terminal surface, such as resume/cancel shortcuts

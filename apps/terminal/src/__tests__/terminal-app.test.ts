@@ -7,6 +7,7 @@ import {
   createEmptyRunEventFeedState,
   renderAppShell,
   refreshTerminalState,
+  setRunFilter,
   selectNextItem,
   SpecRailTerminalApiClient,
   syncRunEventSelection,
@@ -171,6 +172,7 @@ test("bootstrapTerminalState initializes detail selections for tracks and runs",
   assert.match(state.statusLine, /Loaded 1 tracks and 1 runs/);
   assert.equal(state.tracks.selectedId, "track-1");
   assert.equal(state.runs.selectedId, "run-1");
+  assert.equal(state.runFilter, "all");
   assert.equal(state.runEvents.runId, "run-1");
 });
 
@@ -228,6 +230,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
       error: null,
       data: null,
     },
+    runFilter: "all",
     runEvents: createEmptyRunEventFeedState(),
     pendingTrackAction: null,
     pendingExecutionAction: null,
@@ -250,7 +253,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, s start, e resume, c cancel, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, f run filter, Space tail pause\/resume, s start, e resume, c cancel, a approve, x reject, r refresh, q quit/);
 });
 
 test("renderAppShell renders run event monitor details", () => {
@@ -289,6 +292,7 @@ test("renderAppShell renders run event monitor details", () => {
         },
       },
     },
+    runFilter: "terminal",
     runEvents: appendRunEvents(
       {
         ...createEmptyRunEventFeedState("run-1"),
@@ -318,8 +322,9 @@ test("renderAppShell renders run event monitor details", () => {
 
   assert.match(rendered, /event summary: 1 event, last at 2026-04-10T12:04:00.000Z/);
   assert.match(rendered, /failure focus: Failed Claude Code session run-1-claude \(exit 1\)/);
+  assert.match(rendered, /Runs \(1\/1, filter=terminal\)/);
   assert.match(rendered, /stream: reconnecting \(attempt 2\)/);
-  assert.match(rendered, /operator actions: press e to resume this run/);
+  assert.match(rendered, /operator actions: press e to resume this run, Space to pause tail/);
   assert.match(rendered, /recent activity:/);
   assert.match(rendered, /task_status_changed \| status=failed \| Failed Claude Code session run-1-claude/);
 });
@@ -348,6 +353,7 @@ test("selectNextItem advances run selection on runs screen", () => {
         run: { id: "run-1", trackId: "track-1", status: "running", backend: "codex" },
       },
     },
+    runFilter: "all",
     runEvents: appendRunEvents(createEmptyRunEventFeedState("run-1"), [
       {
         id: "evt-1",
@@ -401,6 +407,7 @@ test("refreshTerminalState preserves selection and surfaces detail load errors",
         error: null,
         data: null,
       },
+      runFilter: "all",
       runEvents: createEmptyRunEventFeedState("run-1"),
       pendingTrackAction: null,
     pendingExecutionAction: null,
@@ -495,7 +502,8 @@ test("appendRunEvents deduplicates by event id and syncRunEventSelection resets 
     error: null,
     tracks: { selectedId: null, selectedIndex: 0, loading: false, error: null, data: null },
     runs: { selectedId: "run-2", selectedIndex: 1, loading: false, error: null, data: null },
-    runEvents: { ...feed, runId: "run-1", connection: "live" },
+    runFilter: "all",
+    runEvents: { ...feed, runId: "run-1", connection: "live", paused: false },
     pendingTrackAction: null,
     pendingExecutionAction: null,
     summary: {
@@ -508,4 +516,23 @@ test("appendRunEvents deduplicates by event id and syncRunEventSelection resets 
   assert.equal(reset.runEvents.runId, "run-2");
   assert.deepEqual(reset.runEvents.items, []);
   assert.equal(reset.runEvents.connection, "idle");
+
+  const filtered = setRunFilter({
+    ...reset,
+    summary: {
+      fetchedAt: "2026-04-10T12:02:00.000Z",
+      tracks: [],
+      runs: [
+        { id: "run-2", trackId: "track-1", status: "running" },
+        { id: "run-3", trackId: "track-1", status: "completed" },
+      ],
+    },
+    runs: { ...reset.runs, selectedId: "run-2", selectedIndex: 0 },
+    runEvents: { ...reset.runEvents, runId: "run-2", paused: true, connection: "paused" },
+  }, "terminal");
+
+  assert.equal(filtered.runFilter, "terminal");
+  assert.equal(filtered.runs.selectedId, "run-3");
+  assert.equal(filtered.runEvents.runId, "run-3");
+  assert.equal(filtered.runEvents.paused, true);
 });

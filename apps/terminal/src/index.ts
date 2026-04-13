@@ -3,7 +3,8 @@ import process from "node:process";
 import { loadTerminalClientConfig, type SpecRailTerminalClientConfig } from "@specrail/config";
 
 export type TerminalScreenId = "home" | "tracks" | "runs" | "settings";
-export type RunEventConnectionState = "idle" | "connecting" | "live" | "reconnecting" | "closed" | "error";
+export type RunEventConnectionState = "idle" | "connecting" | "live" | "reconnecting" | "paused" | "closed" | "error";
+export type RunFilterMode = "all" | "active" | "terminal";
 export type ArtifactKind = "spec" | "plan" | "tasks";
 export type ExecutionActionKind = "start" | "resume" | "cancel";
 
@@ -152,6 +153,7 @@ export interface RunEventFeedState {
   runId: string | null;
   items: ExecutionEvent[];
   connection: RunEventConnectionState;
+  paused: boolean;
   reconnectAttempts: number;
   lastError: string | null;
   lastEventAt: string | null;
@@ -185,6 +187,7 @@ export interface TerminalAppState {
   error: string | null;
   tracks: DetailPanelState<TrackDetailSnapshot>;
   runs: DetailPanelState<RunDetailSnapshot>;
+  runFilter: RunFilterMode;
   runEvents: RunEventFeedState;
   pendingTrackAction: PendingTrackActionState | null;
   pendingExecutionAction: PendingExecutionActionState | null;
@@ -409,11 +412,12 @@ export class SpecRailTerminalApiClient {
   }
 }
 
-export function createEmptyRunEventFeedState(runId: string | null = null): RunEventFeedState {
+export function createEmptyRunEventFeedState(runId: string | null = null, paused = false): RunEventFeedState {
   return {
     runId,
     items: [],
-    connection: "idle",
+    connection: paused ? "paused" : "idle",
+    paused,
     reconnectAttempts: 0,
     lastError: null,
     lastEventAt: null,
@@ -450,10 +454,28 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     error: null,
     tracks: createEmptyDetailState<TrackDetailSnapshot>(),
     runs: createEmptyDetailState<RunDetailSnapshot>(),
+    runFilter: "all",
     runEvents: createEmptyRunEventFeedState(),
     pendingTrackAction: null,
     pendingExecutionAction: null,
   };
+}
+
+function getFilteredRuns(summary: TerminalSummarySnapshot | null, mode: RunFilterMode): RunListItem[] {
+  const runs = summary?.runs ?? [];
+  if (mode === "active") {
+    return runs.filter((run) => !isTerminalRunStatus(run.status));
+  }
+
+  if (mode === "terminal") {
+    return runs.filter((run) => isTerminalRunStatus(run.status));
+  }
+
+  return runs;
+}
+
+function cycleRunFilterMode(current: RunFilterMode): RunFilterMode {
+  return current === "all" ? "active" : current === "active" ? "terminal" : "all";
 }
 
 export function createExecutionActionDraft(input: {
@@ -497,7 +519,7 @@ export async function bootstrapTerminalState(
 ): Promise<TerminalAppState> {
   const summary = await client.loadSummary();
   const tracks = await populateTrackPanel(createEmptyDetailState<TrackDetailSnapshot>(), summary, client);
-  const runs = await populateRunPanel(createEmptyDetailState<RunDetailSnapshot>(), summary, client);
+  const runs = await populateRunPanel(createEmptyDetailState<RunDetailSnapshot>(), summary, client, "all");
 
   return syncRunEventSelection({
     screen: config.initialScreen,
@@ -509,6 +531,7 @@ export async function bootstrapTerminalState(
     error: null,
     tracks,
     runs,
+    runFilter: "all",
     runEvents: createEmptyRunEventFeedState(runs.selectedId),
     pendingTrackAction: null,
     pendingExecutionAction: null,
@@ -521,7 +544,7 @@ export async function refreshTerminalState(
 ): Promise<TerminalAppState> {
   const summary = await client.loadSummary();
   const tracks = await populateTrackPanel(state.tracks, summary, client);
-  const runs = await populateRunPanel(state.runs, summary, client);
+  const runs = await populateRunPanel(state.runs, summary, client, state.runFilter);
 
   return syncRunEventSelection({
     ...state,
@@ -564,8 +587,9 @@ async function populateRunPanel(
   previous: DetailPanelState<RunDetailSnapshot>,
   summary: TerminalSummarySnapshot,
   client: Pick<SpecRailTerminalApiClient, "loadRunDetail">,
+  filterMode: RunFilterMode,
 ): Promise<DetailPanelState<RunDetailSnapshot>> {
-  const selection = resolveSelection(summary.runs, previous.selectedId, previous.selectedIndex);
+  const selection = resolveSelection(getFilteredRuns(summary, filterMode), previous.selectedId, previous.selectedIndex);
   if (!selection.selectedId) {
     return { ...previous, selectedId: null, selectedIndex: 0, data: null, loading: false, error: null };
   }
@@ -635,8 +659,9 @@ function updateSelection(state: TerminalAppState, delta: number): TerminalAppSta
   }
 
   if (state.screen === "runs") {
-    const nextIndex = clampIndex(state.runs.selectedIndex + delta, state.summary.runs.length);
-    const selectedId = state.summary.runs[nextIndex]?.id ?? null;
+    const filteredRuns = getFilteredRuns(state.summary, state.runFilter);
+    const nextIndex = clampIndex(state.runs.selectedIndex + delta, filteredRuns.length);
+    const selectedId = filteredRuns[nextIndex]?.id ?? null;
     return syncRunEventSelection({
       ...state,
       statusLine: selectedId ? `Selected run ${selectedId}. Press r to refresh details.` : state.statusLine,
@@ -672,8 +697,25 @@ export function syncRunEventSelection(state: TerminalAppState): TerminalAppState
 
   return {
     ...state,
-    runEvents: createEmptyRunEventFeedState(selectedId),
+    runEvents: createEmptyRunEventFeedState(selectedId, state.runEvents.paused),
   };
+}
+
+export function setRunFilter(state: TerminalAppState, filter: RunFilterMode): TerminalAppState {
+  const filteredRuns = getFilteredRuns(state.summary, filter);
+  const selection = resolveSelection(filteredRuns, state.runs.selectedId, state.runs.selectedIndex);
+
+  return syncRunEventSelection({
+    ...state,
+    runFilter: filter,
+    statusLine: `Run filter set to ${filter}.`,
+    runs: {
+      ...state.runs,
+      ...selection,
+      data: state.runs.data?.run.id === selection.selectedId ? state.runs.data : null,
+      error: null,
+    },
+  });
 }
 
 export function renderAppShell(state: TerminalAppState): string {
@@ -690,7 +732,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, s start, e resume, c cancel, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, f run filter, Space tail pause/resume, s start, e resume, c cancel, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderExecutionActionComposer(state.pendingExecutionAction),
   ].join("\n");
 }
@@ -755,6 +797,8 @@ function renderScreenBody(state: TerminalAppState): string[] {
         "- Tracks view surfaces planning sessions, revision history, and pending approvals.",
         "- Press a/x on the tracks screen to approve or reject the next pending request.",
         "- Press s on tracks to start a run, e on runs to resume, c on runs to cancel.",
+        "- Press f on runs to cycle all/active/terminal filters.",
+        "- Press Space on runs to pause or resume the live SSE tail.",
         "- Runs view tails live SSE events with automatic reconnect attempts.",
       ];
     case "home":
@@ -766,6 +810,7 @@ function renderScreenBody(state: TerminalAppState): string[] {
         `- Last fetch: ${state.summary.fetchedAt}`,
         `- Selected track: ${state.tracks.selectedId ?? "none"}`,
         `- Selected run: ${state.runs.selectedId ?? "none"}`,
+        `- Run filter: ${state.runFilter}`,
         `- Run stream: ${state.runEvents.runId ? `${state.runEvents.connection} (${state.runEvents.items.length} events cached)` : "idle"}`,
         `- Pending execution action: ${state.pendingExecutionAction ? `${state.pendingExecutionAction.kind} ${state.pendingExecutionAction.scope}` : "none"}`,
         state.error ? `- Last refresh error: ${state.error}` : "- Last refresh error: none",
@@ -789,15 +834,16 @@ function renderTracksScreen(state: TerminalAppState): string[] {
 }
 
 function renderRunsScreen(state: TerminalAppState): string[] {
-  const selectedRun = state.summary?.runs[state.runs.selectedIndex] ?? null;
+  const filteredRuns = getFilteredRuns(state.summary, state.runFilter);
+  const selectedRun = filteredRuns[state.runs.selectedIndex] ?? null;
   const detail = selectedRun?.id === state.runs.data?.run.id ? state.runs.data : null;
 
   return [
-    `Runs (${state.summary?.runs.length ?? 0})`,
+    `Runs (${filteredRuns.length}/${state.summary?.runs.length ?? 0}, filter=${state.runFilter})`,
     ...renderSelectableList(
-      state.summary?.runs.map(
+      filteredRuns.map(
         (run) => `${run.id} | ${run.status} | ${run.trackId} | ${run.backend ?? "default"}${run.planningContextStale ? " | stale" : ""}`,
-      ) ?? [],
+      ),
       state.runs.selectedIndex,
       "No runs yet.",
     ),
@@ -930,7 +976,7 @@ function renderRunDetail(
     `- last event: ${lastEvent ? formatEventLine(lastEvent) : run.summary?.lastEventSummary ?? "none"}`,
     `- failure focus: ${recentFailure ? formatFailureFocus(recentFailure) : terminal && run.status === "failed" ? "run failed, inspect recent provider events" : "none"}`,
     `- stream: ${formatStreamStatus(feed, terminal)}`,
-    `- operator actions: ${formatRunOperatorActions(run)}`,
+    `- operator actions: ${formatRunOperatorActions(run, feed)}`,
     "- recent activity:",
     ...renderRecentRunEvents(feed, run.id),
   ];
@@ -942,16 +988,17 @@ function nextProfileOption(backend: string, currentProfile: string): string {
   return options[(currentIndex + 1 + options.length) % options.length] ?? currentProfile;
 }
 
-function formatRunOperatorActions(run: RunListItem): string {
+function formatRunOperatorActions(run: RunListItem, feed: RunEventFeedState): string {
+  const tailAction = feed.paused ? "Space to resume tail" : "Space to pause tail";
   if (run.status === "running" || run.status === "waiting_approval") {
-    return "press c to cancel this run";
+    return `press c to cancel this run, ${tailAction}`;
   }
 
   if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
-    return "press e to resume this run";
+    return `press e to resume this run, ${tailAction}`;
   }
 
-  return "resume/cancel unavailable for the current run state";
+  return `${tailAction}, resume/cancel unavailable for the current run state`;
 }
 
 function renderRecentRunEvents(feed: RunEventFeedState, runId: string): string[] {
@@ -986,6 +1033,10 @@ function formatFailureFocus(event: ExecutionEvent): string {
 
 function formatStreamStatus(feed: RunEventFeedState, terminal: boolean): string {
   const suffix = feed.lastError ? `, last error: ${feed.lastError}` : "";
+  if (feed.paused || feed.connection === "paused") {
+    return `paused${suffix}`;
+  }
+
   if (feed.connection === "reconnecting") {
     return `reconnecting (attempt ${feed.reconnectAttempts})${suffix}`;
   }
@@ -1079,6 +1130,17 @@ export async function runTerminalApp(
       return;
     }
 
+    if (state.runEvents.paused) {
+      if (monitorAbort) {
+        monitorAbort.abort();
+        monitorAbort = null;
+      }
+      if (state.runEvents.runId !== selectedRunId || state.runEvents.connection !== "paused") {
+        patchRunFeed({ runId: selectedRunId, connection: "paused" });
+      }
+      return;
+    }
+
     if (state.runEvents.runId === selectedRunId && (state.runEvents.connection === "live" || state.runEvents.connection === "connecting" || state.runEvents.connection === "reconnecting")) {
       return;
     }
@@ -1091,8 +1153,8 @@ export async function runTerminalApp(
     const controller = new AbortController();
     monitorAbort = controller;
     const serial = ++monitorSerial;
-    const seenIds = new Set<string>();
-    patchRunFeed({ ...createEmptyRunEventFeedState(selectedRunId), connection: "connecting" });
+    const seenIds = new Set<string>((state.runEvents.runId === selectedRunId ? state.runEvents.items : []).map((event) => event.id));
+    patchRunFeed({ ...createEmptyRunEventFeedState(selectedRunId), ...state.runEvents, runId: selectedRunId, paused: false, connection: "connecting" });
 
     const runLoop = async () => {
       let attempts = 0;
@@ -1311,6 +1373,30 @@ export async function runTerminalApp(
     updateState({ ...state, pendingExecutionAction: next, statusLine });
   };
 
+  const toggleRunTailPause = () => {
+    if (state.screen !== "runs") {
+      updateState({ ...state, statusLine: "Switch to the runs screen to control the live tail." });
+      return;
+    }
+
+    if (!state.runs.selectedId) {
+      updateState({ ...state, statusLine: "Select a run first to control the live tail." });
+      return;
+    }
+
+    updateState({
+      ...state,
+      runEvents: {
+        ...state.runEvents,
+        runId: state.runs.selectedId,
+        paused: !state.runEvents.paused,
+        connection: !state.runEvents.paused ? "paused" : "idle",
+        lastError: !state.runEvents.paused ? state.runEvents.lastError : null,
+      },
+      statusLine: !state.runEvents.paused ? `Paused live tail for ${state.runs.selectedId}.` : `Resumed live tail for ${state.runs.selectedId}.`,
+    });
+  };
+
   const editExecutionPrompt = (updater: (value: string) => string) => {
     const action = state.pendingExecutionAction;
     if (!action || action.kind === "cancel" || action.submitting) {
@@ -1503,6 +1589,16 @@ export async function runTerminalApp(
 
       if (key.name === "c") {
         openCancelRunComposer();
+        return;
+      }
+
+      if (key.name === "space") {
+        toggleRunTailPause();
+        return;
+      }
+
+      if (key.name === "f") {
+        updateState(setRunFilter(state, cycleRunFilterMode(state.runFilter)));
         return;
       }
 

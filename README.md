@@ -250,10 +250,12 @@ pnpm dev:terminal
 Current shell behavior:
 - loads recent tracks and runs from the API
 - renders navigable track and run list views with selected detail panes
+- filters runs between all, active, and terminal states
 - auto-selects the current track/run and refreshes detail snapshots from the API
 - tails live selected-run events over SSE with cached recent activity and reconnect attempts when the stream drops
+- allows pausing and resuming the live tail without losing the selected run context
 - shows richer run status context including event counts, last event, planning-context staleness, and failure focus where available
-- supports `1-4` to switch screens, `j/k` or arrow keys to move selection, `r` to refresh, `q` to quit
+- supports `1-4` to switch screens, `j/k` or arrow keys to move selection, `f` to cycle run filters, `Space` to pause/resume the tail, `r` to refresh, `q` to quit
 - supports `s` on tracks to compose a new run, `e` on runs to resume a completed/failed/cancelled run, and `c` on runs to cancel an active run
 - exposes backend/profile choices in the terminal action composer, with validation feedback surfaced directly in the shell status and composer note
 - surfaces loading, streaming, and refresh failures in the status line and detail panes
