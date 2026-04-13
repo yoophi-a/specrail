@@ -25,6 +25,16 @@ function createFakeService() {
   const runs = new Map<string, Execution>();
   const events = new Map<string, ExecutionEvent[]>();
   let runCounter = 1;
+  let eventCounter = 0;
+
+  const pushEvent = (runId: string, event: Omit<ExecutionEvent, "id"> & { id?: string }) => {
+    const nextEvent: ExecutionEvent = {
+      ...event,
+      id: event.id ?? `${runId}-evt-${++eventCounter}`,
+    };
+    events.set(runId, [...(events.get(runId) ?? []), nextEvent]);
+    return nextEvent;
+  };
 
   const service = {
     async getTrack(trackId: string) {
@@ -32,6 +42,7 @@ function createFakeService() {
     },
     async startRun(input: { trackId: string; prompt: string; backend?: string; profile?: string; planningSessionId?: string }) {
       const runId = `run-${runCounter++}`;
+      const requiresApproval = /approval/i.test(input.prompt);
       const created: Execution = {
         id: runId,
         trackId: input.trackId,
@@ -41,30 +52,45 @@ function createFakeService() {
         branchName: `specrail/${runId}`,
         sessionRef: `session:${runId}`,
         planningSessionId: input.planningSessionId,
-        status: "completed",
+        status: requiresApproval ? "waiting_approval" : "completed",
         createdAt: "2026-04-13T00:00:00.000Z",
         startedAt: "2026-04-13T00:00:00.000Z",
-        finishedAt: "2026-04-13T00:00:01.000Z",
+        finishedAt: requiresApproval ? undefined : "2026-04-13T00:00:01.000Z",
       };
       runs.set(runId, created);
-      events.set(runId, [
-        {
-          id: `${runId}-1`,
+      events.set(runId, []);
+      pushEvent(runId, {
+        executionId: runId,
+        type: "task_status_changed",
+        timestamp: "2026-04-13T00:00:00.000Z",
+        source: "executor",
+        summary: `Started ${runId}`,
+        payload: { status: "running" },
+      });
+      if (requiresApproval) {
+        pushEvent(runId, {
+          id: `${runId}-approval-request`,
           executionId: runId,
-          type: "task_status_changed",
-          timestamp: "2026-04-13T00:00:00.000Z",
+          type: "approval_requested",
+          timestamp: "2026-04-13T00:00:01.000Z",
           source: "executor",
-          summary: `Started ${runId}`,
-        },
-        {
-          id: `${runId}-2`,
+          summary: `Approval needed for ${runId}`,
+          payload: {
+            toolName: "Bash",
+            toolUseId: `tool-${runId}`,
+            toolInput: { command: "git push origin HEAD" },
+            error: "Permission denied",
+          },
+        });
+      } else {
+        pushEvent(runId, {
           executionId: runId,
           type: "summary",
           timestamp: "2026-04-13T00:00:01.000Z",
           source: "executor",
           summary: `Completed ${runId}`,
-        },
-      ]);
+        });
+      }
       return created;
     },
     async resumeRun(input: { runId: string }) {
@@ -78,17 +104,23 @@ function createFakeService() {
         finishedAt: "2026-04-13T00:00:02.000Z",
       };
       runs.set(run.id, resumed);
-      events.set(run.id, [
-        ...(events.get(run.id) ?? []),
-        {
-          id: `${run.id}-resume`,
-          executionId: run.id,
-          type: "summary",
-          timestamp: "2026-04-13T00:00:02.000Z",
-          source: "executor",
-          summary: `Resumed ${run.id}`,
-        },
-      ]);
+      pushEvent(run.id, {
+        id: `${run.id}-resume-status`,
+        executionId: run.id,
+        type: "task_status_changed",
+        timestamp: "2026-04-13T00:00:02.000Z",
+        source: "executor",
+        summary: `Resumed ${run.id}`,
+        payload: { status: "completed" },
+      });
+      pushEvent(run.id, {
+        id: `${run.id}-resume-summary`,
+        executionId: run.id,
+        type: "summary",
+        timestamp: "2026-04-13T00:00:02.001Z",
+        source: "executor",
+        summary: `Completed ${run.id}`,
+      });
       return resumed;
     },
     async cancelRun(input: { runId: string }) {
@@ -110,7 +142,23 @@ function createFakeService() {
     async listRunEvents(runId: string) {
       return events.get(runId) ?? [];
     },
-  } satisfies Pick<SpecRailService, "getTrack" | "startRun" | "resumeRun" | "cancelRun" | "getRun" | "listRunEvents">;
+    async recordExecutionEvent(event: ExecutionEvent) {
+      pushEvent(event.executionId, event);
+      const run = runs.get(event.executionId);
+      if (!run) {
+        return;
+      }
+
+      const status = event.payload?.status;
+      if (status === "running" || status === "waiting_approval" || status === "completed" || status === "failed" || status === "cancelled") {
+        runs.set(event.executionId, {
+          ...run,
+          status,
+          finishedAt: status === "completed" || status === "failed" || status === "cancelled" ? event.timestamp : run.finishedAt,
+        });
+      }
+    },
+  } satisfies Pick<SpecRailService, "getTrack" | "startRun" | "resumeRun" | "cancelRun" | "getRun" | "listRunEvents" | "recordExecutionEvent">;
 
   return service;
 }
@@ -196,4 +244,93 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   );
   assert.equal(loadResponse?.error, undefined);
   assert.ok(loadNotifications.some((payload) => JSON.stringify(payload).includes("Started run-1")));
+});
+
+test("ACP server emits richer permission request and resolution updates", async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
+  const server = new SpecRailAcpServer({
+    service: createFakeService() as SpecRailService,
+    stateDir,
+    now: () => "2026-04-13T12:00:00.000Z",
+    pollIntervalMs: 1,
+  });
+
+  const newResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: {
+        cwd: "/tmp/specrail",
+        _meta: {
+          specrail: {
+            trackId: "track-1",
+            backend: "claude_code",
+            profile: "sonnet",
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  const sessionId = (newResponse?.result as { sessionId: string }).sessionId;
+  const startNotifications: Array<Record<string, unknown>> = [];
+  const promptResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Run with approval gate" }],
+      },
+    },
+    (payload) => {
+      startNotifications.push(payload as Record<string, unknown>);
+    },
+  );
+
+  assert.deepEqual(promptResponse?.result, { stopReason: "end_turn" });
+  assert.ok(startNotifications.some((payload) => payload.method === "session/request_permission"));
+
+  const infoUpdates = startNotifications.filter((payload) => payload.method === "session/update");
+  assert.ok(infoUpdates.some((payload) => JSON.stringify(payload).includes('"status":"waiting_approval"')));
+
+  const permissionRequest = startNotifications.find((payload) => payload.method === "session/request_permission") as
+    | { params?: { toolName?: string; requestId?: string } }
+    | undefined;
+  assert.equal(permissionRequest?.params?.toolName, "Bash");
+  assert.equal(permissionRequest?.params?.requestId, "run-1-approval-request");
+
+  const resumeNotifications: Array<Record<string, unknown>> = [];
+  const resumeResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Permission approved, keep going" }],
+        _meta: {
+          specrail: {
+            permissionResolution: {
+              requestId: "run-1-approval-request",
+              outcome: "approved",
+              decidedBy: "user",
+              comment: "ok",
+            },
+          },
+        },
+      },
+    },
+    (payload) => {
+      resumeNotifications.push(payload as Record<string, unknown>);
+    },
+  );
+
+  assert.deepEqual(resumeResponse?.result, { stopReason: "end_turn" });
+  assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes("approval_resolved")));
+  assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes('"status":"running"')));
+  assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes('"status":"completed"')));
 });

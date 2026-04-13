@@ -34,6 +34,14 @@ interface AcpSessionRecord {
   profile?: string;
   title?: string;
   runId?: string;
+  status?: Execution["status"];
+  pendingPermissionRequest?: {
+    requestId: string;
+    requestedAt: string;
+    summary: string;
+    toolName?: string;
+    toolUseId?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -59,6 +67,16 @@ interface SessionNewParams {
 interface SessionPromptParams {
   sessionId?: string;
   prompt?: Array<{ type?: string; text?: string; resource?: { text?: string } }>;
+  _meta?: {
+    specrail?: {
+      permissionResolution?: {
+        requestId?: string;
+        outcome?: "approved" | "rejected";
+        decidedBy?: string;
+        comment?: string;
+      };
+    };
+  };
 }
 
 interface SessionLoadParams {
@@ -268,20 +286,36 @@ export class SpecRailAcpServer {
 
       const track = await this.options.service.getTrack(execution.trackId);
       const title = session.title ?? track?.title ?? `Run ${execution.id}`;
-      const updatedSession: AcpSessionRecord = {
+      let updatedSession: AcpSessionRecord = {
         ...session,
         title,
         runId: execution.id,
+        status: execution.status,
         updatedAt: this.now(),
       };
       await this.writeSession(updatedSession);
       notify(this.toSessionInfoUpdate(updatedSession, execution));
 
+      const permissionResolution = body._meta?.specrail?.permissionResolution;
+      if (permissionResolution) {
+        const resolutionEvent = await this.resolvePendingPermission(updatedSession, execution, permissionResolution);
+        if (resolutionEvent) {
+          notify(this.toSessionUpdate(updatedSession.sessionId, resolutionEvent));
+        }
+      }
+
       const seenEventIds = new Set<string>();
       const initialEvents = await this.options.service.listRunEvents(execution.id);
       for (const event of initialEvents.slice(startingEventCount)) {
         seenEventIds.add(event.id);
-        notify(this.toSessionUpdate(updatedSession.sessionId, event));
+        updatedSession = await this.applyEventToSession(updatedSession, execution, event);
+        for (const payload of this.toSessionNotifications(updatedSession, event)) {
+          notify(payload);
+        }
+      }
+
+      if (updatedSession.status === "waiting_approval" || updatedSession.pendingPermissionRequest) {
+        return { stopReason: "end_turn" };
       }
 
       while (true) {
@@ -294,12 +328,19 @@ export class SpecRailAcpServer {
         for (const event of events) {
           if (!seenEventIds.has(event.id)) {
             seenEventIds.add(event.id);
-            notify(this.toSessionUpdate(updatedSession.sessionId, event));
+            updatedSession = await this.applyEventToSession(updatedSession, run, event);
+            for (const payload of this.toSessionNotifications(updatedSession, event)) {
+              notify(payload);
+            }
           }
         }
 
         if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
           return { stopReason: run.status === "cancelled" ? "cancelled" : "end_turn" };
+        }
+
+        if (run.status === "waiting_approval" || updatedSession.pendingPermissionRequest) {
+          return { stopReason: "end_turn" };
         }
 
         await new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs));
@@ -338,10 +379,109 @@ export class SpecRailAcpServer {
               trackId: execution.trackId,
               backend: execution.backend,
               profile: execution.profile,
-              status: execution.status,
+              status: session.status ?? execution.status,
               planningSessionId: execution.planningSessionId,
               workspacePath: execution.workspacePath,
+              pendingPermissionRequest: session.pendingPermissionRequest,
             },
+          },
+        },
+      },
+    };
+  }
+
+  private async applyEventToSession(
+    session: AcpSessionRecord,
+    execution: Execution,
+    event: ExecutionEvent,
+  ): Promise<AcpSessionRecord> {
+    let nextSession = session;
+    let dirty = false;
+
+    const status = this.readSessionStatus(event);
+    if (status && status !== session.status) {
+      nextSession = { ...nextSession, status };
+      dirty = true;
+    }
+
+    if (event.type === "approval_requested") {
+      const pendingPermissionRequest = {
+        requestId: event.id,
+        requestedAt: event.timestamp,
+        summary: event.summary,
+        toolName: this.readString(event.payload?.toolName),
+        toolUseId: this.readString(event.payload?.toolUseId),
+      };
+      nextSession = {
+        ...nextSession,
+        status: "waiting_approval",
+        pendingPermissionRequest,
+      };
+      dirty = true;
+    }
+
+    if (event.type === "approval_resolved") {
+      nextSession = {
+        ...nextSession,
+        pendingPermissionRequest: undefined,
+      };
+      dirty = true;
+    }
+
+    if (dirty) {
+      nextSession = {
+        ...nextSession,
+        updatedAt: this.now(),
+      };
+      await this.writeSession(nextSession);
+    }
+
+    return nextSession;
+  }
+
+  private toSessionNotifications(session: AcpSessionRecord, event: ExecutionEvent): Array<Record<string, unknown>> {
+    const notifications: Array<Record<string, unknown>> = [];
+    const status = this.readSessionStatus(event);
+
+    if (event.type === "approval_requested" || event.type === "approval_resolved" || status) {
+      notifications.push(
+        this.toSessionInfoUpdate(session, {
+          id: session.runId ?? event.executionId,
+          trackId: session.trackId,
+          backend: session.backend ?? event.source,
+          profile: session.profile ?? "default",
+          workspacePath: "",
+          branchName: "",
+          planningSessionId: session.planningSessionId,
+          status: session.status ?? "created",
+          createdAt: session.createdAt,
+        }),
+      );
+    }
+
+    if (event.type === "approval_requested") {
+      notifications.push(this.toPermissionRequest(session, event));
+    }
+
+    notifications.push(this.toSessionUpdate(session.sessionId, event));
+    return notifications;
+  }
+
+  private toPermissionRequest(session: AcpSessionRecord, event: ExecutionEvent): Record<string, unknown> {
+    return {
+      jsonrpc: "2.0",
+      method: "session/request_permission",
+      params: {
+        sessionId: session.sessionId,
+        requestId: event.id,
+        title: event.summary,
+        toolName: this.readString(event.payload?.toolName),
+        toolUseId: this.readString(event.payload?.toolUseId),
+        toolInput: event.payload?.toolInput,
+        message: this.readString(event.payload?.error) ?? event.summary,
+        _meta: {
+          specrail: {
+            executionEvent: event,
           },
         },
       },
@@ -410,6 +550,87 @@ export class SpecRailAcpServer {
 
   private optionalString(value: unknown): string | undefined {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
+  private readString(value: unknown): string | undefined {
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
+  private readSessionStatus(event: ExecutionEvent): Execution["status"] | null {
+    const status = event.payload?.status;
+    if (
+      status === "created" ||
+      status === "queued" ||
+      status === "running" ||
+      status === "waiting_approval" ||
+      status === "completed" ||
+      status === "failed" ||
+      status === "cancelled"
+    ) {
+      return status;
+    }
+
+    if (event.type === "approval_requested") {
+      return "waiting_approval";
+    }
+
+    return null;
+  }
+
+  private async resolvePendingPermission(
+    session: AcpSessionRecord,
+    execution: Execution,
+    resolution: SessionPromptParams["_meta"] extends infer Meta
+      ? Meta extends { specrail?: { permissionResolution?: infer R } }
+        ? R
+        : never
+      : never,
+  ): Promise<ExecutionEvent | null> {
+    const pending = session.pendingPermissionRequest;
+    if (!pending) {
+      throw new ValidationError("permissionResolution provided but there is no pending runtime permission request");
+    }
+
+    const requestId = this.requireNonEmptyString(resolution?.requestId, "_meta.specrail.permissionResolution.requestId");
+    if (requestId !== pending.requestId) {
+      throw new ValidationError(`permissionResolution.requestId does not match pending request: ${requestId}`);
+    }
+
+    const outcome = resolution?.outcome;
+    if (outcome !== "approved" && outcome !== "rejected") {
+      throw new ValidationError("_meta.specrail.permissionResolution.outcome must be approved or rejected");
+    }
+
+    const event: ExecutionEvent = {
+      id: `${execution.id}:approval_resolved:${this.now()}`,
+      executionId: execution.id,
+      type: "approval_resolved",
+      timestamp: this.now(),
+      source: "acp_server",
+      summary: `${outcome === "approved" ? "Approved" : "Rejected"} runtime permission request ${requestId}`,
+      payload: {
+        status: outcome === "approved" ? "running" : "cancelled",
+        requestId,
+        outcome,
+        decidedBy: this.optionalString(resolution?.decidedBy),
+        comment: this.optionalString(resolution?.comment),
+        toolName: pending.toolName,
+        toolUseId: pending.toolUseId,
+      },
+    };
+
+    await this.options.service.recordExecutionEvent?.(event);
+
+    const updatedSession: AcpSessionRecord = {
+      ...session,
+      pendingPermissionRequest: undefined,
+      status: outcome === "approved" ? "running" : "cancelled",
+      updatedAt: this.now(),
+    };
+    await this.writeSession(updatedSession);
+    Object.assign(session, updatedSession);
+
+    return event;
   }
 
   private async requireRun(runId: string): Promise<Execution> {

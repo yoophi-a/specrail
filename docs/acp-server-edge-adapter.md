@@ -38,9 +38,44 @@ The initial adapter keeps the ACP surface intentionally narrow.
 
 ## Event mapping
 
-For the first slice, the adapter emits normalized SpecRail execution events as generic ACP `session/update` agent message chunks and also includes the full original event in `_meta.specrail.executionEvent`.
+The adapter now keeps the raw SpecRail event payload in `_meta.specrail.executionEvent`, but it also adds a few ACP-facing projections so clients can render session state with less guesswork.
 
-That keeps the mapping stable without pretending SpecRail events already have a perfect ACP-native shape.
+### Session update mapping
+
+| SpecRail signal | ACP projection | Notes |
+| --- | --- | --- |
+| `task_status_changed` with `payload.status` | `session/update` with `session_info_update` | Mirrors the current run status into `_meta.specrail.status`. |
+| any persisted execution event | `session/update` with `agent_message_chunk` | Still emits a readable text chunk like `[tool_call] ...` and includes the full event in `_meta`. |
+| `approval_requested` | `session/update` + `session/request_permission` | Session status is promoted to `waiting_approval`, and the permission request carries request/tool metadata when present. |
+| `approval_resolved` | `session/update` with `session_info_update` + `agent_message_chunk` | Clears the pending permission marker and surfaces the resolution outcome back to ACP clients. |
+
+### Permission round-trip
+
+Runtime approval is still adapter-mediated, but the ACP edge now supports a basic round-trip shape:
+
+1. SpecRail emits `approval_requested`.
+2. The ACP adapter publishes `session/request_permission` with the original event attached in `_meta.specrail.executionEvent`.
+3. The client answers on the next `session/prompt` with `_meta.specrail.permissionResolution`.
+4. The adapter records a synthetic `approval_resolved` execution event and resumes the linked SpecRail run.
+
+Example client payload:
+
+```json
+{
+  "sessionId": "specrail-abc123",
+  "prompt": [{ "type": "text", "text": "Permission approved, continue" }],
+  "_meta": {
+    "specrail": {
+      "permissionResolution": {
+        "requestId": "run-1-approval-request",
+        "outcome": "approved",
+        "decidedBy": "user",
+        "comment": "ok"
+      }
+    }
+  }
+}
+```
 
 ## Current limitations
 
@@ -48,10 +83,11 @@ This is intentionally an initial bridge, not a full ACP implementation.
 
 1. `session/new` currently requires SpecRail-specific metadata, especially `_meta.specrail.trackId`.
 2. Planning artifacts, approvals, channel bindings, and attachment flows stay in the existing REST API.
-3. Runtime permission requests are **not** yet translated into ACP `session/request_permission` round-trips.
-4. Event updates are currently surfaced as generic message-chunk notifications with SpecRail metadata attached, instead of a richer ACP-native event taxonomy.
+3. Runtime permission requests are translated into ACP-friendly updates, but they are still mediated by the adapter rather than a backend-native approval broker.
+4. Event updates are richer than the initial bridge, but the mapping still collapses many provider-specific details into `session/update` plus `_meta` rather than a full ACP-native event taxonomy.
 5. The adapter stores ACP session records locally, but run state still lives in the normal SpecRail repositories.
 6. Terminal and filesystem ACP capabilities are not exposed yet, because SpecRail-managed workspaces need a clearer ownership model first.
+7. `approval_resolved` is currently synthesized by the ACP adapter when the client sends `permissionResolution`, so the persisted event expresses the ACP decision clearly but does not yet prove that the underlying executor consumed a real broker callback.
 
 ## Why this shape
 

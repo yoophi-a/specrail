@@ -60,6 +60,16 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - artifact editing endpoints
 - automatic track reconciliation from terminal run outcomes beyond the current first-pass policy
 
+## ACP edge adapter status
+
+`apps/acp-server` now projects SpecRail runs into richer ACP session updates:
+- task status changes refresh ACP `session_info_update` metadata
+- runtime `approval_requested` events emit ACP `session/request_permission`
+- client permission decisions can round-trip back through `session/prompt` via `_meta.specrail.permissionResolution`
+- full original execution events still ride along in `_meta.specrail.executionEvent`
+
+Current limitation: runtime approval resolution is still adapter-mediated, not a backend-native approval broker.
+
 ## HTTP API
 
 Current endpoints in `apps/api/src/index.ts`:
