@@ -110,6 +110,7 @@ export interface TrackPlanningWorkspace {
   approvalRequests: Record<ArtifactKind, ApprovalRequestSummary[]>;
   selectedPlanningSessionId?: string;
   selectedArtifact: ArtifactKind;
+  selectedRevisionId?: string;
   selectedApprovalRequestId?: string;
 }
 
@@ -177,6 +178,17 @@ export interface PendingExecutionActionState {
   message: string | null;
 }
 
+export interface PendingProposalActionState {
+  trackId: string;
+  artifact: ArtifactKind;
+  summary: string;
+  content: string;
+  createdBy: "user" | "agent" | "system";
+  activeField: "summary" | "content";
+  submitting: boolean;
+  message: string | null;
+}
+
 export interface TerminalAppState {
   screen: TerminalScreenId;
   statusLine: string;
@@ -191,6 +203,7 @@ export interface TerminalAppState {
   runEvents: RunEventFeedState;
   pendingTrackAction: PendingTrackActionState | null;
   pendingExecutionAction: PendingExecutionActionState | null;
+  pendingProposalAction: PendingProposalActionState | null;
 }
 
 interface TracksResponse {
@@ -220,6 +233,11 @@ interface ArtifactWorkflowResponse {
   approvalRequests: ApprovalRequestSummary[];
 }
 
+interface ArtifactProposalResponse {
+  revision: ArtifactRevisionSummary;
+  approvalRequest: ApprovalRequestSummary;
+}
+
 interface RunDetailResponse {
   run: RunListItem;
 }
@@ -229,6 +247,21 @@ interface ApiErrorResponse {
     message?: string;
     details?: Array<{ field?: string; message?: string }>;
   };
+}
+
+function getPlanningContextRevisionId(
+  planningContext: TrackDetailSnapshot["planningContext"] | undefined,
+  artifact: ArtifactKind,
+): string | undefined {
+  if (!planningContext) {
+    return undefined;
+  }
+
+  return artifact === "spec"
+    ? planningContext.specRevisionId
+    : artifact === "plan"
+      ? planningContext.planRevisionId
+      : planningContext.tasksRevisionId;
 }
 
 export class SpecRailTerminalApiClient {
@@ -305,6 +338,7 @@ export class SpecRailTerminalApiClient {
     const pendingApproval = artifacts
       .flatMap((artifact) => approvalRequests[artifact])
       .find((request) => request.status === "pending");
+    const selectedArtifact = pendingApproval?.artifact ?? (payload.planningContext?.planRevisionId ? "plan" : "spec");
 
     return {
       track: payload.track,
@@ -316,10 +350,31 @@ export class SpecRailTerminalApiClient {
         revisions,
         approvalRequests,
         selectedPlanningSessionId,
-        selectedArtifact: pendingApproval?.artifact ?? (payload.planningContext?.planRevisionId ? "plan" : "spec"),
+        selectedArtifact,
+        selectedRevisionId: pendingApproval?.revisionId
+          ?? getPlanningContextRevisionId(payload.planningContext, selectedArtifact)
+          ?? revisions[selectedArtifact][0]?.id,
         selectedApprovalRequestId: pendingApproval?.id,
       },
     };
+  }
+
+  async proposeArtifactRevision(input: {
+    trackId: string;
+    artifact: ArtifactKind;
+    content: string;
+    summary?: string;
+    createdBy: "user" | "agent" | "system";
+  }): Promise<ArtifactProposalResponse> {
+    return this.request<ArtifactProposalResponse>(`/tracks/${input.trackId}/artifacts/${input.artifact}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        content: input.content,
+        summary: input.summary,
+        createdBy: input.createdBy,
+      }),
+    });
   }
 
   async decideApprovalRequest(approvalRequestId: string, decision: "approve" | "reject"): Promise<void> {
@@ -458,6 +513,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     runEvents: createEmptyRunEventFeedState(),
     pendingTrackAction: null,
     pendingExecutionAction: null,
+    pendingProposalAction: null,
   };
 }
 
@@ -535,6 +591,7 @@ export async function bootstrapTerminalState(
     runEvents: createEmptyRunEventFeedState(runs.selectedId),
     pendingTrackAction: null,
     pendingExecutionAction: null,
+    pendingProposalAction: null,
   });
 }
 
@@ -556,6 +613,7 @@ export async function refreshTerminalState(
     runs,
     pendingTrackAction: null,
     pendingExecutionAction: null,
+    pendingProposalAction: null,
   });
 }
 
@@ -732,9 +790,27 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, f run filter, Space tail pause/resume, s start, e resume, c cancel, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, h/l artifact, [/] revision, v propose, f run filter, Space tail pause/resume, s start, e resume, c cancel, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderExecutionActionComposer(state.pendingExecutionAction),
+    ...renderProposalActionComposer(state.pendingProposalAction),
   ].join("\n");
+}
+
+function renderProposalActionComposer(action: PendingProposalActionState | null): string[] {
+  if (!action) {
+    return [];
+  }
+
+  return [
+    "",
+    `Proposal action: ${action.artifact} revision for track ${action.trackId}`,
+    `- author: ${action.createdBy} (press g to cycle)`,
+    `- editing: ${action.activeField}`,
+    `- summary: ${action.summary || "(optional, Tab to edit)"}`,
+    `- content: ${action.content || "(required, Tab to edit)"}`,
+    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, abort: Esc, backspace deletes, Tab switches field`,
+    action.message ? `- note: ${action.message}` : "- note: lightweight single-buffer authoring for review and approval handoff",
+  ];
 }
 
 function renderExecutionActionComposer(action: PendingExecutionActionState | null): string[] {
@@ -880,9 +956,13 @@ function renderTrackDetail(
 
   const workspace = detail.planningWorkspace;
   const selectedArtifact = workspace?.selectedArtifact ?? "plan";
-  const selectedRevision = workspace?.revisions[selectedArtifact]?.[0] ?? null;
+  const selectedRevision = workspace?.revisions[selectedArtifact]?.find((revision) => revision.id === workspace.selectedRevisionId)
+    ?? workspace?.revisions[selectedArtifact]?.[0]
+    ?? null;
   const pendingRequests = workspace ? getPendingApprovalRequests(workspace) : [];
   const selectedApproval = pendingRequests.find((request) => request.id === workspace?.selectedApprovalRequestId) ?? pendingRequests[0] ?? null;
+  const selectedRevisionIndex = selectedRevision ? workspace?.revisions[selectedArtifact]?.findIndex((revision) => revision.id === selectedRevision.id) ?? -1 : -1;
+  const selectedArtifactRevisionCount = workspace?.revisions[selectedArtifact]?.length ?? 0;
 
   return [
     `- id: ${detail.track.id}`,
@@ -900,10 +980,11 @@ function renderTrackDetail(
     `- tasks preview: ${previewText(detail.artifacts.tasks)}`,
     "- planning sessions:",
     ...renderPlanningSessionLines(workspace),
-    `- revision focus (${selectedArtifact}): ${selectedRevision ? `v${selectedRevision.version} by ${selectedRevision.createdBy} at ${selectedRevision.createdAt}${selectedRevision.approvedAt ? ` | approved ${selectedRevision.approvedAt}` : " | pending review"}` : "none"}`,
+    `- revision focus (${selectedArtifact}${selectedArtifactRevisionCount > 0 && selectedRevisionIndex >= 0 ? ` ${selectedRevisionIndex + 1}/${selectedArtifactRevisionCount}` : ""}): ${selectedRevision ? `v${selectedRevision.version} by ${selectedRevision.createdBy} at ${selectedRevision.createdAt}${selectedRevision.approvedAt ? ` | approved ${selectedRevision.approvedAt}` : " | pending review"}` : "none"}`,
     `- revision preview: ${selectedRevision ? previewText(selectedRevision.content, 120) : "none"}`,
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
     `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
+    `- planning actions: h/l switches artifact focus, [/] cycles revisions, v proposes a new revision for ${selectedArtifact}`,
     `- execution actions: press s to start a run for this track${detail.planningContext?.hasPendingChanges ? " (currently blocked until approvals land)" : ""}`,
   ];
 }
@@ -933,6 +1014,67 @@ function getPendingApprovalRequests(workspace: TrackPlanningWorkspace): Approval
     .flatMap((artifact) => workspace.approvalRequests[artifact])
     .filter((request) => request.status === "pending")
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+function cycleArtifact(current: ArtifactKind, delta: number): ArtifactKind {
+  const artifacts = ["spec", "plan", "tasks"] as const;
+  const currentIndex = artifacts.findIndex((artifact) => artifact === current);
+  return artifacts[(currentIndex + delta + artifacts.length) % artifacts.length] ?? current;
+}
+
+function selectTrackArtifact(state: TerminalAppState, artifact: ArtifactKind): TerminalAppState {
+  const workspace = state.tracks.data?.planningWorkspace;
+  if (state.screen !== "tracks" || !workspace || !state.tracks.data) {
+    return state;
+  }
+
+  const selectedRevisionId = workspace.revisions[artifact][0]?.id;
+  return {
+    ...state,
+    statusLine: `Selected ${artifact} revisions.`,
+    tracks: {
+      ...state.tracks,
+      data: {
+        ...state.tracks.data,
+        planningWorkspace: {
+          ...workspace,
+          selectedArtifact: artifact,
+          selectedRevisionId,
+          selectedApprovalRequestId: workspace.approvalRequests[artifact].find((request) => request.status === "pending")?.id,
+        },
+      },
+    },
+  };
+}
+
+function cycleTrackRevision(state: TerminalAppState, delta: number): TerminalAppState {
+  const workspace = state.tracks.data?.planningWorkspace;
+  if (state.screen !== "tracks" || !workspace || !state.tracks.data) {
+    return state;
+  }
+
+  const revisions = workspace.revisions[workspace.selectedArtifact];
+  if (revisions.length === 0) {
+    return { ...state, statusLine: `No ${workspace.selectedArtifact} revisions available.` };
+  }
+
+  const currentIndex = Math.max(0, revisions.findIndex((revision) => revision.id === workspace.selectedRevisionId));
+  const nextRevision = revisions[(currentIndex + delta + revisions.length) % revisions.length] ?? revisions[0];
+  return {
+    ...state,
+    statusLine: `Selected ${workspace.selectedArtifact} revision v${nextRevision.version}.`,
+    tracks: {
+      ...state.tracks,
+      data: {
+        ...state.tracks.data,
+        planningWorkspace: {
+          ...workspace,
+          selectedRevisionId: nextRevision.id,
+          selectedApprovalRequestId: workspace.approvalRequests[workspace.selectedArtifact].find((request) => request.revisionId === nextRevision.id && request.status === "pending")?.id,
+        },
+      },
+    },
+  };
 }
 
 function renderRunDetail(
@@ -1369,8 +1511,43 @@ export async function runTerminalApp(
     }));
   };
 
+  const openProposalComposer = () => {
+    if (state.screen !== "tracks") {
+      updateState({ ...state, statusLine: "Switch to the tracks screen to propose a revision." });
+      return;
+    }
+
+    const detail = state.tracks.data;
+    const workspace = detail?.planningWorkspace;
+    if (!detail || detail.track.id !== state.tracks.selectedId || !workspace) {
+      updateState({ ...state, statusLine: "Track detail is still loading. Press r and try again." });
+      return;
+    }
+
+    const artifact = workspace.selectedArtifact;
+    updateState({
+      ...state,
+      pendingExecutionAction: null,
+      pendingProposalAction: {
+        trackId: detail.track.id,
+        artifact,
+        summary: `Update ${artifact} for ${detail.track.title}`,
+        content: detail.artifacts[artifact],
+        createdBy: "user",
+        activeField: "content",
+        submitting: false,
+        message: null,
+      },
+      statusLine: `Composing ${artifact} revision proposal for ${detail.track.id}.`,
+    });
+  };
+
   const updateExecutionComposer = (next: PendingExecutionActionState | null, statusLine = state.statusLine) => {
     updateState({ ...state, pendingExecutionAction: next, statusLine });
+  };
+
+  const updateProposalComposer = (next: PendingProposalActionState | null, statusLine = state.statusLine) => {
+    updateState({ ...state, pendingProposalAction: next, statusLine });
   };
 
   const toggleRunTailPause = () => {
@@ -1424,6 +1601,97 @@ export async function runTerminalApp(
     const currentIndex = EXECUTION_BACKEND_OPTIONS.findIndex((backend) => backend === action.backend);
     const nextBackend = EXECUTION_BACKEND_OPTIONS[(currentIndex + 1 + EXECUTION_BACKEND_OPTIONS.length) % EXECUTION_BACKEND_OPTIONS.length] ?? action.backend;
     updateExecutionComposer({ ...action, backend: nextBackend, message: `Backend switched to ${nextBackend}.` }, `Backend switched to ${nextBackend}.`);
+  };
+
+  const editProposalField = (updater: (value: string) => string) => {
+    const action = state.pendingProposalAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const field = action.activeField;
+    updateProposalComposer({ ...action, [field]: updater(action[field]), message: null } as PendingProposalActionState);
+  };
+
+  const cycleProposalField = () => {
+    const action = state.pendingProposalAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const activeField = action.activeField === "summary" ? "content" : "summary";
+    updateProposalComposer({ ...action, activeField, message: null }, `Editing proposal ${activeField}.`);
+  };
+
+  const cycleProposalAuthor = () => {
+    const action = state.pendingProposalAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const authors = ["user", "agent", "system"] as const;
+    const currentIndex = authors.findIndex((author) => author === action.createdBy);
+    const createdBy = authors[(currentIndex + 1 + authors.length) % authors.length] ?? action.createdBy;
+    updateProposalComposer({ ...action, createdBy, message: `Proposal author set to ${createdBy}.` }, `Proposal author set to ${createdBy}.`);
+  };
+
+  const submitProposalAction = async () => {
+    const action = state.pendingProposalAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    if (action.content.trim().length === 0) {
+      updateProposalComposer({ ...action, message: "Proposal content is required." }, "Proposal content is required.");
+      return;
+    }
+
+    state = {
+      ...state,
+      pendingProposalAction: { ...action, submitting: true, message: null },
+      statusLine: `Creating ${action.artifact} revision proposal...`,
+    };
+    render();
+
+    try {
+      const result = await client.proposeArtifactRevision({
+        trackId: action.trackId,
+        artifact: action.artifact,
+        content: action.content,
+        summary: action.summary.trim() || undefined,
+        createdBy: action.createdBy,
+      });
+
+      const refreshed = await refreshTerminalState({ ...state, pendingProposalAction: null }, client);
+      const nextWorkspace = refreshed.tracks.data?.planningWorkspace;
+      updateState({
+        ...refreshed,
+        tracks: refreshed.tracks.data && nextWorkspace ? {
+          ...refreshed.tracks,
+          data: {
+            ...refreshed.tracks.data,
+            planningWorkspace: {
+              ...nextWorkspace,
+              selectedArtifact: action.artifact,
+              selectedRevisionId: result.revision.id,
+              selectedApprovalRequestId: result.approvalRequest.id,
+            },
+          },
+        } : refreshed.tracks,
+        statusLine: `Proposed ${action.artifact} revision v${result.revision.version}. Approval request ${result.approvalRequest.id} is pending.`,
+      });
+    } catch (error) {
+      updateState({
+        ...state,
+        pendingProposalAction: {
+          ...action,
+          submitting: false,
+          message: error instanceof Error ? error.message : "Failed to propose revision.",
+        },
+        error: error instanceof Error ? error.message : "Failed to propose revision.",
+        statusLine: error instanceof Error ? error.message : "Failed to propose revision.",
+      });
+    }
   };
 
   const submitExecutionAction = async () => {
@@ -1567,6 +1835,38 @@ export async function runTerminalApp(
         }
       }
 
+      if (state.pendingProposalAction) {
+        if (key.name === "escape") {
+          updateState({ ...state, pendingProposalAction: null, statusLine: "Proposal action cancelled." });
+          return;
+        }
+
+        if (key.name === "return" || key.name === "enter") {
+          void submitProposalAction();
+          return;
+        }
+
+        if (key.name === "backspace") {
+          editProposalField((value) => value.slice(0, -1));
+          return;
+        }
+
+        if (key.name === "tab") {
+          cycleProposalField();
+          return;
+        }
+
+        if (key.name === "g") {
+          cycleProposalAuthor();
+          return;
+        }
+
+        if (input.length === 1 && !key.ctrl) {
+          editProposalField((value) => `${value}${input}`);
+          return;
+        }
+      }
+
       if (key.name === "q") {
         cleanup();
         return;
@@ -1579,6 +1879,11 @@ export async function runTerminalApp(
 
       if (key.name === "s") {
         openStartRunComposer();
+        return;
+      }
+
+      if (key.name === "v") {
+        openProposalComposer();
         return;
       }
 
@@ -1614,6 +1919,26 @@ export async function runTerminalApp(
 
       if (key.name === "j" || key.name === "down") {
         updateState(selectNextItem(state));
+        return;
+      }
+
+      if (key.name === "h") {
+        updateState(selectTrackArtifact(state, cycleArtifact(state.tracks.data?.planningWorkspace?.selectedArtifact ?? "spec", -1)));
+        return;
+      }
+
+      if (key.name === "l") {
+        updateState(selectTrackArtifact(state, cycleArtifact(state.tracks.data?.planningWorkspace?.selectedArtifact ?? "spec", 1)));
+        return;
+      }
+
+      if (input === "[") {
+        updateState(cycleTrackRevision(state, -1));
+        return;
+      }
+
+      if (input === "]") {
+        updateState(cycleTrackRevision(state, 1));
         return;
       }
 

@@ -7,9 +7,9 @@ import {
   createEmptyRunEventFeedState,
   renderAppShell,
   refreshTerminalState,
+  SpecRailTerminalApiClient,
   setRunFilter,
   selectNextItem,
-  SpecRailTerminalApiClient,
   syncRunEventSelection,
   type TerminalAppState,
 } from "../index.js";
@@ -104,6 +104,36 @@ test("SpecRailTerminalApiClient surfaces API validation details for execution ac
   });
 
   await assert.rejects(() => client.startRun({ trackId: "track-1", prompt: "" }), /request validation failed \(prompt: must not be empty\)/);
+});
+
+test("SpecRailTerminalApiClient submits artifact revision proposals", async () => {
+  const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
+    const url = String(input);
+
+    if (url.endsWith("/tracks/track-1/artifacts/plan") && init?.method === "POST") {
+      assert.equal(init.body?.toString(), JSON.stringify({ content: "# Plan v2", summary: "Tighten milestones", createdBy: "user" }));
+      return new Response(
+        JSON.stringify({
+          revision: { id: "rev-2", trackId: "track-1", artifact: "plan", version: 2, createdBy: "user", content: "# Plan v2", createdAt: "2026-04-13T11:00:00.000Z" },
+          approvalRequest: { id: "approval-2", trackId: "track-1", artifact: "plan", revisionId: "rev-2", status: "pending", requestedBy: "user", createdAt: "2026-04-13T11:00:01.000Z" },
+        }),
+        { status: 201 },
+      );
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  const result = await client.proposeArtifactRevision({
+    trackId: "track-1",
+    artifact: "plan",
+    content: "# Plan v2",
+    summary: "Tighten milestones",
+    createdBy: "user",
+  });
+
+  assert.equal(result.revision.id, "rev-2");
+  assert.equal(result.approvalRequest.id, "approval-2");
 });
 
 test("SpecRailTerminalApiClient parses SSE frames from run event streams", async () => {
@@ -209,7 +239,10 @@ test("renderAppShell renders track list and selected detail preview", () => {
           planningMessages: [{ id: "msg-1", planningSessionId: "plan-1", authorType: "user", kind: "question", relatedArtifact: "plan", body: "Need approval?", createdAt: "2026-04-10T12:01:00.000Z" }],
           revisions: {
             spec: [],
-            plan: [{ id: "rev-1", trackId: "track-1", artifact: "plan", version: 1, createdBy: "agent", content: "# Plan\nAdd navigation", approvalRequestId: "approval-1", createdAt: "2026-04-10T12:00:30.000Z" }],
+            plan: [
+              { id: "rev-2", trackId: "track-1", artifact: "plan", version: 2, createdBy: "user", content: "# Plan\nShip it", approvalRequestId: "approval-2", approvedAt: "2026-04-10T12:10:00.000Z", createdAt: "2026-04-10T12:09:30.000Z" },
+              { id: "rev-1", trackId: "track-1", artifact: "plan", version: 1, createdBy: "agent", content: "# Plan\nAdd navigation", approvalRequestId: "approval-1", createdAt: "2026-04-10T12:00:30.000Z" },
+            ],
             tasks: [],
           },
           approvalRequests: {
@@ -219,6 +252,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
           },
           selectedPlanningSessionId: "plan-1",
           selectedArtifact: "plan",
+          selectedRevisionId: "rev-1",
           selectedApprovalRequestId: "approval-1",
         },
       },
@@ -234,6 +268,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
     runEvents: createEmptyRunEventFeedState(),
     pendingTrackAction: null,
     pendingExecutionAction: null,
+    pendingProposalAction: null,
     summary: {
       fetchedAt: "2026-04-10T12:00:00.000Z",
       tracks: [{ id: "track-1", title: "Terminal shell", status: "ready", priority: "high" }],
@@ -249,11 +284,13 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /execution context signal: new approvals needed before new runs/);
   assert.match(rendered, /planning sessions:/);
   assert.match(rendered, /Need approval\?/);
+  assert.match(rendered, /revision focus \(plan 2\/2\): v1 by agent/);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
+  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, v proposes a new revision for plan/);
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, f run filter, Space tail pause\/resume, s start, e resume, c cancel, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, h\/l artifact, \[\/\] revision, v propose, f run filter, Space tail pause\/resume, s start, e resume, c cancel, a approve, x reject, r refresh, q quit/);
 });
 
 test("renderAppShell renders run event monitor details", () => {
@@ -313,6 +350,7 @@ test("renderAppShell renders run event monitor details", () => {
     ),
     pendingTrackAction: null,
     pendingExecutionAction: null,
+    pendingProposalAction: null,
     summary: {
       fetchedAt: "2026-04-10T12:06:00.000Z",
       tracks: [{ id: "track-1", title: "Terminal shell", status: "failed" }],
@@ -367,6 +405,7 @@ test("selectNextItem advances run selection on runs screen", () => {
     ]),
     pendingTrackAction: null,
     pendingExecutionAction: null,
+    pendingProposalAction: null,
     summary: {
       fetchedAt: "2026-04-10T12:00:00.000Z",
       tracks: [{ id: "track-1", title: "Terminal shell", status: "ready" }],
@@ -410,7 +449,8 @@ test("refreshTerminalState preserves selection and surfaces detail load errors",
       runFilter: "all",
       runEvents: createEmptyRunEventFeedState("run-1"),
       pendingTrackAction: null,
-    pendingExecutionAction: null,
+      pendingExecutionAction: null,
+      pendingProposalAction: null,
       summary: {
         fetchedAt: "2026-04-10T12:00:00.000Z",
         tracks: [
@@ -506,6 +546,7 @@ test("appendRunEvents deduplicates by event id and syncRunEventSelection resets 
     runEvents: { ...feed, runId: "run-1", connection: "live", paused: false },
     pendingTrackAction: null,
     pendingExecutionAction: null,
+    pendingProposalAction: null,
     summary: {
       fetchedAt: "2026-04-10T12:02:00.000Z",
       tracks: [],

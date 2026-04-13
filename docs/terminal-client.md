@@ -50,12 +50,16 @@ The tracks screen now also acts as the first planning-workspace inspector:
 - loads planning sessions for the selected track
 - shows the latest messages from the selected planning session
 - summarizes revision focus for `spec`, `plan`, and `tasks`
+- lets operators switch artifact focus with `h` / `l`
+- lets operators cycle revision history for the focused artifact with `[` / `]`
 - highlights pending approval requests and whether the approved execution context is stale or blocked by newer planning changes
 - lets operators approve or reject the next pending approval request with `a` / `x`
+- opens a lightweight revision proposal composer with `v`
 
 This is intentionally still lightweight:
 
 - revision proposal authoring is review-oriented for now, not a full text editor
+- proposal authoring uses a single-buffer content field plus optional summary and author selector
 - approval decisions use a minimal `decidedBy: "terminal"` payload
 - the client optimizes for browsing and unblocking runs without dropping to raw API calls
 
@@ -63,5 +67,5 @@ This is intentionally still lightweight:
 
 Good next steps after the live monitor baseline:
 - richer provider-specific event formatting for long stdout/stderr payloads
-- richer planning interaction, including targeted revision selection and proposal authoring
+- richer planning interaction beyond the current focused revision selector and lightweight proposal authoring
 - operator actions from the terminal surface, such as resume/cancel shortcuts
