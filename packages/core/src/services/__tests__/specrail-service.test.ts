@@ -751,6 +751,223 @@ test("SpecRailService updates track workflow and approval state", async () => {
   );
 });
 
+test("SpecRailService trims persisted track fields and run prompts before execution", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-trim-"));
+  const spawnCalls: Array<{ prompt: string; profile: string }> = [];
+  const resumeCalls: Array<{ prompt: string; profile: string }> = [];
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        spawnCalls.push({ prompt: input.prompt, profile: input.profile });
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [
+            {
+              id: `${input.executionId}:started`,
+              executionId: input.executionId,
+              type: "task_status_changed",
+              timestamp: "2026-04-09T05:00:00.000Z",
+              source: "codex",
+              summary: "Run started",
+              payload: { status: "running" },
+            },
+          ],
+        };
+      },
+      async resume(input) {
+        resumeCalls.push({ prompt: input.prompt, profile: input.profile });
+        return {
+          sessionRef: input.sessionRef,
+          command: {
+            command: "codex",
+            args: ["exec", "resume", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+            resumeSessionRef: input.sessionRef,
+          },
+          events: [
+            {
+              id: `${input.executionId}:resumed`,
+              executionId: input.executionId,
+              type: "task_status_changed",
+              timestamp: "2026-04-09T05:05:00.000Z",
+              source: "codex",
+              summary: "Run resumed",
+              payload: { status: "running", sessionRef: input.sessionRef },
+            },
+          ],
+        };
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = ["2026-04-09T05:00:00.000Z", "2026-04-09T05:05:00.000Z"];
+      return () => values.shift() ?? "2026-04-09T05:05:00.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-trim", "run-trim"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "  Trim title  ",
+    description: "  Trim description  ",
+  });
+
+  assert.equal(track.title, "Trim title");
+  assert.equal(track.description, "Trim description");
+
+  const run = await service.startRun({
+    trackId: track.id,
+    prompt: "  Run the checks  ",
+    profile: "  default  ",
+  });
+
+  assert.deepEqual(spawnCalls, [{ prompt: "Run the checks", profile: "default" }]);
+  assert.equal(run.profile, "default");
+  assert.equal(run.command?.prompt, "Run the checks");
+
+  const resumedRun = await service.resumeRun({
+    runId: run.id,
+    prompt: "  Continue verifying  ",
+  });
+
+  assert.deepEqual(resumeCalls, [{ prompt: "Continue verifying", profile: "default" }]);
+  assert.equal(resumedRun.command?.prompt, "Continue verifying");
+});
+
+test("SpecRailService derives waiting approval and resumed running state from approval events", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-approval-events-"));
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [
+            {
+              id: `${input.executionId}:started`,
+              executionId: input.executionId,
+              type: "task_status_changed",
+              timestamp: "2026-04-09T06:00:00.000Z",
+              source: "codex",
+              summary: "Run started",
+              payload: { status: "running" },
+            },
+          ],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = ["2026-04-09T06:00:00.000Z", "2026-04-09T06:00:01.000Z", "2026-04-09T06:00:02.000Z"];
+      return () => values.shift() ?? "2026-04-09T06:00:02.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-approval", "run-approval"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Approval-gated run",
+    description: "Reconcile waiting approval from normalized events.",
+  });
+
+  const run = await service.startRun({
+    trackId: track.id,
+    prompt: "Start the gated work",
+  });
+
+  await service.recordExecutionEvent({
+    id: `${run.id}:approval-requested`,
+    executionId: run.id,
+    type: "approval_requested",
+    timestamp: "2026-04-09T06:00:01.000Z",
+    source: "codex",
+    summary: "Approval requested",
+    payload: {
+      gate: "plan",
+    },
+  });
+
+  const waitingRun = await service.getRun(run.id);
+  assert.equal(waitingRun?.status, "waiting_approval");
+  assert.equal(waitingRun?.startedAt, run.startedAt);
+  assert.equal(waitingRun?.finishedAt, undefined);
+  assert.deepEqual(waitingRun?.summary, {
+    eventCount: 2,
+    lastEventSummary: "Approval requested",
+    lastEventAt: "2026-04-09T06:00:01.000Z",
+  });
+
+  await service.recordExecutionEvent({
+    id: `${run.id}:approval-resolved`,
+    executionId: run.id,
+    type: "approval_resolved",
+    timestamp: "2026-04-09T06:00:02.000Z",
+    source: "codex",
+    summary: "Approval resolved",
+    payload: {
+      gate: "plan",
+      resolution: "approved",
+    },
+  });
+
+  const resumedRun = await service.getRun(run.id);
+  assert.equal(resumedRun?.status, "running");
+  assert.equal(resumedRun?.startedAt, run.startedAt);
+  assert.equal(resumedRun?.finishedAt, undefined);
+  assert.deepEqual(resumedRun?.summary, {
+    eventCount: 3,
+    lastEventSummary: "Approval resolved",
+    lastEventAt: "2026-04-09T06:00:02.000Z",
+  });
+});
+
 test("SpecRailService lists tracks and runs with basic filters", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-listing-"));
 
