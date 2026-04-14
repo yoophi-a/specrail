@@ -163,45 +163,30 @@ Their job is to:
 
 ## Structural diagram
 
-```text
-                  +----------------------+
-                  |   External operators  |
-                  |  clients / chat / ACP |
-                  +-----------+----------+
-                              |
-         +--------------------+--------------------+
-         |                    |                    |
-         v                    v                    v
-+----------------+   +----------------+   +------------------+
-| apps/terminal  |   | apps/telegram  |   | apps/acp-server  |
-| operator client|   | chat frontend  |   | ACP edge adapter |
-+--------+-------+   +--------+-------+   +---------+--------+
-         \                    |                     /
-          \                   |                    /
-           +------------------+-------------------+
-                              |
-                              v
-                    +-------------------+
-                    |     apps/api      |
-                    | HTTP + SSE control|
-                    |      plane        |
-                    +---------+---------+
-                              |
-                              v
-                  +---------------------------+
-                  |   packages/core           |
-                  |   SpecRailService         |
-                  |   domain + orchestration  |
-                  +-------------+-------------+
-                                |
-               +----------------+----------------+
-               |                                 |
-               v                                 v
-     +---------------------+          +----------------------+
-     | packages/adapters   |          | persisted state/files|
-     | codex / claude_code |          | tracks/runs/planning |
-     | execution backends  |          | approvals/bindings   |
-     +---------------------+          +----------------------+
+```mermaid
+flowchart TD
+    ext[External operators, clients, chat, ACP]
+
+    terminal[apps/terminal<br/>operator client]
+    telegram[apps/telegram<br/>chat frontend]
+    acp[apps/acp-server<br/>ACP edge adapter]
+
+    api[apps/api<br/>HTTP + SSE control plane]
+    core[packages/core<br/>SpecRailService<br/>domain + orchestration]
+    adapters[packages/adapters<br/>codex / claude_code<br/>execution backends]
+    state[persisted state/files<br/>tracks, runs, planning, approvals, bindings]
+
+    ext --> terminal
+    ext --> telegram
+    ext --> acp
+
+    terminal --> api
+    telegram --> api
+    acp --> api
+
+    api --> core
+    core --> adapters
+    core --> state
 ```
 
 ## Maturity assessment
