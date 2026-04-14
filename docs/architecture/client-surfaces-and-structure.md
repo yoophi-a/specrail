@@ -161,20 +161,23 @@ Their job is to:
 - call into the API/service layer
 - reflect persisted SpecRail state back to operators or connected clients
 
-## Structural diagram
+## Structural diagrams
+
+### 1. High-level client surface map
 
 ```mermaid
 flowchart TD
-    ext[External operators, clients, chat, ACP]
+    ext[External operators and clients]
 
-    terminal[apps/terminal<br/>operator client]
-    telegram[apps/telegram<br/>chat frontend]
-    acp[apps/acp-server<br/>ACP edge adapter]
+    terminal[apps/terminal
+operator console]
+    telegram[apps/telegram
+chat entrypoint]
+    acp[apps/acp-server
+ACP edge adapter]
 
-    api[apps/api<br/>HTTP + SSE control plane]
-    core[packages/core<br/>SpecRailService<br/>domain + orchestration]
-    adapters[packages/adapters<br/>codex / claude_code<br/>execution backends]
-    state[persisted state/files<br/>tracks, runs, planning, approvals, bindings]
+    api[apps/api
+HTTP + SSE control plane]
 
     ext --> terminal
     ext --> telegram
@@ -183,10 +186,86 @@ flowchart TD
     terminal --> api
     telegram --> api
     acp --> api
+```
+
+### 2. Runtime and orchestration structure
+
+```mermaid
+flowchart TD
+    api[apps/api
+control plane]
+    core[packages/core
+SpecRailService]
+    adapters[packages/adapters
+provider runtimes]
+    state[persisted state/files]
 
     api --> core
     core --> adapters
     core --> state
+```
+
+### 3. Domain and persistence focus
+
+```mermaid
+flowchart LR
+    core[SpecRailService]
+
+    track[Track]
+    planning[PlanningSession]
+    revision[ArtifactRevision]
+    approval[ApprovalRequest]
+    execution[Execution]
+    binding[ChannelBinding]
+    attachment[AttachmentReference]
+
+    core --> track
+    core --> planning
+    core --> revision
+    core --> approval
+    core --> execution
+    core --> binding
+    core --> attachment
+```
+
+### 4. Execution backend flow
+
+```mermaid
+flowchart LR
+    operator[Operator / client action]
+    api[apps/api or client surface]
+    core[SpecRailService]
+    adapter[ExecutorAdapter]
+    provider[Codex / Claude Code]
+    events[Normalized ExecutionEvent stream]
+
+    operator --> api
+    api --> core
+    core --> adapter
+    adapter --> provider
+    provider --> adapter
+    adapter --> events
+    events --> core
+```
+
+### 5. Client surface roles
+
+```mermaid
+flowchart TD
+    terminal[apps/terminal]
+    telegram[apps/telegram]
+    acp[apps/acp-server]
+
+    terminalRole[Rich operator workflow:
+inspect, monitor, approve, execute]
+    telegramRole[Thin messaging workflow:
+bind chat, attach files, start runs, relay status]
+    acpRole[Protocol-facing integration:
+map ACP sessions onto SpecRail runs]
+
+    terminal --> terminalRole
+    telegram --> telegramRole
+    acp --> acpRole
 ```
 
 ## Maturity assessment
