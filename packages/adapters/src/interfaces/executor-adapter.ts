@@ -1,5 +1,7 @@
 import type { CommandExecutionMetadata, ExecutionEvent } from "@specrail/core";
 
+export type ExecutionBackend = "codex" | "claude_code" | (string & {});
+
 export interface ExecutorCommandSpec {
   command: string;
   args: string[];
@@ -9,11 +11,16 @@ export interface ExecutorCommandSpec {
 export interface ExecutorSessionMetadata {
   executionId: string;
   sessionRef: string;
-  backend: string;
+  backend: ExecutionBackend;
   profile: string;
   workspacePath: string;
   command: ExecutorCommandSpec;
   pid?: number;
+  providerSessionId?: string;
+  providerInvocationId?: string;
+  resumeSessionRef?: string;
+  parentSessionRef?: string;
+  providerMetadata?: Record<string, unknown>;
   codexSessionId?: string;
   status: "spawned" | "running" | "completed" | "failed" | "cancelled";
   prompt: string;

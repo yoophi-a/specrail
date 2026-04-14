@@ -6,10 +6,16 @@ import test from "node:test";
 
 import type { ExecutionEvent } from "../../domain/types.js";
 import {
+  FileAttachmentReferenceRepository,
+  FileApprovalRequestRepository,
+  FileArtifactRevisionRepository,
+  FileChannelBindingRepository,
   FileExecutionRepository,
+  FilePlanningSessionRepository,
   FileProjectRepository,
   FileTrackRepository,
   JsonlEventStore,
+  JsonlPlanningMessageStore,
 } from "../file-repositories.js";
 import { SpecRailService } from "../specrail-service.js";
 
@@ -21,6 +27,12 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
+    channelBindingRepository: new FileChannelBindingRepository(path.join(rootDir, "state")),
+    attachmentReferenceRepository: new FileAttachmentReferenceRepository(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
     artifactWriter: {
@@ -30,6 +42,11 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
         await writeFile(path.join(trackDir, "spec.md"), input.specContent, "utf8");
         await writeFile(path.join(trackDir, "plan.md"), input.planContent, "utf8");
         await writeFile(path.join(trackDir, "tasks.md"), input.tasksContent, "utf8");
+      },
+      async writeApprovedArtifact(input) {
+        const trackDir = path.join(artifactRoot, input.track.id);
+        await mkdir(trackDir, { recursive: true });
+        await writeFile(path.join(trackDir, `${input.artifact}.md`), input.content, "utf8");
       },
     },
     executor: {
@@ -112,12 +129,14 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
       const values = [
         "2026-04-09T03:00:00.000Z",
         "2026-04-09T03:00:00.000Z",
+        "2026-04-09T03:01:00.000Z",
+        "2026-04-09T03:02:00.000Z",
         "2026-04-09T03:10:00.000Z",
       ];
       return () => values.shift() ?? "2026-04-09T03:10:00.000Z";
     })(),
     idGenerator: (() => {
-      const values = ["track-a", "run-a"];
+      const values = ["track-a", "planning-a", "message-a", "run-a"];
       return () => values.shift() ?? "extra";
     })(),
   });
@@ -133,6 +152,24 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
 
   const specContent = await readFile(path.join(artifactRoot, track.id, "spec.md"), "utf8");
   assert.match(specContent, /# Spec — Build executor MVP/);
+  assert.equal(track.planningSystem, "native");
+
+  const planningSession = await service.createPlanningSession({ trackId: track.id });
+  assert.equal(planningSession.trackId, track.id);
+  assert.equal(planningSession.status, "active");
+
+  const planningMessage = await service.appendPlanningMessage({
+    planningSessionId: planningSession.id,
+    authorType: "user",
+    kind: "question",
+    body: "Please clarify the approval flow before execution.",
+    relatedArtifact: "plan",
+  });
+  assert.equal(planningMessage.planningSessionId, planningSession.id);
+
+  const planningMessages = await service.listPlanningMessages(planningSession.id);
+  assert.equal(planningMessages.length, 1);
+  assert.equal(planningMessages[0]?.body, "Please clarify the approval flow before execution.");
 
   const run = await service.startRun({
     trackId: track.id,
@@ -185,6 +222,41 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
     events.map((event) => event.summary),
     ["Run started", "Prepared Codex command", "Run resumed", "Run cancelled"],
   );
+
+  const binding = await service.bindChannel({
+    projectId: "project-default",
+    channelType: "telegram",
+    externalChatId: "chat-1",
+    externalThreadId: "thread-1",
+    externalUserId: "user-1",
+    trackId: track.id,
+    planningSessionId: planningSession.id,
+  });
+  assert.equal(binding.trackId, track.id);
+
+  const rebound = await service.bindChannel({
+    projectId: "project-default",
+    channelType: "telegram",
+    externalChatId: "chat-1",
+    externalThreadId: "thread-1",
+    externalUserId: "user-2",
+    planningSessionId: planningSession.id,
+  });
+  assert.equal(rebound.id, binding.id);
+  assert.equal(rebound.externalUserId, "user-2");
+
+  const attachment = await service.registerAttachmentReference({
+    sourceType: "telegram",
+    externalFileId: "file-1",
+    fileName: "notes.txt",
+    trackId: track.id,
+    planningSessionId: planningSession.id,
+  });
+  assert.equal(attachment.externalFileId, "file-1");
+  assert.deepEqual(
+    (await service.listAttachmentReferences({ planningSessionId: planningSession.id })).map((item) => item.id),
+    [attachment.id],
+  );
 });
 
 test("SpecRailService throws when starting a run for a missing track", async () => {
@@ -193,9 +265,13 @@ test("SpecRailService throws when starting a run for a missing track", async () 
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
-    artifactWriter: { async write() {} },
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
     executor: {
       name: "codex",
       async spawn() {
@@ -215,9 +291,154 @@ test("SpecRailService throws when starting a run for a missing track", async () 
     workspaceRoot: path.join(rootDir, "workspaces"),
   });
 
+  await assert.rejects(() => service.createPlanningSession({ trackId: "missing-track" }), /Track not found/);
+  await assert.rejects(
+    () => service.appendPlanningMessage({ planningSessionId: "missing-session", authorType: "user", body: "hello" }),
+    /Planning session not found/,
+  );
+  await assert.rejects(() => service.listPlanningMessages("missing-session"), /Planning session not found/);
   await assert.rejects(() => service.startRun({ trackId: "missing-track", prompt: "nope" }), /Track not found/);
   await assert.rejects(() => service.resumeRun({ runId: "missing-run", prompt: "nope" }), /Run not found/);
   await assert.rejects(() => service.cancelRun({ runId: "missing-run" }), /Run not found/);
+});
+
+test("SpecRailService routes run start and resume through the selected backend and profile", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-backends-"));
+  const stateDir = path.join(rootDir, "state");
+  const workspaceRoot = path.join(rootDir, "workspaces");
+  const spawnCalls: Array<{ backend: string; profile: string }> = [];
+  const resumeCalls: Array<{ backend: string; profile?: string }> = [];
+
+  const createExecutor = (backend: string) => ({
+    name: backend,
+    async spawn(input: { executionId: string; prompt: string; workspacePath: string; profile: string }) {
+      spawnCalls.push({ backend, profile: input.profile });
+      return {
+        sessionRef: `${backend}:${input.executionId}`,
+        command: {
+          command: backend,
+          args: [input.prompt],
+          cwd: input.workspacePath,
+          prompt: input.prompt,
+        },
+        events: [
+          {
+            id: `${input.executionId}:${backend}:started`,
+            executionId: input.executionId,
+            type: "task_status_changed" as const,
+            timestamp: "2026-04-10T11:00:00.000Z",
+            source: backend,
+            summary: `Run started (${backend})`,
+            payload: { status: "running", backend, profile: input.profile },
+          },
+        ],
+      };
+    },
+    async resume(input: { executionId?: string; sessionRef: string; prompt: string; workspacePath?: string; profile?: string }) {
+      resumeCalls.push({ backend, profile: input.profile });
+      return {
+        sessionRef: input.sessionRef,
+        command: {
+          command: backend,
+          args: [input.prompt],
+          cwd: input.workspacePath ?? workspaceRoot,
+          prompt: input.prompt,
+          resumeSessionRef: input.sessionRef,
+        },
+        events: [
+          {
+            id: `${input.executionId}:${backend}:resumed`,
+            executionId: input.executionId ?? "unknown",
+            type: "task_status_changed" as const,
+            timestamp: "2026-04-10T11:05:00.000Z",
+            source: backend,
+            summary: `Run resumed (${backend})`,
+            payload: { status: "running", backend, profile: input.profile },
+          },
+        ],
+      };
+    },
+    async cancel(input: { executionId?: string; sessionRef: string }) {
+      return {
+        id: `${input.executionId}:${backend}:cancelled`,
+        executionId: input.executionId ?? "unknown",
+        type: "task_status_changed" as const,
+        timestamp: "2026-04-10T11:10:00.000Z",
+        source: backend,
+        summary: `Run cancelled (${backend})`,
+        payload: { status: "cancelled", sessionRef: input.sessionRef },
+      };
+    },
+  });
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(stateDir),
+    trackRepository: new FileTrackRepository(stateDir),
+    planningSessionRepository: new FilePlanningSessionRepository(stateDir),
+    planningMessageStore: new JsonlPlanningMessageStore(stateDir),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(stateDir),
+    approvalRequestRepository: new FileApprovalRequestRepository(stateDir),
+    channelBindingRepository: new FileChannelBindingRepository(stateDir),
+    attachmentReferenceRepository: new FileAttachmentReferenceRepository(stateDir),
+    executionRepository: new FileExecutionRepository(stateDir),
+    eventStore: new JsonlEventStore(stateDir),
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
+    executors: {
+      codex: createExecutor("codex"),
+      claude_code: createExecutor("claude_code"),
+    },
+    defaultExecutionBackend: "codex",
+    defaultExecutionProfile: "default",
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot,
+    now: (() => {
+      const values = [
+        "2026-04-10T11:00:00.000Z",
+        "2026-04-10T11:00:00.000Z",
+        "2026-04-10T11:05:00.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-10T11:05:00.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-a", "run-a"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Claude backend",
+    description: "Verify backend routing.",
+  });
+
+  const run = await service.startRun({
+    trackId: track.id,
+    prompt: "Use Claude Code",
+    backend: "claude_code",
+    profile: "claude-sonnet-4",
+  });
+
+  assert.equal(run.backend, "claude_code");
+  assert.equal(run.profile, "claude-sonnet-4");
+  assert.deepEqual(spawnCalls, [{ backend: "claude_code", profile: "claude-sonnet-4" }]);
+
+  const resumedRun = await service.resumeRun({
+    runId: run.id,
+    prompt: "Continue with Opus",
+    backend: "claude_code",
+    profile: "claude-opus-4-1",
+  });
+
+  assert.equal(resumedRun.backend, "claude_code");
+  assert.equal(resumedRun.profile, "claude-opus-4-1");
+  assert.deepEqual(resumeCalls, [{ backend: "claude_code", profile: "claude-opus-4-1" }]);
+
+  await assert.rejects(
+    () => service.resumeRun({ runId: run.id, prompt: "Switch backend", backend: "codex" }),
+    /Run .* is backed by claude_code, not codex/,
+  );
 });
 
 test("SpecRailService applies explicit sorting and pagination for track and run listings", async () => {
@@ -241,9 +462,13 @@ test("SpecRailService applies explicit sorting and pagination for track and run 
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
-    artifactWriter: { async write() {} },
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
     executor: {
       name: "codex",
       async spawn(input) {
@@ -348,9 +573,13 @@ test("SpecRailService reconciles execution records from adapter terminal events 
     new SpecRailService({
       projectRepository: new FileProjectRepository(path.join(rootDir, `state-${idSuffix}`)),
       trackRepository: new FileTrackRepository(path.join(rootDir, `state-${idSuffix}`)),
+      planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, `state-${idSuffix}`)),
+      planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, `state-${idSuffix}`)),
+      artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, `state-${idSuffix}`)),
+      approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, `state-${idSuffix}`)),
       executionRepository: new FileExecutionRepository(path.join(rootDir, `state-${idSuffix}`)),
       eventStore: new JsonlEventStore(path.join(rootDir, `state-${idSuffix}`)),
-      artifactWriter: { async write() {} },
+      artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
       executor: {
         name: "codex",
         async spawn(input) {
@@ -465,9 +694,13 @@ test("SpecRailService updates track workflow and approval state", async () => {
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
-    artifactWriter: { async write() {} },
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
     executor: {
       name: "codex",
       async spawn() {
@@ -524,9 +757,13 @@ test("SpecRailService lists tracks and runs with basic filters", async () => {
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
     trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
     executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
     eventStore: new JsonlEventStore(path.join(rootDir, "state")),
-    artifactWriter: { async write() {} },
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
     executor: {
       name: "codex",
       async spawn(input) {
@@ -633,4 +870,275 @@ test("SpecRailService lists tracks and runs with basic filters", async () => {
     (await service.listRuns({ status: "completed" })).map((run) => run.id),
     [runTwo.id],
   );
+});
+
+test("SpecRailService versions artifact revisions and applies approval transitions", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-revisions-"));
+  const artifactRoot = path.join(rootDir, "artifacts");
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: {
+      async write(input) {
+        const trackDir = path.join(artifactRoot, input.track.id);
+        await mkdir(trackDir, { recursive: true });
+        await writeFile(path.join(trackDir, "spec.md"), input.specContent, "utf8");
+        await writeFile(path.join(trackDir, "plan.md"), input.planContent, "utf8");
+        await writeFile(path.join(trackDir, "tasks.md"), input.tasksContent, "utf8");
+      },
+      async writeApprovedArtifact(input) {
+        const trackDir = path.join(artifactRoot, input.track.id);
+        await mkdir(trackDir, { recursive: true });
+        await writeFile(path.join(trackDir, `${input.artifact}.md`), input.content, "utf8");
+      },
+    },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("should not be called");
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = [
+        "2026-04-10T01:00:00.000Z",
+        "2026-04-10T01:00:00.000Z",
+        "2026-04-10T01:05:00.000Z",
+        "2026-04-10T01:10:00.000Z",
+        "2026-04-10T01:15:00.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-10T01:15:00.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-revision", "rev-1", "approval-1", "rev-2", "approval-2"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Revision workflow",
+    description: "Track artifact revisions independently from approved current views.",
+  });
+
+  const proposedSpec = await service.proposeArtifactRevision({
+    trackId: track.id,
+    artifact: "spec",
+    content: "# Spec revision v1\n\nApproved candidate.",
+    summary: "Initial review draft",
+    createdBy: "agent",
+  });
+  assert.equal(proposedSpec.revision.version, 1);
+  assert.equal(proposedSpec.approvalRequest.status, "pending");
+
+  const rejected = await service.rejectApprovalRequest({
+    approvalRequestId: proposedSpec.approvalRequest.id,
+    decidedBy: "user",
+    comment: "Needs sharper scope.",
+  });
+  assert.equal(rejected.status, "rejected");
+
+  const stillApprovedCurrent = await readFile(path.join(artifactRoot, track.id, "spec.md"), "utf8");
+  assert.match(stillApprovedCurrent, /# Spec — Revision workflow/);
+
+  const proposedSpecV2 = await service.proposeArtifactRevision({
+    trackId: track.id,
+    artifact: "spec",
+    content: "# Spec revision v2\n\nApproved content.",
+    summary: "Re-scoped draft",
+    createdBy: "agent",
+  });
+  assert.equal(proposedSpecV2.revision.version, 2);
+
+  const approved = await service.approveApprovalRequest({
+    approvalRequestId: proposedSpecV2.approvalRequest.id,
+    decidedBy: "user",
+    comment: "Looks good.",
+  });
+  assert.equal(approved.status, "approved");
+
+  const approvedCurrent = await readFile(path.join(artifactRoot, track.id, "spec.md"), "utf8");
+  assert.equal(approvedCurrent, "# Spec revision v2\n\nApproved content.");
+
+  const revisions = await service.listArtifactRevisions(track.id, "spec");
+  assert.deepEqual(revisions.map((revision) => revision.version), [2, 1]);
+  assert.equal(revisions[0]?.approvedAt, "2026-04-10T01:15:00.000Z");
+
+  const approvalRequests = await service.listApprovalRequests(track.id, "spec");
+  assert.deepEqual(approvalRequests.map((request) => request.status), ["approved", "rejected"]);
+
+  const persistedTrack = await service.getTrack(track.id);
+  assert.equal(persistedTrack?.specStatus, "approved");
+
+  await assert.rejects(
+    () => service.approveApprovalRequest({ approvalRequestId: proposedSpecV2.approvalRequest.id, decidedBy: "user" }),
+    /already approved/,
+  );
+});
+
+test("SpecRailService links runs to the latest approved planning context and detects stale context", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-planning-context-"));
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [
+            {
+              id: `${input.executionId}:started`,
+              executionId: input.executionId,
+              type: "task_status_changed",
+              timestamp: "2026-04-10T02:10:00.000Z",
+              source: "codex",
+              summary: "Run started",
+              payload: { status: "running" },
+            },
+          ],
+        };
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = [
+        "2026-04-10T02:00:00.000Z",
+        "2026-04-10T02:00:00.000Z",
+        "2026-04-10T02:01:00.000Z",
+        "2026-04-10T02:02:00.000Z",
+        "2026-04-10T02:03:00.000Z",
+        "2026-04-10T02:04:00.000Z",
+        "2026-04-10T02:05:00.000Z",
+        "2026-04-10T02:06:00.000Z",
+        "2026-04-10T02:07:00.000Z",
+        "2026-04-10T02:08:00.000Z",
+        "2026-04-10T02:09:00.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-10T02:09:00.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-ctx", "plan-session", "plan-rev-1", "plan-approval-1", "run-ctx", "plan-rev-2", "plan-approval-2"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({ title: "Planning-linked run", description: "Attach approved plan context" });
+  const planningSession = await service.createPlanningSession({ trackId: track.id, status: "approved" });
+
+  const planV1 = await service.proposeArtifactRevision({
+    trackId: track.id,
+    artifact: "plan",
+    content: "# Plan v1",
+    createdBy: "agent",
+  });
+  await service.approveApprovalRequest({ approvalRequestId: planV1.approvalRequest.id, decidedBy: "user" });
+
+  const run = await service.startRun({ trackId: track.id, prompt: "Ship it", planningSessionId: planningSession.id });
+  assert.equal(run.planningSessionId, planningSession.id);
+  assert.equal(run.planRevisionId, planV1.revision.id);
+  assert.equal(run.planningContextStale, false);
+
+  const planV2 = await service.proposeArtifactRevision({
+    trackId: track.id,
+    artifact: "plan",
+    content: "# Plan v2",
+    createdBy: "agent",
+  });
+  await service.approveApprovalRequest({ approvalRequestId: planV2.approvalRequest.id, decidedBy: "user" });
+
+  const staleRun = await service.getRun(run.id);
+  assert.equal(staleRun?.planningContextStale, true);
+  assert.equal(staleRun?.planningContextStaleReason, "Approved planning context changed for: plan");
+
+  const planningContext = await service.getTrackPlanningContext(track.id);
+  assert.equal(planningContext.planRevisionId, planV2.revision.id);
+  assert.equal(planningContext.planningSessionId, planningSession.id);
+});
+
+test("SpecRailService blocks run start when planning revisions are pending approval", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-pending-planning-"));
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
+    executor: {
+      name: "codex",
+      async spawn() {
+        throw new Error("should not be called");
+      },
+      async resume() {
+        throw new Error("should not be called");
+      },
+      async cancel() {
+        throw new Error("should not be called");
+      },
+    },
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    idGenerator: (() => {
+      const values = ["track-pending", "plan-rev-1", "approval-1"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({ title: "Pending plan", description: "Do not run yet" });
+  await service.proposeArtifactRevision({
+    trackId: track.id,
+    artifact: "plan",
+    content: "# Plan candidate",
+    createdBy: "agent",
+  });
+
+  await assert.rejects(() => service.startRun({ trackId: track.id, prompt: "Start anyway" }), /pending planning changes/);
 });

@@ -23,6 +23,37 @@ export const APPROVAL_STATUSES = ["draft", "pending", "approved", "rejected"] as
 
 export type ApprovalStatus = "draft" | "pending" | "approved" | "rejected";
 
+export const ARTIFACT_KINDS = ["spec", "plan", "tasks"] as const;
+
+export type ArtifactKind = "spec" | "plan" | "tasks";
+
+export const APPROVAL_REQUEST_STATUSES = ["pending", "approved", "rejected"] as const;
+
+export type ApprovalRequestStatus = "pending" | "approved" | "rejected";
+
+export const PLANNING_SYSTEMS = ["native", "openspec", "speckit"] as const;
+
+export type PlanningSystem = "native" | "openspec" | "speckit";
+
+export const PLANNING_SESSION_STATUSES = [
+  "active",
+  "waiting_user",
+  "waiting_agent",
+  "approved",
+  "archived",
+] as const;
+
+export type PlanningSessionStatus =
+  | "active"
+  | "waiting_user"
+  | "waiting_agent"
+  | "approved"
+  | "archived";
+
+export const PLANNING_MESSAGE_KINDS = ["message", "question", "decision", "note"] as const;
+
+export type PlanningMessageKind = "message" | "question" | "decision" | "note";
+
 export type ExecutionStatus =
   | "created"
   | "queued"
@@ -38,6 +69,7 @@ export interface Project {
   repoUrl?: string;
   localRepoPath?: string;
   defaultWorkflowPolicy?: string;
+  defaultPlanningSystem?: PlanningSystem;
   createdAt: string;
   updatedAt: string;
 }
@@ -51,8 +83,87 @@ export interface Track {
   specStatus: ApprovalStatus;
   planStatus: ApprovalStatus;
   priority: "low" | "medium" | "high";
+  planningSystem?: PlanningSystem;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PlanningSession {
+  id: string;
+  trackId: string;
+  status: PlanningSessionStatus;
+  createdAt: string;
+  updatedAt: string;
+  latestRevisionId?: string;
+}
+
+export interface ArtifactRevision {
+  id: string;
+  trackId: string;
+  artifact: ArtifactKind;
+  version: number;
+  content: string;
+  summary?: string;
+  createdAt: string;
+  createdBy: "user" | "agent" | "system";
+  approvalRequestId?: string;
+  approvedAt?: string;
+}
+
+export interface ApprovalRequest {
+  id: string;
+  trackId: string;
+  artifact: ArtifactKind;
+  revisionId: string;
+  status: ApprovalRequestStatus;
+  requestedBy: "user" | "agent" | "system";
+  requestedAt: string;
+  decidedAt?: string;
+  decidedBy?: "user" | "agent" | "system";
+  decisionComment?: string;
+}
+
+export interface PlanningMessage {
+  id: string;
+  planningSessionId: string;
+  authorType: "user" | "agent" | "system";
+  kind: PlanningMessageKind;
+  body: string;
+  relatedArtifact?: "spec" | "plan" | "tasks";
+  createdAt: string;
+}
+
+export const CHANNEL_TYPES = ["telegram"] as const;
+
+export type ChannelType = "telegram";
+
+export interface ChannelBinding {
+  id: string;
+  projectId: string;
+  channelType: ChannelType;
+  externalChatId: string;
+  externalThreadId?: string;
+  externalUserId?: string;
+  trackId?: string;
+  planningSessionId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const ATTACHMENT_SOURCE_TYPES = ["telegram"] as const;
+
+export type AttachmentSourceType = "telegram";
+
+export interface AttachmentReference {
+  id: string;
+  sourceType: AttachmentSourceType;
+  externalFileId: string;
+  fileName?: string;
+  mimeType?: string;
+  localPath?: string;
+  trackId?: string;
+  planningSessionId?: string;
+  uploadedAt: string;
 }
 
 export interface CommandExecutionMetadata {
@@ -80,6 +191,13 @@ export interface Execution {
   sessionRef?: string;
   command?: CommandExecutionMetadata;
   summary?: ExecutionSummary;
+  planningSessionId?: string;
+  specRevisionId?: string;
+  planRevisionId?: string;
+  tasksRevisionId?: string;
+  planningContextStale?: boolean;
+  planningContextUpdatedAt?: string;
+  planningContextStaleReason?: string;
   status: ExecutionStatus;
   createdAt: string;
   startedAt?: string;
@@ -102,6 +220,7 @@ export interface ExecutionEvent {
   id: string;
   executionId: string;
   type: EventType;
+  subtype?: string;
   timestamp: string;
   source: string;
   summary: string;

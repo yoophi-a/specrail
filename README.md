@@ -30,7 +30,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 ## What the current MVP can already do
 - create track records and materialize `spec.md`, `plan.md`, and `tasks.md`
 - persist project, track, run, and event state on local files
-- start a Codex-backed run with durable session metadata
+- start a Codex-backed or Claude Code-backed run with durable session metadata
 - resume and cancel a run
 - expose run events through JSON and SSE APIs
 - list tracks and runs with filtering, pagination, and sorting
@@ -39,6 +39,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 
 ### Implemented now
 - artifact-first control plane with file-backed state
+- ACP stdio edge adapter that maps ACP sessions onto SpecRail runs without replacing the HTTP API
 - default project bootstrap on first track creation
 - track creation and track state updates
 - generated per-track artifacts
@@ -46,17 +47,28 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - JSONL-backed run event persistence
 - SSE event streaming for run events
 - request validation and structured API errors
-- automated API/config/adapter tests
+- thin-channel foundations for external chat bindings and attachment references
+- thin Telegram adapter app that binds chats to tracks and relays run events
+- automated API/config/adapter/frontend tests
 
 ### Not implemented yet
-- authentication and multi-user access control
 - database-backed persistence
 - real approval broker or approval event workflow
 - worktree or branch orchestration beyond metadata/workspace path allocation
-- non-Codex executor adapters
-- web UI, GitHub app/webhooks, or chat integrations
+- authentication and multi-user access control
+- web UI or GitHub app/webhooks
 - artifact editing endpoints
 - automatic track reconciliation from terminal run outcomes beyond the current first-pass policy
+
+## ACP edge adapter status
+
+`apps/acp-server` now projects SpecRail runs into richer ACP session updates:
+- task status changes refresh ACP `session_info_update` metadata
+- runtime `approval_requested` events emit ACP `session/request_permission`
+- client permission decisions can round-trip back through `session/prompt` via `_meta.specrail.permissionResolution`
+- full original execution events still ride along in `_meta.specrail.executionEvent`
+
+Current limitation: runtime approval resolution is still adapter-mediated, not a backend-native approval broker.
 
 ## HTTP API
 
@@ -73,6 +85,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
+  - response also includes inferred `planningContext` with the latest approved revision references and pending-change flag
 - `PATCH /tracks/:trackId`
   - update workflow state
   - body: any of `{ status, specStatus, planStatus }`
@@ -80,7 +93,9 @@ Current endpoints in `apps/api/src/index.ts`:
 ### Runs
 - `POST /runs`
   - start a run for a track
-  - body: `{ trackId, prompt, profile? }`
+  - body: `{ trackId, prompt, backend?, profile?, planningSessionId? }`
+  - `backend` currently supports `codex` and `claude_code`
+  - runs infer and persist the latest approved planning context, and reject starts while newer planning revisions are still pending approval
 - `GET /runs`
   - list runs with pagination and explicit sorting
   - default sort: `sortBy=createdAt&sortOrder=desc`
@@ -90,7 +105,8 @@ Current endpoints in `apps/api/src/index.ts`:
   - return persisted run metadata
 - `POST /runs/:runId/resume`
   - resume an existing run
-  - body: `{ prompt }`
+  - body: `{ prompt, backend?, profile? }`
+  - `backend` is optional and must match the run's persisted backend when provided
 - `POST /runs/:runId/cancel`
   - cancel a running run
 - `GET /runs/:runId/events`
@@ -104,6 +120,18 @@ Current endpoints in `apps/api/src/index.ts`:
 - `422` for validation failures
   - includes invalid pagination/sort params
 - `500` for unexpected server errors
+
+### Channel bindings and attachments
+- `POST /channel-bindings`
+  - create or refresh an external channel binding
+  - body: `{ projectId, channelType, externalChatId, externalThreadId?, externalUserId?, trackId?, planningSessionId? }`
+- `GET /channel-bindings?channelType=telegram&externalChatId=...&externalThreadId?...`
+  - resolve a thin-channel conversation back to its linked SpecRail context
+- `POST /attachments`
+  - register an attachment reference received by a channel frontend
+  - body: `{ sourceType, externalFileId, fileName?, mimeType?, localPath?, trackId?, planningSessionId? }`
+- `GET /attachments?trackId=...` or `GET /attachments?planningSessionId=...`
+  - list attachment references associated with a track or planning session
 
 ## Artifact and state layout
 
@@ -127,6 +155,10 @@ At runtime the API writes under `SPECRAIL_DATA_DIR` (default from config), with 
       <projectId>.json
     tracks/
       <trackId>.json
+    channel-bindings/
+      <bindingId>.json
+    attachments/
+      <attachmentId>.json
     executions/
       <runId>.json
     events/
@@ -155,7 +187,8 @@ Notes:
 - status values include `created`, `queued`, `running`, `waiting_approval`, `completed`, `failed`, `cancelled`
 - current API actively exercises `running`, `completed`, `failed`, and `cancelled`
 - terminal run states reconcile back into track status with a first-pass policy: `completed -> review`, `failed -> failed`, `cancelled -> blocked`
-- run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, and event summary
+- run metadata stores backend, profile, workspace path, branch name, session ref, command metadata, normalized provider session metadata (`providerSessionId`, `providerInvocationId`, `resumeSessionRef`, `parentSessionRef`, `providerMetadata`), event summary, and linked planning-context references (`planningSessionId`, approved revision ids, stale flag)
+- Claude Code runs additionally surface provider metadata such as resolved model, transcript/log path, and working directory through the shared `providerMetadata` shape
 
 ### Event types
 Normalized event types currently defined in core:
@@ -175,12 +208,22 @@ The Codex MVP currently emits lifecycle-oriented events such as:
 - `shell_command` for session spawn
 - `message` for stdout/stderr capture
 
+Claude Code now additionally promotes important `stream-json` provider events into richer shared event subtypes, for example:
+- `summary` / `claude_init` for session initialization metadata
+- `message` / `claude_assistant_text` for assistant text turns
+- `tool_call` / `claude_tool_call` and `tool_result` / `claude_tool_result`
+- `approval_requested` / `claude_permission_denial` when Claude reports blocked tool execution
+- `summary` / `claude_result_*` for result envelopes
+
 ## Repository layout
 
 ```text
 specrail/
   apps/
     api/                  # Node HTTP API with JSON + SSE routes
+    acp-server/           # ACP stdio edge adapter over SpecRail runs
+    terminal/             # Operator-facing terminal shell over the SpecRail API
+    telegram/             # Thin Telegram webhook frontend over the SpecRail API
   packages/
     core/                 # Domain types, file repositories, service orchestration
     adapters/             # Executor contracts and Codex MVP adapter
@@ -196,7 +239,63 @@ specrail/
 pnpm install
 pnpm test
 pnpm dev:api
+pnpm dev:acp
+pnpm dev:terminal
+pnpm dev:telegram
 ```
+
+## Terminal client skeleton
+
+SpecRail now includes a runnable terminal client skeleton in `apps/terminal`.
+
+Operator environment:
+- `SPECRAIL_API_BASE_URL` default `http://127.0.0.1:4000`
+- `SPECRAIL_TERMINAL_REFRESH_MS` default `5000`
+- `SPECRAIL_TERMINAL_INITIAL_SCREEN` one of `home`, `tracks`, `runs`, `settings`
+
+Run it locally:
+
+```bash
+pnpm dev:api
+pnpm dev:terminal
+```
+
+Current shell behavior:
+- loads recent tracks and runs from the API
+- renders navigable track and run list views with selected detail panes
+- filters runs between all, active, and terminal states
+- auto-selects the current track/run and refreshes detail snapshots from the API
+- tails live selected-run events over SSE with cached recent activity and reconnect attempts when the stream drops
+- allows pausing and resuming the live tail without losing the selected run context
+- shows richer run status context including event counts, last event, planning-context staleness, and failure focus where available
+- supports `1-4` to switch screens, `j/k` or arrow keys to move selection, `f` to cycle run filters, `Space` to pause/resume the tail, `r` to refresh, `q` to quit
+- supports `s` on tracks to compose a new run, `e` on runs to resume a completed/failed/cancelled run, and `c` on runs to cancel an active run
+- exposes backend/profile choices in the terminal action composer, with validation feedback surfaced directly in the shell status and composer note
+- surfaces loading, streaming, and refresh failures in the status line and detail panes
+
+## Claude Code backend
+
+SpecRail supports `claude_code` as a first-class execution backend.
+
+Operator notes:
+- SpecRail runs Claude Code in non-interactive `--print --output-format stream-json` mode.
+- `profile` is passed through as `--model`.
+- resume relies on persisted provider session metadata discovered from stdout.
+- cancel is local best-effort process termination plus SpecRail state reconciliation.
+- cancelled sessions now persist verification hints such as whether `SIGTERM` was delivered and why manual follow-up may still be required.
+- adapter exports a lightweight `checkClaudeCodeReadiness()` helper so operators can validate `claude --version` before routing work to this backend.
+
+Read `docs/claude-code-operations.md` for setup, limitations, recovery, and smoke-test steps.
+
+For an opt-in real-CLI smoke run, set `SPECRAIL_RUN_CLAUDE_SMOKE=1` and run `pnpm test:claude-smoke`.
+By default this smoke path stays out of `pnpm test` so local and CI runs do not become provider-dependent unless explicitly enabled.
+
+For GitHub Actions, use the opt-in stub at `.github/workflows/claude-smoke.yml` together with `scripts/run-claude-smoke-ci.sh`.
+That workflow is intentionally gated behind repository variable `SPECRAIL_ENABLE_CLAUDE_SMOKE=1` so the default CI path stays stable when Claude credentials are unavailable on runners.
+
+For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`.
+
+For the API server, you can set `SPECRAIL_EXECUTION_BACKEND` and `SPECRAIL_EXECUTION_PROFILE` to choose the default executor/backend and profile used when callers omit them.
 
 Then call the API locally, for example:
 
@@ -214,6 +313,7 @@ The docs above are aligned to the current MVP implementation and tests in:
 - `packages/core/src/services/specrail-service.ts`
 - `packages/config/src/artifacts.ts`
 - `packages/adapters/src/providers/codex-adapter.stub.ts`
+- `packages/adapters/src/__tests__/claude-code.smoke.test.ts`
 
 ## Related research
 

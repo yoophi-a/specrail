@@ -145,7 +145,7 @@ classDiagram
 
 | Member | Type | Description |
 |--------|------|-------------|
-| `name` | `string` (readonly) | 어댑터 이름 (e.g. `"codex"`) |
+| `name` | `string` (readonly) | 어댑터 이름 (e.g. `"codex"`, `"claude_code"`) |
 | `capabilities` | `AdapterCapabilities` | 지원 기능 플래그 |
 | `spawn` | `(input: SpawnExecutionInput) => Promise<SpawnExecutionResult>` | 새 실행 시작 |
 | `resume` | `(input: ResumeExecutionInput) => Promise<ResumeExecutionResult>` | 기존 세션 재개 |
@@ -159,6 +159,20 @@ classDiagram
 | `supportsResume` | 세션 재개 지원 여부 |
 | `supportsStructuredEvents` | 구조화된 이벤트 출력 지원 여부 |
 | `supportsApprovalBroker` | 승인 브로커 연동 지원 여부 |
+
+### Shared session metadata expectations
+
+`ExecutorSessionMetadata`는 provider별 세부 필드를 직접 노출하지 않고 아래 공통 필드를 우선 채웁니다.
+
+| Field | Meaning |
+|------|---------|
+| `providerSessionId` | provider가 발급한 durable session/thread ID |
+| `providerInvocationId` | 개별 실행(run/turn) ID |
+| `resumeSessionRef` | 재개 시 넘겨야 하는 provider session ref |
+| `parentSessionRef` | fork/sub-session의 상위 세션 ref |
+| `providerMetadata` | model, transcript/log path, working directory 같은 provider 전용 부가 정보 |
+
+Codex는 `providerSessionId`에 discovery된 `codexSessionId`를 복사하고, Claude Code도 같은 shared shape로 정규화합니다.
 
 ### Spawn/Resume/Cancel flow
 
@@ -185,6 +199,45 @@ sequenceDiagram
 ```
 
 ---
+
+## Claude Code contract
+
+`packages/adapters/src/providers/claude-code-contract.ts`는 실제 프로세스 구현 전에 Claude Code가 맞춰야 할 계약을 정의합니다.
+
+### Adapter expectations
+
+- **start**
+  - shared `SpawnExecutionInput`을 받아 provider command/session metadata를 준비
+  - `providerSessionId`, `providerInvocationId`가 확인되면 즉시 shared metadata에 반영
+- **resume**
+  - 가능하면 `resumeSessionRef` 또는 `providerSessionId`를 우선 사용
+  - provider가 새 run id를 발급해도 기존 `sessionRef`는 SpecRail run과 연결된 stable ref로 유지
+- **cancel**
+  - local process 종료와 별개로 shared 상태는 항상 `cancelled`로 기록
+  - provider cancellation identifier가 있으면 payload/metadata에 보존
+- **event mapping**
+  - spawn/start → `shell_command`
+  - stdout/stderr or structured log lines → `message`
+  - resumed/cancelled/completed/failed → `task_status_changed`
+
+이 계약 덕분에 API/service 레이어는 Codex와 Claude Code를 같은 execution model로 다룰 수 있습니다.
+
+현재 SpecRail API는 이 shared shape를 그대로 노출합니다.
+
+- `POST /runs` → `{ trackId, prompt, backend?, profile?, planningSessionId? }`
+- `POST /runs/:runId/resume` → `{ prompt, backend?, profile? }`
+- persisted run metadata에는 `backend`, `profile`, `providerSessionId`, `providerInvocationId`, `resumeSessionRef`, `providerMetadata`가 함께 남습니다.
+
+즉, caller는 provider-specific route를 따로 알 필요 없이 `backend: "claude_code"`와 원하는 profile만 넘기면 됩니다.
+
+### Current operational limitations
+
+- resume는 Claude stdout에서 `session_id`를 관측해야 가장 안정적으로 동작합니다.
+- cancel은 provider 원격 취소가 아니라 SpecRail이 띄운 로컬 프로세스에 대한 `SIGTERM` 기반 best-effort 동작입니다.
+- shared event model에는 stdout/stderr/lifecycle 위주로만 투영되며, Claude의 모든 세부 subtype을 별도 도메인 이벤트로 승격하지는 않습니다.
+- `providerInvocationId`는 durable session id가 아니라 마지막으로 관측한 run/event uuid일 수 있습니다.
+
+운영 관점의 상세 setup/recovery 가이드는 `docs/claude-code-operations.md`를 참고합니다.
 
 ## CodexAdapter
 

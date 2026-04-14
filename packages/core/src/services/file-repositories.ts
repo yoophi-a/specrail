@@ -1,10 +1,27 @@
 import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { Execution, ExecutionEvent, Project, Track } from "../domain/types.js";
 import type {
+  AttachmentReference,
+  ApprovalRequest,
+  ArtifactRevision,
+  ChannelBinding,
+  Execution,
+  ExecutionEvent,
+  PlanningMessage,
+  PlanningSession,
+  Project,
+  Track,
+} from "../domain/types.js";
+import type {
+  AttachmentReferenceRepository,
+  ApprovalRequestRepository,
+  ArtifactRevisionRepository,
+  ChannelBindingRepository,
   EventStore,
   ExecutionRepository,
+  PlanningMessageStore,
+  PlanningSessionRepository,
   ProjectRepository,
   TrackRepository,
 } from "./ports.js";
@@ -12,6 +29,12 @@ import type {
 interface FileStatePaths {
   projectsDir: string;
   tracksDir: string;
+  planningSessionsDir: string;
+  planningMessagesDir: string;
+  artifactRevisionsDir: string;
+  approvalRequestsDir: string;
+  channelBindingsDir: string;
+  attachmentsDir: string;
   executionsDir: string;
   eventsDir: string;
 }
@@ -20,6 +43,12 @@ export function getStatePaths(rootDir: string): FileStatePaths {
   return {
     projectsDir: path.join(rootDir, "projects"),
     tracksDir: path.join(rootDir, "tracks"),
+    planningSessionsDir: path.join(rootDir, "planning-sessions"),
+    planningMessagesDir: path.join(rootDir, "planning-messages"),
+    artifactRevisionsDir: path.join(rootDir, "artifact-revisions"),
+    approvalRequestsDir: path.join(rootDir, "approval-requests"),
+    channelBindingsDir: path.join(rootDir, "channel-bindings"),
+    attachmentsDir: path.join(rootDir, "attachments"),
     executionsDir: path.join(rootDir, "executions"),
     eventsDir: path.join(rootDir, "events"),
   };
@@ -129,6 +158,65 @@ export class FileTrackRepository implements TrackRepository {
   }
 }
 
+export class FilePlanningSessionRepository implements PlanningSessionRepository {
+  private readonly repository: JsonFileRepository<PlanningSession>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<PlanningSession>(getStatePaths(rootDir).planningSessionsDir);
+  }
+
+  create(session: PlanningSession): Promise<void> {
+    return this.repository.create(session);
+  }
+
+  getById(sessionId: string): Promise<PlanningSession | null> {
+    return this.repository.getById(sessionId);
+  }
+
+  async listByTrack(trackId: string): Promise<PlanningSession[]> {
+    const sessions = await this.repository.list();
+    return sessions
+      .filter((session) => session.trackId === trackId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id));
+  }
+
+  update(session: PlanningSession): Promise<void> {
+    return this.repository.update(session);
+  }
+}
+
+export class JsonlPlanningMessageStore implements PlanningMessageStore {
+  private readonly messagesDir: string;
+
+  constructor(rootDir: string) {
+    this.messagesDir = getStatePaths(rootDir).planningMessagesDir;
+  }
+
+  async append(message: PlanningMessage): Promise<void> {
+    const filePath = path.join(this.messagesDir, `${message.planningSessionId}.jsonl`);
+    await ensureDir(path.dirname(filePath));
+    await appendFile(filePath, `${JSON.stringify(message)}\n`, "utf8");
+  }
+
+  async listBySession(planningSessionId: string): Promise<PlanningMessage[]> {
+    const filePath = path.join(this.messagesDir, `${planningSessionId}.jsonl`);
+
+    try {
+      const content = await readFile(filePath, "utf8");
+      return content
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as PlanningMessage);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return [];
+      }
+
+      throw error;
+    }
+  }
+}
+
 export class FileExecutionRepository implements ExecutionRepository {
   private readonly repository: JsonFileRepository<Execution>;
 
@@ -150,6 +238,137 @@ export class FileExecutionRepository implements ExecutionRepository {
 
   update(execution: Execution): Promise<void> {
     return this.repository.update(execution);
+  }
+}
+
+export class FileArtifactRevisionRepository implements ArtifactRevisionRepository {
+  private readonly repository: JsonFileRepository<ArtifactRevision>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<ArtifactRevision>(getStatePaths(rootDir).artifactRevisionsDir);
+  }
+
+  create(revision: ArtifactRevision): Promise<void> {
+    return this.repository.create(revision);
+  }
+
+  getById(revisionId: string): Promise<ArtifactRevision | null> {
+    return this.repository.getById(revisionId);
+  }
+
+  async listByTrack(trackId: string, artifact?: ArtifactRevision["artifact"]): Promise<ArtifactRevision[]> {
+    const revisions = await this.repository.list();
+    return revisions
+      .filter((revision) => revision.trackId === trackId)
+      .filter((revision) => (artifact ? revision.artifact === artifact : true))
+      .sort(
+        (left, right) =>
+          right.version - left.version || right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+      );
+  }
+
+  async getLatestVersion(trackId: string, artifact: ArtifactRevision["artifact"]): Promise<number> {
+    const revisions = await this.listByTrack(trackId, artifact);
+    return revisions[0]?.version ?? 0;
+  }
+
+  update(revision: ArtifactRevision): Promise<void> {
+    return this.repository.update(revision);
+  }
+}
+
+export class FileApprovalRequestRepository implements ApprovalRequestRepository {
+  private readonly repository: JsonFileRepository<ApprovalRequest>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<ApprovalRequest>(getStatePaths(rootDir).approvalRequestsDir);
+  }
+
+  create(request: ApprovalRequest): Promise<void> {
+    return this.repository.create(request);
+  }
+
+  getById(requestId: string): Promise<ApprovalRequest | null> {
+    return this.repository.getById(requestId);
+  }
+
+  async listByTrack(trackId: string, artifact?: ApprovalRequest["artifact"]): Promise<ApprovalRequest[]> {
+    const requests = await this.repository.list();
+    return requests
+      .filter((request) => request.trackId === trackId)
+      .filter((request) => (artifact ? request.artifact === artifact : true))
+      .sort(
+        (left, right) =>
+          right.requestedAt.localeCompare(left.requestedAt) || right.id.localeCompare(left.id),
+      );
+  }
+
+  update(request: ApprovalRequest): Promise<void> {
+    return this.repository.update(request);
+  }
+}
+
+export class FileChannelBindingRepository implements ChannelBindingRepository {
+  private readonly repository: JsonFileRepository<ChannelBinding>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<ChannelBinding>(getStatePaths(rootDir).channelBindingsDir);
+  }
+
+  create(binding: ChannelBinding): Promise<void> {
+    return this.repository.create(binding);
+  }
+
+  getById(bindingId: string): Promise<ChannelBinding | null> {
+    return this.repository.getById(bindingId);
+  }
+
+  async findByExternalRef(input: {
+    channelType: ChannelBinding["channelType"];
+    externalChatId: string;
+    externalThreadId?: string;
+  }): Promise<ChannelBinding | null> {
+    const bindings = await this.repository.list();
+    return (
+      bindings.find(
+        (binding) =>
+          binding.channelType === input.channelType &&
+          binding.externalChatId === input.externalChatId &&
+          (input.externalThreadId === undefined ? true : binding.externalThreadId === input.externalThreadId),
+      ) ?? null
+    );
+  }
+
+  list(): Promise<ChannelBinding[]> {
+    return this.repository.list();
+  }
+
+  update(binding: ChannelBinding): Promise<void> {
+    return this.repository.update(binding);
+  }
+}
+
+export class FileAttachmentReferenceRepository implements AttachmentReferenceRepository {
+  private readonly repository: JsonFileRepository<AttachmentReference>;
+
+  constructor(rootDir: string) {
+    this.repository = new JsonFileRepository<AttachmentReference>(getStatePaths(rootDir).attachmentsDir);
+  }
+
+  create(attachment: AttachmentReference): Promise<void> {
+    return this.repository.create(attachment);
+  }
+
+  getById(attachmentId: string): Promise<AttachmentReference | null> {
+    return this.repository.getById(attachmentId);
+  }
+
+  async listByTarget(input: { trackId?: string; planningSessionId?: string }): Promise<AttachmentReference[]> {
+    const attachments = await this.repository.list();
+    return attachments
+      .filter((attachment) => (input.trackId ? attachment.trackId === input.trackId : true))
+      .filter((attachment) => (input.planningSessionId ? attachment.planningSessionId === input.planningSessionId : true))
+      .sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt) || right.id.localeCompare(left.id));
   }
 }
 

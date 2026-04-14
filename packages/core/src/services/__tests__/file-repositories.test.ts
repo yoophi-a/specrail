@@ -4,8 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import type { Execution, ExecutionEvent, Project, Track } from "../../domain/types.js";
+import type { ApprovalRequest, ArtifactRevision, Execution, ExecutionEvent, Project, Track } from "../../domain/types.js";
 import {
+  FileAttachmentReferenceRepository,
+  FileApprovalRequestRepository,
+  FileArtifactRevisionRepository,
+  FileChannelBindingRepository,
   FileExecutionRepository,
   FileProjectRepository,
   FileTrackRepository,
@@ -120,4 +124,105 @@ test("jsonl event store appends and lists events in order", async () => {
 
   assert.deepEqual(await eventStore.listByExecution("execution-1"), events);
   assert.deepEqual(await eventStore.listByExecution("missing-execution"), []);
+});
+
+test("artifact revision and approval request repositories persist and query by track", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-artifact-state-"));
+  const revisionRepository = new FileArtifactRevisionRepository(rootDir);
+  const approvalRequestRepository = new FileApprovalRequestRepository(rootDir);
+
+  const revisionOne: ArtifactRevision = {
+    id: "revision-1",
+    trackId: "track-1",
+    artifact: "spec",
+    version: 1,
+    content: "spec v1",
+    createdAt: "2026-04-10T00:00:00.000Z",
+    createdBy: "agent",
+    approvalRequestId: "approval-1",
+  };
+  const revisionTwo: ArtifactRevision = {
+    ...revisionOne,
+    id: "revision-2",
+    version: 2,
+    content: "spec v2",
+    createdAt: "2026-04-10T00:10:00.000Z",
+    approvalRequestId: "approval-2",
+  };
+  const approvalOne: ApprovalRequest = {
+    id: "approval-1",
+    trackId: "track-1",
+    artifact: "spec",
+    revisionId: "revision-1",
+    status: "rejected",
+    requestedBy: "agent",
+    requestedAt: "2026-04-10T00:00:00.000Z",
+    decidedAt: "2026-04-10T00:05:00.000Z",
+    decidedBy: "user",
+  };
+  const approvalTwo: ApprovalRequest = {
+    ...approvalOne,
+    id: "approval-2",
+    revisionId: "revision-2",
+    status: "pending",
+    requestedAt: "2026-04-10T00:10:00.000Z",
+    decidedAt: undefined,
+    decidedBy: undefined,
+  };
+
+  await revisionRepository.create(revisionOne);
+  await revisionRepository.create(revisionTwo);
+  await approvalRequestRepository.create(approvalOne);
+  await approvalRequestRepository.create(approvalTwo);
+
+  assert.equal(await revisionRepository.getLatestVersion("track-1", "spec"), 2);
+  assert.deepEqual(
+    (await revisionRepository.listByTrack("track-1", "spec")).map((revision) => revision.id),
+    ["revision-2", "revision-1"],
+  );
+  assert.deepEqual(
+    (await approvalRequestRepository.listByTrack("track-1", "spec")).map((request) => request.id),
+    ["approval-2", "approval-1"],
+  );
+});
+
+test("channel binding and attachment repositories persist thin-frontend references", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-channel-state-"));
+  const channelBindingRepository = new FileChannelBindingRepository(rootDir);
+  const attachmentReferenceRepository = new FileAttachmentReferenceRepository(rootDir);
+
+  await channelBindingRepository.create({
+    id: "binding-1",
+    projectId: "project-1",
+    channelType: "telegram",
+    externalChatId: "chat-1",
+    externalThreadId: "thread-1",
+    trackId: "track-1",
+    planningSessionId: "planning-1",
+    createdAt: "2026-04-10T10:00:00.000Z",
+    updatedAt: "2026-04-10T10:00:00.000Z",
+  });
+  await attachmentReferenceRepository.create({
+    id: "attachment-1",
+    sourceType: "telegram",
+    externalFileId: "file-1",
+    fileName: "spec.pdf",
+    mimeType: "application/pdf",
+    trackId: "track-1",
+    planningSessionId: "planning-1",
+    uploadedAt: "2026-04-10T10:05:00.000Z",
+  });
+
+  assert.equal(
+    (await channelBindingRepository.findByExternalRef({
+      channelType: "telegram",
+      externalChatId: "chat-1",
+      externalThreadId: "thread-1",
+    }))?.id,
+    "binding-1",
+  );
+  assert.deepEqual(
+    (await attachmentReferenceRepository.listByTarget({ planningSessionId: "planning-1" })).map((attachment) => attachment.id),
+    ["attachment-1"],
+  );
 });

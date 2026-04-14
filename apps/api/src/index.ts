@@ -8,20 +8,37 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..", "..");
 
-import { CodexAdapter } from "@specrail/adapters";
-import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts } from "@specrail/config";
+import { ClaudeCodeAdapter, CodexAdapter } from "@specrail/adapters";
+import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts, writeApprovedTrackArtifact } from "@specrail/config";
 import {
   APPROVAL_STATUSES,
+  APPROVAL_REQUEST_STATUSES,
+  ARTIFACT_KINDS,
+  ATTACHMENT_SOURCE_TYPES,
+  CHANNEL_TYPES,
+  FileAttachmentReferenceRepository,
+  FileApprovalRequestRepository,
+  FileArtifactRevisionRepository,
+  FileChannelBindingRepository,
   FileExecutionRepository,
+  FilePlanningSessionRepository,
   FileProjectRepository,
   FileTrackRepository,
   JsonlEventStore,
+  JsonlPlanningMessageStore,
   NotFoundError,
+  ValidationError,
+  PLANNING_MESSAGE_KINDS,
+  PLANNING_SESSION_STATUSES,
   getStatePaths,
   SpecRailService,
   TRACK_STATUSES,
   type ExecutionEvent,
   type ApprovalStatus,
+  type ArtifactKind,
+  type PlanningMessage,
+  type PlanningMessageKind,
+  type PlanningSessionStatus,
   type SpecRailServiceDependencies,
   type TrackStatus,
 } from "@specrail/core";
@@ -41,7 +58,9 @@ interface TrackRequestBody {
 interface RunRequestBody {
   trackId: string;
   prompt: string;
+  backend?: string;
   profile?: string;
+  planningSessionId?: string;
 }
 
 interface UpdateTrackRequestBody {
@@ -50,8 +69,54 @@ interface UpdateTrackRequestBody {
   planStatus?: ApprovalStatus;
 }
 
+interface CreatePlanningSessionRequestBody {
+  status?: PlanningSessionStatus;
+}
+
+interface AppendPlanningMessageRequestBody {
+  authorType: PlanningMessage["authorType"];
+  kind?: PlanningMessageKind;
+  body: string;
+  relatedArtifact?: PlanningMessage["relatedArtifact"];
+}
+
 interface ResumeRunRequestBody {
   prompt: string;
+  backend?: string;
+  profile?: string;
+}
+
+const EXECUTION_BACKENDS = ["codex", "claude_code"] as const;
+
+interface ProposeArtifactRevisionRequestBody {
+  content: string;
+  summary?: string;
+  createdBy: "user" | "agent" | "system";
+}
+
+interface DecideApprovalRequestBody {
+  decidedBy: "user" | "agent" | "system";
+  comment?: string;
+}
+
+interface BindChannelRequestBody {
+  projectId: string;
+  channelType: "telegram";
+  externalChatId: string;
+  externalThreadId?: string;
+  externalUserId?: string;
+  trackId?: string;
+  planningSessionId?: string;
+}
+
+interface RegisterAttachmentRequestBody {
+  sourceType: "telegram";
+  externalFileId: string;
+  fileName?: string;
+  mimeType?: string;
+  localPath?: string;
+  trackId?: string;
+  planningSessionId?: string;
 }
 
 interface TrackListQuery {
@@ -122,12 +187,48 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
   const eventStore = new JsonlEventStore(stateDir);
   const projectRepository = new FileProjectRepository(stateDir);
   const trackRepository = new FileTrackRepository(stateDir);
+  const planningSessionRepository = new FilePlanningSessionRepository(stateDir);
+  const planningMessageStore = new JsonlPlanningMessageStore(stateDir);
+  const artifactRevisionRepository = new FileArtifactRevisionRepository(stateDir);
+  const approvalRequestRepository = new FileApprovalRequestRepository(stateDir);
+  const channelBindingRepository = new FileChannelBindingRepository(stateDir);
+  const attachmentReferenceRepository = new FileAttachmentReferenceRepository(stateDir);
   const executionRepository = new FileExecutionRepository(stateDir);
   let service: SpecRailService | null = null;
+
+  const codexExecutor = new CodexAdapter({
+    sessionsDir,
+    onEvent: async (event) => {
+      if (service) {
+        await service.recordExecutionEvent(event);
+        return;
+      }
+
+      await eventStore.append(event);
+    },
+  });
+
+  const claudeCodeExecutor = new ClaudeCodeAdapter({
+    sessionsDir,
+    onEvent: async (event) => {
+      if (service) {
+        await service.recordExecutionEvent(event);
+        return;
+      }
+
+      await eventStore.append(event);
+    },
+  });
 
   const serviceDependencies: SpecRailServiceDependencies = {
     projectRepository,
     trackRepository,
+    planningSessionRepository,
+    planningMessageStore,
+    artifactRevisionRepository,
+    approvalRequestRepository,
+    channelBindingRepository,
+    attachmentReferenceRepository,
     executionRepository,
     eventStore,
     artifactWriter: {
@@ -145,18 +246,23 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
           tasksContent: input.tasksContent,
         });
       },
-    },
-    executor: new CodexAdapter({
-      sessionsDir,
-      onEvent: async (event) => {
-        if (service) {
-          await service.recordExecutionEvent(event);
-          return;
-        }
-
-        await eventStore.append(event);
+      async writeApprovedArtifact(input) {
+        await writeApprovedTrackArtifact({
+          rootDir: artifactRoot,
+          repoVisibleRootDir: repoArtifactRoot,
+          trackId: input.track.id,
+          artifact: input.artifact,
+          content: input.content,
+        });
       },
-    }),
+    },
+    executor: codexExecutor,
+    executors: {
+      codex: codexExecutor,
+      claude_code: claudeCodeExecutor,
+    },
+    defaultExecutionBackend: loadConfig().executionBackend,
+    defaultExecutionProfile: loadConfig().executionProfile,
     defaultProject: {
       id: "project-default",
       name: "SpecRail",
@@ -235,6 +341,18 @@ function isTrackStatus(value: unknown): value is TrackStatus {
 
 function isApprovalStatus(value: unknown): value is ApprovalStatus {
   return typeof value === "string" && APPROVAL_STATUSES.includes(value as ApprovalStatus);
+}
+
+function isPlanningSessionStatus(value: unknown): value is PlanningSessionStatus {
+  return typeof value === "string" && PLANNING_SESSION_STATUSES.includes(value as PlanningSessionStatus);
+}
+
+function isPlanningMessageKind(value: unknown): value is PlanningMessageKind {
+  return typeof value === "string" && PLANNING_MESSAGE_KINDS.includes(value as PlanningMessageKind);
+}
+
+function isArtifactKind(value: unknown): value is ArtifactKind {
+  return typeof value === "string" && ARTIFACT_KINDS.includes(value as ArtifactKind);
 }
 
 function parsePositiveInteger(value: string | null): number | undefined {
@@ -341,6 +459,91 @@ function assertValidRunCreateBody(body: RunRequestBody): void {
     details.push(promptDetail);
   }
 
+  if (body.backend !== undefined) {
+    const backendDetail = getNonEmptyStringDetail("backend", body.backend);
+    if (backendDetail) {
+      details.push(backendDetail);
+    } else if (!EXECUTION_BACKENDS.includes(body.backend as (typeof EXECUTION_BACKENDS)[number])) {
+      details.push({ field: "backend", message: `must be one of: ${EXECUTION_BACKENDS.join(", ")}` });
+    }
+  }
+
+  if (body.profile !== undefined) {
+    const profileDetail = getNonEmptyStringDetail("profile", body.profile);
+    if (profileDetail) {
+      details.push(profileDetail);
+    }
+  }
+
+  if (body.planningSessionId !== undefined) {
+    const planningSessionIdDetail = getNonEmptyStringDetail("planningSessionId", body.planningSessionId);
+    if (planningSessionIdDetail) {
+      details.push(planningSessionIdDetail);
+    }
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidCreatePlanningSessionBody(body: CreatePlanningSessionRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (body.status !== undefined && !isPlanningSessionStatus(body.status)) {
+    details.push({
+      field: "status",
+      message: `status must be one of: ${PLANNING_SESSION_STATUSES.join(", ")}`,
+    });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("invalid planning session payload", details);
+  }
+}
+
+function assertValidAppendPlanningMessageBody(body: AppendPlanningMessageRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (body.authorType !== "user" && body.authorType !== "agent" && body.authorType !== "system") {
+    details.push({ field: "authorType", message: "authorType must be one of: user, agent, system" });
+  }
+
+  if (typeof body.body !== "string" || body.body.trim().length === 0) {
+    details.push({ field: "body", message: "body is required" });
+  }
+
+  if (body.kind !== undefined && !isPlanningMessageKind(body.kind)) {
+    details.push({ field: "kind", message: `kind must be one of: ${PLANNING_MESSAGE_KINDS.join(", ")}` });
+  }
+
+  if (body.relatedArtifact !== undefined && !["spec", "plan", "tasks"].includes(body.relatedArtifact)) {
+    details.push({ field: "relatedArtifact", message: "relatedArtifact must be one of: spec, plan, tasks" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("invalid planning message payload", details);
+  }
+}
+
+function assertValidResumeRunBody(body: ResumeRunRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  const promptDetail = getNonEmptyStringDetail("prompt", body.prompt);
+
+  if (promptDetail) {
+    details.push(promptDetail);
+  }
+
+  if (body.backend !== undefined) {
+    const backendDetail = getNonEmptyStringDetail("backend", body.backend);
+    if (backendDetail) {
+      details.push(backendDetail);
+    } else if (!EXECUTION_BACKENDS.includes(body.backend as (typeof EXECUTION_BACKENDS)[number])) {
+      details.push({ field: "backend", message: `must be one of: ${EXECUTION_BACKENDS.join(", ")}` });
+    }
+  }
+
   if (body.profile !== undefined) {
     const profileDetail = getNonEmptyStringDetail("profile", body.profile);
     if (profileDetail) {
@@ -353,11 +556,107 @@ function assertValidRunCreateBody(body: RunRequestBody): void {
   }
 }
 
-function assertValidResumeRunBody(body: ResumeRunRequestBody): void {
-  const promptDetail = getNonEmptyStringDetail("prompt", body.prompt);
+function assertValidProposeArtifactRevisionBody(body: ProposeArtifactRevisionRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+  const contentDetail = getNonEmptyStringDetail("content", body.content);
+  if (contentDetail) {
+    details.push(contentDetail);
+  }
 
-  if (promptDetail) {
-    throw new RequestValidationError("request validation failed", [promptDetail]);
+  if (body.summary !== undefined) {
+    const summaryDetail = getNonEmptyStringDetail("summary", body.summary);
+    if (summaryDetail) {
+      details.push(summaryDetail);
+    }
+  }
+
+  if (body.createdBy !== "user" && body.createdBy !== "agent" && body.createdBy !== "system") {
+    details.push({ field: "createdBy", message: "createdBy must be one of: user, agent, system" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidDecideApprovalRequestBody(body: DecideApprovalRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (body.decidedBy !== "user" && body.decidedBy !== "agent" && body.decidedBy !== "system") {
+    details.push({ field: "decidedBy", message: "decidedBy must be one of: user, agent, system" });
+  }
+
+  if (body.comment !== undefined) {
+    const commentDetail = getNonEmptyStringDetail("comment", body.comment);
+    if (commentDetail) {
+      details.push(commentDetail);
+    }
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidBindChannelBody(body: BindChannelRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  for (const field of ["projectId", "externalChatId"] as const) {
+    const detail = getNonEmptyStringDetail(field, body[field]);
+    if (detail) {
+      details.push(detail);
+    }
+  }
+
+  if (!CHANNEL_TYPES.includes(body.channelType)) {
+    details.push({ field: "channelType", message: `must be one of: ${CHANNEL_TYPES.join(", ")}` });
+  }
+
+  for (const field of ["externalThreadId", "externalUserId", "trackId", "planningSessionId"] as const) {
+    if (body[field] !== undefined) {
+      const detail = getNonEmptyStringDetail(field, body[field]);
+      if (detail) {
+        details.push(detail);
+      }
+    }
+  }
+
+  if (body.trackId === undefined && body.planningSessionId === undefined) {
+    details.push({ field: "body", message: "trackId or planningSessionId is required" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidRegisterAttachmentBody(body: RegisterAttachmentRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (!ATTACHMENT_SOURCE_TYPES.includes(body.sourceType)) {
+    details.push({ field: "sourceType", message: `must be one of: ${ATTACHMENT_SOURCE_TYPES.join(", ")}` });
+  }
+
+  const externalFileIdDetail = getNonEmptyStringDetail("externalFileId", body.externalFileId);
+  if (externalFileIdDetail) {
+    details.push(externalFileIdDetail);
+  }
+
+  for (const field of ["fileName", "mimeType", "localPath", "trackId", "planningSessionId"] as const) {
+    if (body[field] !== undefined) {
+      const detail = getNonEmptyStringDetail(field, body[field]);
+      if (detail) {
+        details.push(detail);
+      }
+    }
+  }
+
+  if (body.trackId === undefined && body.planningSessionId === undefined) {
+    details.push({ field: "body", message: "trackId or planningSessionId is required" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
   }
 }
 
@@ -578,7 +877,50 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         }
 
         const artifacts = await readTrackArtifacts(deps.artifactRoot, track.id);
-        sendJson(response, 200, { track, artifacts });
+        const planningContext = await deps.service.getTrackPlanningContext(track.id);
+        sendJson(response, 200, { track, artifacts, planningContext });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 4 && segments[0] === "tracks" && segments[2] === "artifacts") {
+        const artifact = segments[3];
+        if (!isArtifactKind(artifact)) {
+          sendError(response, 404, "not_found", "not found");
+          return;
+        }
+
+        const body = await readJson<ProposeArtifactRevisionRequestBody>(request);
+        assertValidProposeArtifactRevisionBody(body);
+
+        const result = await deps.service.proposeArtifactRevision({
+          trackId: segments[1] ?? "",
+          artifact,
+          content: body.content,
+          summary: body.summary,
+          createdBy: body.createdBy,
+        });
+        sendJson(response, 201, result);
+        return;
+      }
+
+      if (method === "GET" && segments.length === 4 && segments[0] === "tracks" && segments[2] === "artifacts") {
+        const artifact = segments[3];
+        if (!isArtifactKind(artifact)) {
+          sendError(response, 404, "not_found", "not found");
+          return;
+        }
+
+        const track = await deps.service.getTrack(segments[1] ?? "");
+        if (!track) {
+          sendError(response, 404, "not_found", "track not found");
+          return;
+        }
+
+        const [revisions, approvalRequests] = await Promise.all([
+          deps.service.listArtifactRevisions(track.id, artifact),
+          deps.service.listApprovalRequests(track.id, artifact),
+        ]);
+        sendJson(response, 200, { revisions, approvalRequests });
         return;
       }
 
@@ -593,6 +935,148 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           planStatus: body.planStatus,
         });
         sendJson(response, 200, { track });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "tracks" && segments[2] === "planning-sessions") {
+        const body = await readJson<CreatePlanningSessionRequestBody>(request);
+        assertValidCreatePlanningSessionBody(body);
+
+        const planningSession = await deps.service.createPlanningSession({
+          trackId: segments[1] ?? "",
+          status: body.status,
+        });
+        sendJson(response, 201, { planningSession });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "tracks" && segments[2] === "planning-sessions") {
+        const track = await deps.service.getTrack(segments[1] ?? "");
+
+        if (!track) {
+          sendError(response, 404, "not_found", "track not found");
+          return;
+        }
+
+        const planningSessions = await deps.service.listPlanningSessions(track.id);
+        sendJson(response, 200, { planningSessions });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 2 && segments[0] === "planning-sessions") {
+        const planningSession = await deps.service.getPlanningSession(segments[1] ?? "");
+
+        if (!planningSession) {
+          sendError(response, 404, "not_found", "planning session not found");
+          return;
+        }
+
+        sendJson(response, 200, { planningSession });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "planning-sessions" && segments[2] === "messages") {
+        const body = await readJson<AppendPlanningMessageRequestBody>(request);
+        assertValidAppendPlanningMessageBody(body);
+
+        const message = await deps.service.appendPlanningMessage({
+          planningSessionId: segments[1] ?? "",
+          authorType: body.authorType,
+          kind: body.kind,
+          body: body.body,
+          relatedArtifact: body.relatedArtifact,
+        });
+        sendJson(response, 201, { message });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "planning-sessions" && segments[2] === "messages") {
+        const messages = await deps.service.listPlanningMessages(segments[1] ?? "");
+        sendJson(response, 200, { messages });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "approval-requests" && segments[2] === "approve") {
+        const body = await readJson<DecideApprovalRequestBody>(request);
+        assertValidDecideApprovalRequestBody(body);
+        const approvalRequest = await deps.service.approveApprovalRequest({
+          approvalRequestId: segments[1] ?? "",
+          decidedBy: body.decidedBy,
+          comment: body.comment,
+        });
+        sendJson(response, 200, { approvalRequest });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 3 && segments[0] === "approval-requests" && segments[2] === "reject") {
+        const body = await readJson<DecideApprovalRequestBody>(request);
+        assertValidDecideApprovalRequestBody(body);
+        const approvalRequest = await deps.service.rejectApprovalRequest({
+          approvalRequestId: segments[1] ?? "",
+          decidedBy: body.decidedBy,
+          comment: body.comment,
+        });
+        sendJson(response, 200, { approvalRequest });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 1 && segments[0] === "channel-bindings") {
+        const body = await readJson<BindChannelRequestBody>(request);
+        assertValidBindChannelBody(body);
+        const binding = await deps.service.bindChannel(body);
+        sendJson(response, 201, { binding });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 1 && segments[0] === "channel-bindings") {
+        const searchParams = getSearchParams(request);
+        const channelType = searchParams.get("channelType");
+        const externalChatId = searchParams.get("externalChatId");
+        const externalThreadId = searchParams.get("externalThreadId") ?? undefined;
+
+        if (!channelType || !externalChatId || !CHANNEL_TYPES.includes(channelType as "telegram")) {
+          throw new RequestValidationError("request validation failed", [
+            { field: "channelType", message: `must be one of: ${CHANNEL_TYPES.join(", ")}` },
+            { field: "externalChatId", message: "must not be empty" },
+          ].filter((detail, index) => (index === 0 ? !channelType || !CHANNEL_TYPES.includes(channelType as "telegram") : !externalChatId)));
+        }
+
+        const binding = await deps.service.findChannelBindingByExternalRef({
+          channelType: channelType as "telegram",
+          externalChatId,
+          externalThreadId,
+        });
+
+        if (!binding) {
+          sendError(response, 404, "not_found", "channel binding not found");
+          return;
+        }
+
+        sendJson(response, 200, { binding });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 1 && segments[0] === "attachments") {
+        const body = await readJson<RegisterAttachmentRequestBody>(request);
+        assertValidRegisterAttachmentBody(body);
+        const attachment = await deps.service.registerAttachmentReference(body);
+        sendJson(response, 201, { attachment });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 1 && segments[0] === "attachments") {
+        const searchParams = getSearchParams(request);
+        const trackId = searchParams.get("trackId") ?? undefined;
+        const planningSessionId = searchParams.get("planningSessionId") ?? undefined;
+
+        if (!trackId && !planningSessionId) {
+          throw new RequestValidationError("request validation failed", [
+            { field: "query", message: "trackId or planningSessionId is required" },
+          ]);
+        }
+
+        const attachments = await deps.service.listAttachmentReferences({ trackId, planningSessionId });
+        sendJson(response, 200, { attachments });
         return;
       }
 
@@ -629,7 +1113,12 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const body = await readJson<ResumeRunRequestBody>(request);
         assertValidResumeRunBody(body);
 
-        const run = await deps.service.resumeRun({ runId: segments[1] ?? "", prompt: body.prompt });
+        const run = await deps.service.resumeRun({
+          runId: segments[1] ?? "",
+          prompt: body.prompt,
+          backend: body.backend,
+          profile: body.profile,
+        });
         sendJson(response, 200, { run });
         return;
       }
@@ -691,6 +1180,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (error instanceof NotFoundError) {
         sendError(response, 404, "not_found", error.message);
+        return;
+      }
+
+      if (error instanceof ValidationError) {
+        sendError(response, 422, "validation_error", error.message);
         return;
       }
 

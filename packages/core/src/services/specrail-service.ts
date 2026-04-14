@@ -11,16 +11,37 @@ import {
   type TaskDocument,
 } from "../domain/artifacts.js";
 import type {
+  AttachmentReference,
   ApprovalStatus,
+  ApprovalRequest,
+  ApprovalRequestStatus,
+  ArtifactKind,
+  ArtifactRevision,
+  ChannelBinding,
   Execution,
   ExecutionEvent,
   ExecutionStatus,
+  PlanningMessage,
+  PlanningMessageKind,
+  PlanningSession,
+  PlanningSessionStatus,
   Project,
   Track,
   TrackStatus,
 } from "../domain/types.js";
-import { NotFoundError } from "../errors.js";
-import type { EventStore, ExecutionRepository, ProjectRepository, TrackRepository } from "./ports.js";
+import { NotFoundError, ValidationError } from "../errors.js";
+import type {
+  EventStore,
+  ExecutionRepository,
+  ApprovalRequestRepository,
+  AttachmentReferenceRepository,
+  ArtifactRevisionRepository,
+  ChannelBindingRepository,
+  PlanningMessageStore,
+  PlanningSessionRepository,
+  ProjectRepository,
+  TrackRepository,
+} from "./ports.js";
 
 export interface TrackArtifactWriterInput {
   track: Track;
@@ -32,6 +53,12 @@ export interface TrackArtifactWriterInput {
 
 export interface TrackArtifactWriter {
   write(input: TrackArtifactWriterInput): Promise<void>;
+  writeApprovedArtifact(input: {
+    track: Track;
+    project: Project;
+    artifact: ArtifactKind;
+    content: string;
+  }): Promise<void>;
 }
 
 export interface ExecutorLaunchResult {
@@ -66,10 +93,19 @@ export interface ExecutionBackend {
 export interface SpecRailServiceDependencies {
   projectRepository: ProjectRepository;
   trackRepository: TrackRepository;
+  planningSessionRepository: PlanningSessionRepository;
+  planningMessageStore: PlanningMessageStore;
+  artifactRevisionRepository: ArtifactRevisionRepository;
+  approvalRequestRepository: ApprovalRequestRepository;
+  channelBindingRepository: ChannelBindingRepository;
+  attachmentReferenceRepository: AttachmentReferenceRepository;
   executionRepository: ExecutionRepository;
   eventStore: EventStore;
   artifactWriter: TrackArtifactWriter;
-  executor: ExecutionBackend;
+  executor?: ExecutionBackend;
+  executors?: Record<string, ExecutionBackend>;
+  defaultExecutionBackend?: string;
+  defaultExecutionProfile?: string;
   defaultProject: {
     id: string;
     name: string;
@@ -91,7 +127,9 @@ export interface CreateTrackInput {
 export interface StartRunInput {
   trackId: string;
   prompt: string;
+  backend?: string;
   profile?: string;
+  planningSessionId?: string;
 }
 
 export interface UpdateTrackInput {
@@ -101,13 +139,62 @@ export interface UpdateTrackInput {
   planStatus?: ApprovalStatus;
 }
 
+export interface CreatePlanningSessionInput {
+  trackId: string;
+  status?: PlanningSessionStatus;
+}
+
+export interface AppendPlanningMessageInput {
+  planningSessionId: string;
+  authorType: PlanningMessage["authorType"];
+  kind?: PlanningMessageKind;
+  body: string;
+  relatedArtifact?: PlanningMessage["relatedArtifact"];
+}
+
 export interface ResumeRunInput {
   runId: string;
   prompt: string;
+  backend?: string;
+  profile?: string;
 }
 
 export interface CancelRunInput {
   runId: string;
+}
+
+export interface ProposeArtifactRevisionInput {
+  trackId: string;
+  artifact: ArtifactKind;
+  content: string;
+  summary?: string;
+  createdBy: ArtifactRevision["createdBy"];
+}
+
+export interface DecideApprovalRequestInput {
+  approvalRequestId: string;
+  decidedBy: ApprovalRequest["requestedBy"];
+  comment?: string;
+}
+
+export interface BindChannelInput {
+  projectId: string;
+  channelType: ChannelBinding["channelType"];
+  externalChatId: string;
+  externalThreadId?: string;
+  externalUserId?: string;
+  trackId?: string;
+  planningSessionId?: string;
+}
+
+export interface RegisterAttachmentReferenceInput {
+  sourceType: AttachmentReference["sourceType"];
+  externalFileId: string;
+  fileName?: string;
+  mimeType?: string;
+  localPath?: string;
+  trackId?: string;
+  planningSessionId?: string;
 }
 
 export type SortOrder = "asc" | "desc";
@@ -140,6 +227,15 @@ export interface ListPageMeta {
 export interface ListPageResult<T> {
   items: T[];
   meta: ListPageMeta;
+}
+
+export interface PlanningContextSnapshot {
+  planningSessionId?: string;
+  specRevisionId?: string;
+  planRevisionId?: string;
+  tasksRevisionId?: string;
+  hasPendingChanges: boolean;
+  updatedAt?: string;
 }
 
 function buildExecutionSummary(events: ExecutionEvent[]): Execution["summary"] {
@@ -238,6 +334,38 @@ export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
 
+  private listExecutors(): Record<string, ExecutionBackend> {
+    if (this.dependencies.executors && Object.keys(this.dependencies.executors).length > 0) {
+      return this.dependencies.executors;
+    }
+
+    if (this.dependencies.executor) {
+      return { [this.dependencies.executor.name]: this.dependencies.executor };
+    }
+
+    throw new Error("SpecRailService requires at least one execution backend");
+  }
+
+  private resolveExecutor(name?: string): ExecutionBackend {
+    const executors = this.listExecutors();
+    const backendName = name ?? this.dependencies.defaultExecutionBackend ?? this.dependencies.executor?.name;
+
+    if (!backendName) {
+      throw new ValidationError("Execution backend is required");
+    }
+
+    const executor = executors[backendName];
+    if (!executor) {
+      throw new ValidationError(`Unsupported execution backend: ${backendName}`);
+    }
+
+    return executor;
+  }
+
+  private resolveExecutionProfile(profile?: string): string {
+    return profile ?? this.dependencies.defaultExecutionProfile ?? "default";
+  }
+
   constructor(private readonly dependencies: SpecRailServiceDependencies) {
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.idGenerator = dependencies.idGenerator ?? randomUUID;
@@ -255,6 +383,7 @@ export class SpecRailService {
       specStatus: "draft",
       planStatus: "draft",
       priority: input.priority ?? "medium",
+      planningSystem: project.defaultPlanningSystem ?? "native",
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -333,6 +462,253 @@ export class SpecRailService {
     return nextTrack;
   }
 
+  async createPlanningSession(input: CreatePlanningSessionInput): Promise<PlanningSession> {
+    const track = await this.dependencies.trackRepository.getById(input.trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${input.trackId}`);
+    }
+
+    const timestamp = this.now();
+    const session: PlanningSession = {
+      id: `planning-session-${this.idGenerator()}`,
+      trackId: track.id,
+      status: input.status ?? "active",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    await this.dependencies.planningSessionRepository.create(session);
+    return session;
+  }
+
+  getPlanningSession(sessionId: string): Promise<PlanningSession | null> {
+    return this.dependencies.planningSessionRepository.getById(sessionId);
+  }
+
+  listPlanningSessions(trackId: string): Promise<PlanningSession[]> {
+    return this.dependencies.planningSessionRepository.listByTrack(trackId);
+  }
+
+  async getTrackPlanningContext(trackId: string, planningSessionId?: string): Promise<PlanningContextSnapshot> {
+    const track = await this.dependencies.trackRepository.getById(trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${trackId}`);
+    }
+
+    return this.resolvePlanningContext(track, planningSessionId);
+  }
+
+  async appendPlanningMessage(input: AppendPlanningMessageInput): Promise<PlanningMessage> {
+    const session = await this.dependencies.planningSessionRepository.getById(input.planningSessionId);
+
+    if (!session) {
+      throw new NotFoundError(`Planning session not found: ${input.planningSessionId}`);
+    }
+
+    const timestamp = this.now();
+    const message: PlanningMessage = {
+      id: `planning-message-${this.idGenerator()}`,
+      planningSessionId: session.id,
+      authorType: input.authorType,
+      kind: input.kind ?? "message",
+      body: input.body,
+      relatedArtifact: input.relatedArtifact,
+      createdAt: timestamp,
+    };
+
+    await this.dependencies.planningMessageStore.append(message);
+    await this.dependencies.planningSessionRepository.update({
+      ...session,
+      updatedAt: timestamp,
+    });
+
+    return message;
+  }
+
+  async bindChannel(input: BindChannelInput): Promise<ChannelBinding> {
+    const project = await this.dependencies.projectRepository.getById(input.projectId);
+    if (!project) {
+      throw new NotFoundError(`Project not found: ${input.projectId}`);
+    }
+
+    if (input.trackId) {
+      const track = await this.dependencies.trackRepository.getById(input.trackId);
+      if (!track) {
+        throw new NotFoundError(`Track not found: ${input.trackId}`);
+      }
+
+      if (track.projectId !== input.projectId) {
+        throw new ValidationError(`Track does not belong to project: ${input.trackId}`);
+      }
+    }
+
+    if (input.planningSessionId) {
+      const session = await this.dependencies.planningSessionRepository.getById(input.planningSessionId);
+      if (!session) {
+        throw new NotFoundError(`Planning session not found: ${input.planningSessionId}`);
+      }
+
+      if (input.trackId && session.trackId !== input.trackId) {
+        throw new ValidationError(`Planning session does not belong to track: ${input.planningSessionId}`);
+      }
+    }
+
+    const existing = await this.dependencies.channelBindingRepository.findByExternalRef({
+      channelType: input.channelType,
+      externalChatId: input.externalChatId,
+      externalThreadId: input.externalThreadId,
+    });
+    const timestamp = this.now();
+
+    const binding: ChannelBinding = existing
+      ? {
+          ...existing,
+          externalUserId: input.externalUserId,
+          trackId: input.trackId,
+          planningSessionId: input.planningSessionId,
+          updatedAt: timestamp,
+        }
+      : {
+          id: `channel-binding-${this.idGenerator()}`,
+          projectId: input.projectId,
+          channelType: input.channelType,
+          externalChatId: input.externalChatId,
+          externalThreadId: input.externalThreadId,
+          externalUserId: input.externalUserId,
+          trackId: input.trackId,
+          planningSessionId: input.planningSessionId,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+
+    if (existing) {
+      await this.dependencies.channelBindingRepository.update(binding);
+    } else {
+      await this.dependencies.channelBindingRepository.create(binding);
+    }
+
+    return binding;
+  }
+
+  findChannelBindingByExternalRef(input: {
+    channelType: ChannelBinding["channelType"];
+    externalChatId: string;
+    externalThreadId?: string;
+  }): Promise<ChannelBinding | null> {
+    return this.dependencies.channelBindingRepository.findByExternalRef(input);
+  }
+
+  async registerAttachmentReference(input: RegisterAttachmentReferenceInput): Promise<AttachmentReference> {
+    if (input.trackId) {
+      const track = await this.dependencies.trackRepository.getById(input.trackId);
+      if (!track) {
+        throw new NotFoundError(`Track not found: ${input.trackId}`);
+      }
+    }
+
+    if (input.planningSessionId) {
+      const session = await this.dependencies.planningSessionRepository.getById(input.planningSessionId);
+      if (!session) {
+        throw new NotFoundError(`Planning session not found: ${input.planningSessionId}`);
+      }
+
+      if (input.trackId && session.trackId !== input.trackId) {
+        throw new ValidationError(`Planning session does not belong to track: ${input.planningSessionId}`);
+      }
+    }
+
+    const attachment: AttachmentReference = {
+      id: `attachment-reference-${this.idGenerator()}`,
+      sourceType: input.sourceType,
+      externalFileId: input.externalFileId,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      localPath: input.localPath,
+      trackId: input.trackId,
+      planningSessionId: input.planningSessionId,
+      uploadedAt: this.now(),
+    };
+
+    await this.dependencies.attachmentReferenceRepository.create(attachment);
+    return attachment;
+  }
+
+  listAttachmentReferences(input: { trackId?: string; planningSessionId?: string }): Promise<AttachmentReference[]> {
+    return this.dependencies.attachmentReferenceRepository.listByTarget(input);
+  }
+
+  async proposeArtifactRevision(
+    input: ProposeArtifactRevisionInput,
+  ): Promise<{ revision: ArtifactRevision; approvalRequest: ApprovalRequest }> {
+    const track = await this.dependencies.trackRepository.getById(input.trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${input.trackId}`);
+    }
+
+    const timestamp = this.now();
+    const version = (await this.dependencies.artifactRevisionRepository.getLatestVersion(track.id, input.artifact)) + 1;
+    const revision: ArtifactRevision = {
+      id: `artifact-revision-${this.idGenerator()}`,
+      trackId: track.id,
+      artifact: input.artifact,
+      version,
+      content: input.content,
+      summary: input.summary,
+      createdAt: timestamp,
+      createdBy: input.createdBy,
+    };
+    const approvalRequest: ApprovalRequest = {
+      id: `approval-request-${this.idGenerator()}`,
+      trackId: track.id,
+      artifact: input.artifact,
+      revisionId: revision.id,
+      status: "pending",
+      requestedBy: input.createdBy,
+      requestedAt: timestamp,
+    };
+
+    revision.approvalRequestId = approvalRequest.id;
+
+    await this.dependencies.artifactRevisionRepository.create(revision);
+    await this.dependencies.approvalRequestRepository.create(approvalRequest);
+    await this.dependencies.trackRepository.update({
+      ...track,
+      ...this.getTrackApprovalPatch(track, input.artifact, "pending"),
+      updatedAt: timestamp,
+    });
+
+    return { revision, approvalRequest };
+  }
+
+  listArtifactRevisions(trackId: string, artifact?: ArtifactKind): Promise<ArtifactRevision[]> {
+    return this.dependencies.artifactRevisionRepository.listByTrack(trackId, artifact);
+  }
+
+  listApprovalRequests(trackId: string, artifact?: ArtifactKind): Promise<ApprovalRequest[]> {
+    return this.dependencies.approvalRequestRepository.listByTrack(trackId, artifact);
+  }
+
+  async approveApprovalRequest(input: DecideApprovalRequestInput): Promise<ApprovalRequest> {
+    return this.resolveApprovalRequest(input, "approved");
+  }
+
+  async rejectApprovalRequest(input: DecideApprovalRequestInput): Promise<ApprovalRequest> {
+    return this.resolveApprovalRequest(input, "rejected");
+  }
+
+  async listPlanningMessages(planningSessionId: string): Promise<PlanningMessage[]> {
+    const session = await this.dependencies.planningSessionRepository.getById(planningSessionId);
+
+    if (!session) {
+      throw new NotFoundError(`Planning session not found: ${planningSessionId}`);
+    }
+
+    return this.dependencies.planningMessageStore.listBySession(planningSessionId);
+  }
+
   async startRun(input: StartRunInput): Promise<Execution> {
     const track = await this.dependencies.trackRepository.getById(input.trackId);
 
@@ -340,27 +716,36 @@ export class SpecRailService {
       throw new NotFoundError(`Track not found: ${input.trackId}`);
     }
 
+    const executor = this.resolveExecutor(input.backend);
+    const profile = this.resolveExecutionProfile(input.profile);
+    const planningContext = await this.resolvePlanningContextForStart(track, input.planningSessionId);
     const executionId = `run-${this.idGenerator()}`;
     const createdAt = this.now();
     const workspacePath = path.join(this.dependencies.workspaceRoot, executionId);
     await mkdir(workspacePath, { recursive: true });
 
-    const launch = await this.dependencies.executor.spawn({
+    const launch = await executor.spawn({
       executionId,
       prompt: input.prompt,
       workspacePath,
-      profile: input.profile ?? "default",
+      profile,
     });
 
     const initialExecution: Execution = {
       id: executionId,
       trackId: track.id,
-      backend: this.dependencies.executor.name,
-      profile: input.profile ?? "default",
+      backend: executor.name,
+      profile,
       workspacePath,
       branchName: `specrail/${executionId}`,
       sessionRef: launch.sessionRef,
       command: launch.command,
+      planningSessionId: planningContext.planningSessionId,
+      specRevisionId: planningContext.specRevisionId,
+      planRevisionId: planningContext.planRevisionId,
+      tasksRevisionId: planningContext.tasksRevisionId,
+      planningContextStale: false,
+      planningContextUpdatedAt: planningContext.updatedAt,
       status: "running",
       createdAt,
       startedAt: createdAt,
@@ -379,26 +764,34 @@ export class SpecRailService {
     await this.dependencies.executionRepository.update(execution);
     await this.reconcileTrackStatusFromRun(track.id, execution);
 
-    return execution;
+    return this.hydrateExecutionPlanningContext(execution);
   }
 
   async resumeRun(input: ResumeRunInput): Promise<Execution> {
     const execution = await this.requireRun(input.runId);
 
+    if (input.backend && input.backend !== execution.backend) {
+      throw new ValidationError(`Run ${input.runId} is backed by ${execution.backend}, not ${input.backend}`);
+    }
+
     if (!execution.sessionRef) {
       throw new Error(`Run is missing sessionRef: ${input.runId}`);
     }
 
-    const launch = await this.dependencies.executor.resume({
+    const executor = this.resolveExecutor(execution.backend);
+    const profile = this.resolveExecutionProfile(input.profile ?? execution.profile);
+
+    const launch = await executor.resume({
       executionId: execution.id,
       sessionRef: execution.sessionRef,
       prompt: input.prompt,
       workspacePath: execution.workspacePath,
-      profile: execution.profile,
+      profile,
     });
 
     const resumedExecution: Execution = {
       ...execution,
+      profile,
       command: launch.command,
       status: "running",
       startedAt: execution.startedAt ?? this.now(),
@@ -418,7 +811,7 @@ export class SpecRailService {
     await this.dependencies.executionRepository.update(reconciledExecution);
     await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
 
-    return reconciledExecution;
+    return this.hydrateExecutionPlanningContext(reconciledExecution);
   }
 
   async cancelRun(input: CancelRunInput): Promise<Execution> {
@@ -428,7 +821,7 @@ export class SpecRailService {
       throw new Error(`Run is missing sessionRef: ${input.runId}`);
     }
 
-    const cancellationEvent = await this.dependencies.executor.cancel({
+    const cancellationEvent = await this.resolveExecutor(execution.backend).cancel({
       executionId: execution.id,
       sessionRef: execution.sessionRef,
       workspacePath: execution.workspacePath,
@@ -444,16 +837,21 @@ export class SpecRailService {
     await this.dependencies.executionRepository.update(cancelledExecution);
     await this.reconcileTrackStatusFromRun(cancelledExecution.trackId, cancelledExecution);
 
-    return cancelledExecution;
+    return this.hydrateExecutionPlanningContext(cancelledExecution);
   }
 
-  getRun(runId: string): Promise<Execution | null> {
-    return this.dependencies.executionRepository.getById(runId);
+  async getRun(runId: string): Promise<Execution | null> {
+    const execution = await this.dependencies.executionRepository.getById(runId);
+    if (!execution) {
+      return null;
+    }
+
+    return this.hydrateExecutionPlanningContext(execution);
   }
 
   async listRuns(input: ListRunsInput = {}): Promise<Execution[]> {
     const result = await this.listRunsPage(input);
-    return result.items;
+    return Promise.all(result.items.map((execution) => this.hydrateExecutionPlanningContext(execution)));
   }
 
   async listRunsPage(input: ListRunsInput = {}): Promise<ListPageResult<Execution>> {
@@ -484,7 +882,11 @@ export class SpecRailService {
         return primary || compareValues(left.startedAt, right.startedAt, "desc") || compareValues(left.id, right.id, "desc");
       });
 
-    return buildListPageResult(sorted, page, pageSize);
+    const result = buildListPageResult(sorted, page, pageSize);
+    return {
+      items: await Promise.all(result.items.map((execution) => this.hydrateExecutionPlanningContext(execution))),
+      meta: result.meta,
+    };
   }
 
   listRunEvents(runId: string): Promise<ExecutionEvent[]> {
@@ -503,8 +905,101 @@ export class SpecRailService {
       execution,
       await this.dependencies.eventStore.listByExecution(event.executionId),
     );
-    await this.dependencies.executionRepository.update(reconciledExecution);
+    await this.dependencies.executionRepository.update(await this.hydrateExecutionPlanningContext(reconciledExecution));
     await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);
+  }
+
+  private async resolvePlanningContext(track: Track, planningSessionId?: string): Promise<PlanningContextSnapshot> {
+    const [sessions, specRevisions, planRevisions, tasksRevisions] = await Promise.all([
+      this.dependencies.planningSessionRepository.listByTrack(track.id),
+      this.dependencies.artifactRevisionRepository.listByTrack(track.id, "spec"),
+      this.dependencies.artifactRevisionRepository.listByTrack(track.id, "plan"),
+      this.dependencies.artifactRevisionRepository.listByTrack(track.id, "tasks"),
+    ]);
+
+    const latestApprovedSpec = specRevisions.find((revision) => revision.approvedAt);
+    const latestApprovedPlan = planRevisions.find((revision) => revision.approvedAt);
+    const latestApprovedTasks = tasksRevisions.find((revision) => revision.approvedAt);
+    const selectedSession = planningSessionId
+      ? sessions.find((session) => session.id === planningSessionId)
+      : sessions[0];
+
+    if (planningSessionId && !selectedSession) {
+      throw new ValidationError(`Planning session does not belong to track: ${planningSessionId}`);
+    }
+
+    const hasPendingChanges = [specRevisions, planRevisions, tasksRevisions].some((revisions) => {
+      const latestApprovedAt = revisions.find((revision) => revision.approvedAt)?.approvedAt;
+      return revisions.some((revision) => !revision.approvedAt && (!latestApprovedAt || revision.createdAt >= latestApprovedAt));
+    });
+
+    const timestamps = [
+      selectedSession?.updatedAt,
+      latestApprovedSpec?.approvedAt,
+      latestApprovedPlan?.approvedAt,
+      latestApprovedTasks?.approvedAt,
+    ].filter((value): value is string => Boolean(value));
+
+    return {
+      planningSessionId: selectedSession?.id,
+      specRevisionId: latestApprovedSpec?.id,
+      planRevisionId: latestApprovedPlan?.id,
+      tasksRevisionId: latestApprovedTasks?.id,
+      hasPendingChanges,
+      updatedAt: timestamps.sort((left, right) => right.localeCompare(left))[0],
+    };
+  }
+
+  private async resolvePlanningContextForStart(track: Track, planningSessionId?: string): Promise<PlanningContextSnapshot> {
+    const planningContext = await this.resolvePlanningContext(track, planningSessionId);
+    const hasRevisionHistory = Boolean(
+      planningContext.specRevisionId || planningContext.planRevisionId || planningContext.tasksRevisionId,
+    );
+
+    if (planningContext.hasPendingChanges) {
+      throw new ValidationError(`Track has pending planning changes and cannot start a run: ${track.id}`);
+    }
+
+    if ((hasRevisionHistory || track.planStatus === "approved") && !planningContext.planRevisionId) {
+      throw new ValidationError(`Track requires an approved plan revision before starting a run: ${track.id}`);
+    }
+
+    return planningContext;
+  }
+
+  private async hydrateExecutionPlanningContext(execution: Execution): Promise<Execution> {
+    if (!execution.planningSessionId && !execution.specRevisionId && !execution.planRevisionId && !execution.tasksRevisionId) {
+      return {
+        ...execution,
+        planningContextStale: false,
+      };
+    }
+
+    const track = await this.dependencies.trackRepository.getById(execution.trackId);
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${execution.trackId}`);
+    }
+
+    const planningContext = await this.resolvePlanningContext(track, execution.planningSessionId);
+    const staleArtifacts: string[] = [];
+
+    if (execution.specRevisionId && planningContext.specRevisionId && execution.specRevisionId !== planningContext.specRevisionId) {
+      staleArtifacts.push("spec");
+    }
+    if (execution.planRevisionId && planningContext.planRevisionId && execution.planRevisionId !== planningContext.planRevisionId) {
+      staleArtifacts.push("plan");
+    }
+    if (execution.tasksRevisionId && planningContext.tasksRevisionId && execution.tasksRevisionId !== planningContext.tasksRevisionId) {
+      staleArtifacts.push("tasks");
+    }
+
+    return {
+      ...execution,
+      planningContextStale: staleArtifacts.length > 0,
+      planningContextUpdatedAt: planningContext.updatedAt ?? execution.planningContextUpdatedAt,
+      planningContextStaleReason:
+        staleArtifacts.length > 0 ? `Approved planning context changed for: ${staleArtifacts.join(", ")}` : undefined,
+    };
   }
 
   private async reconcileTrackStatusFromRun(trackId: string, execution: Execution): Promise<void> {
@@ -523,6 +1018,78 @@ export class SpecRailService {
       status: nextStatus,
       updatedAt: execution.finishedAt ?? this.now(),
     });
+  }
+
+  private async resolveApprovalRequest(
+    input: DecideApprovalRequestInput,
+    nextStatus: ApprovalRequestStatus,
+  ): Promise<ApprovalRequest> {
+    const request = await this.dependencies.approvalRequestRepository.getById(input.approvalRequestId);
+
+    if (!request) {
+      throw new NotFoundError(`Approval request not found: ${input.approvalRequestId}`);
+    }
+
+    if (request.status !== "pending") {
+      throw new Error(`Approval request is already ${request.status}: ${request.id}`);
+    }
+
+    const revision = await this.dependencies.artifactRevisionRepository.getById(request.revisionId);
+    if (!revision) {
+      throw new NotFoundError(`Artifact revision not found: ${request.revisionId}`);
+    }
+
+    const track = await this.dependencies.trackRepository.getById(request.trackId);
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${request.trackId}`);
+    }
+
+    const project = await this.ensureDefaultProject();
+    const timestamp = this.now();
+    const resolvedRequest: ApprovalRequest = {
+      ...request,
+      status: nextStatus,
+      decidedAt: timestamp,
+      decidedBy: input.decidedBy,
+      decisionComment: input.comment,
+    };
+
+    await this.dependencies.approvalRequestRepository.update(resolvedRequest);
+
+    const trackApprovalStatus: ApprovalStatus = nextStatus === "approved" ? "approved" : "rejected";
+    await this.dependencies.trackRepository.update({
+      ...track,
+      ...this.getTrackApprovalPatch(track, request.artifact, trackApprovalStatus),
+      updatedAt: timestamp,
+    });
+
+    if (nextStatus === "approved") {
+      await this.dependencies.artifactRevisionRepository.update({
+        ...revision,
+        approvedAt: timestamp,
+      });
+      await this.dependencies.artifactWriter.writeApprovedArtifact({
+        track,
+        project,
+        artifact: request.artifact,
+        content: revision.content,
+      });
+    }
+
+    return resolvedRequest;
+  }
+
+  private getTrackApprovalPatch(track: Track, artifact: ArtifactKind, status: ApprovalStatus): Partial<Track> {
+    switch (artifact) {
+      case "spec":
+        return { specStatus: status };
+      case "plan":
+        return { planStatus: status };
+      case "tasks":
+        return { status: status === "approved" ? track.status : track.status };
+      default:
+        return {};
+    }
   }
 
   private async requireRun(runId: string): Promise<Execution> {
@@ -549,6 +1116,7 @@ export class SpecRailService {
       repoUrl: this.dependencies.defaultProject.repoUrl,
       localRepoPath: this.dependencies.defaultProject.localRepoPath,
       defaultWorkflowPolicy: this.dependencies.defaultProject.defaultWorkflowPolicy,
+      defaultPlanningSystem: "native",
       createdAt: timestamp,
       updatedAt: timestamp,
     };

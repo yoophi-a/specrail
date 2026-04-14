@@ -176,6 +176,7 @@ Run 실행 중 발생하는 개별 이벤트. JSONL 파일에 append-only로 저
 | `id` | `string` | 이벤트 고유 식별자 |
 | `executionId` | `string` | 소속 Execution ID |
 | `type` | `EventType` | 이벤트 타입 |
+| `subtype` | `string?` | 선택적 세부 분류. provider-specific detail을 shared model에 안전하게 승격할 때 사용 |
 | `timestamp` | `string` | 발생 시각 |
 | `source` | `string` | 이벤트 출처 |
 | `summary` | `string` | 이벤트 요약 |
