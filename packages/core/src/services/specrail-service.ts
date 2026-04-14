@@ -732,13 +732,12 @@ export class SpecRailService {
     }
 
     const executor = this.resolveExecutor(input.backend);
-    const profile = this.resolveExecutionProfile(input.profile);
     const planningContext = await this.resolvePlanningContextForStart(track, input.planningSessionId);
     const executionId = `run-${this.idGenerator()}`;
     const createdAt = this.now();
     const workspacePath = path.join(this.dependencies.workspaceRoot, executionId);
     const prompt = normalizeRequiredString(input.prompt);
-    const profile = normalizeProfile(input.profile);
+    const profile = normalizeProfile(this.resolveExecutionProfile(input.profile));
     await mkdir(workspacePath, { recursive: true });
 
     const launch = await executor.spawn({
