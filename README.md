@@ -233,6 +233,10 @@ specrail/
   .specrail-template/     # Seed markdown templates for artifact materialization
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution workflow, validation commands, PR/issue template expectations, and contract-impact guidance.
+
 ## Getting started
 
 ```bash
