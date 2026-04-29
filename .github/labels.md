@@ -52,7 +52,7 @@ Status labels describe the next action or lifecycle state:
 
 For new issues created from forms:
 
-- Start with `status:needs-triage`.
+- Start with the needs-triage status.
 - Add one kind label.
 - Add one or more surface labels when obvious.
 - Add a priority label only when ordering or urgency is meaningful.
