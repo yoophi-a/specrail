@@ -237,6 +237,10 @@ specrail/
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution workflow, validation commands, PR/issue template expectations, and contract-impact guidance.
 
+## Security
+
+For vulnerability reporting and sensitive integration issues, see [SECURITY.md](./SECURITY.md).
+
 ## Getting started
 
 ```bash
