@@ -1,0 +1,87 @@
+name: Feature or follow-up request
+description: Propose a SpecRail improvement or implementation follow-up
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for API, core, adapter, ACP, terminal, Telegram, CI, docs, or process follow-ups.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Target surface
+      description: Which SpecRail area should this change target?
+      options:
+        - Core domain/service
+        - File-backed persistence
+        - HTTP API or SSE
+        - Executor adapter - Codex
+        - Executor adapter - Claude Code
+        - ACP server
+        - Terminal client
+        - Telegram adapter
+        - OpenSpec/GitHub integration
+        - CI/process/docs
+        - Unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What user, operator, or maintenance problem should this solve?
+      placeholder: Describe the friction, missing capability, or follow-up need.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should change?
+      placeholder: Describe the intended behavior or implementation direction.
+    validations:
+      required: true
+
+  - type: textarea
+    id: contract
+    attributes:
+      label: Contract impact
+      description: Will this affect API responses, execution events, persistence layout, or external adapter behavior?
+      placeholder: Describe expected contract changes, or write "none/unsure".
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true before this issue is complete?
+      placeholder: |
+        - ...
+        - ...
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Suggested validation
+      description: Which checks or manual verification should cover this work?
+      placeholder: |
+        - pnpm check
+        - pnpm test
+        - pnpm build
+        - pnpm test:claude-smoke (if provider credentials are available)
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Requester checks
+      options:
+        - label: I searched existing issues/PRs for duplicates.
+          required: false
+        - label: I noted any API/event/persistence contract impact above.
+          required: false
