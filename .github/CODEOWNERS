@@ -1,0 +1,13 @@
+# Default owner for all SpecRail changes.
+* @yoophi-a
+
+# Surface groupings for future ownership refinement.
+/apps/api/ @yoophi-a
+/apps/acp-server/ @yoophi-a
+/apps/terminal/ @yoophi-a
+/apps/telegram/ @yoophi-a
+/packages/core/ @yoophi-a
+/packages/adapters/ @yoophi-a
+/packages/config/ @yoophi-a
+/docs/ @yoophi-a
+/.github/ @yoophi-a
