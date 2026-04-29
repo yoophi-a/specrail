@@ -238,6 +238,7 @@ specrail/
 ```bash
 pnpm install
 pnpm test
+pnpm check:links
 pnpm dev:api
 pnpm dev:acp
 pnpm dev:terminal
