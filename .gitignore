@@ -6,3 +6,6 @@ dist
 coverage
 .tmp
 .specrail-data
+
+# Local issue draft scratch files
+.tmp-issue-*.md
