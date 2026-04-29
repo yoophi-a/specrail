@@ -53,15 +53,15 @@ Status labels describe the next action or lifecycle state:
 For new issues created from forms:
 
 - Start with `status:needs-triage`.
-- Add one `kind:*` label.
-- Add one or more `surface:*` labels when obvious.
-- Add `priority:*` only when ordering or urgency is meaningful.
+- Add one kind label.
+- Add one or more surface labels when obvious.
+- Add a priority label only when ordering or urgency is meaningful.
 
 For pull requests:
 
 - Match the linked issue labels where possible.
-- Add `status:needs-review` when the PR is ready.
-- Remove `status:blocked` when the blocker is resolved.
+- Add the needs-review status when the PR is ready.
+- Remove the blocked status when the blocker is resolved.
 
 ## Automation notes
 
