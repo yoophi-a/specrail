@@ -27,7 +27,7 @@ Use this index to find the right reference before changing SpecRail's core servi
 ## Client surfaces
 
 - [Terminal client](./terminal-client.md) — terminal UI behavior, run following, planning workspace, and controls.
-- [Client surfaces and structure](./architecture/client-surfaces-and-structure.md) — client-surface organization and ownership.
+- [Telegram bot interface strategy](./architecture/telegram-bot-interface-strategy.md) — Telegram-facing product and integration strategy.
 
 ## Research
 
