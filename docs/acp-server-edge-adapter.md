@@ -98,8 +98,9 @@ This follows the ACP fit analysis in `docs/research/acp-fit-for-specrail.md`:
 
 ## Near-term follow-up
 
-Good next steps after this slice:
-- translate runtime approval events into ACP permission requests
-- enrich event mapping for tool calls, summaries, and status changes
-- add an ACP-aware terminal or editor client spike against this adapter
-- decide whether issue #81 should build on ACP event fidelity or another adjacent edge surface first
+Good next steps from the current bridge:
+- move runtime permission handling behind a backend-native approval broker so ACP decisions are not only adapter-synthesized events
+- expand the ACP-facing event taxonomy beyond readable `agent_message_chunk` fallbacks for provider-specific details that clients need to render natively
+- define workspace ownership rules before exposing filesystem or terminal ACP capabilities for SpecRail-managed workspaces
+- build an ACP-aware terminal or editor client spike against this adapter to validate the session/update and permission request shapes with a real client
+- decide which planning/admin flows, if any, should become ACP-native versus staying in the REST API
