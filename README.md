@@ -309,6 +309,10 @@ curl -X POST http://127.0.0.1:3000/tracks \
   -d '{"title":"Executor MVP","description":"Persist command metadata and launch runs.","priority":"high"}'
 ```
 
+## Documentation
+
+See [docs/README.md](./docs/README.md) for a categorized documentation index.
+
 ## Verification source of truth
 
 The docs above are aligned to the current MVP implementation and tests in:
