@@ -1,0 +1,94 @@
+name: Bug report
+description: Report a reproducible SpecRail problem
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please include enough context for someone to reproduce it locally.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      description: Which SpecRail area is affected?
+      options:
+        - Core domain/service
+        - File-backed persistence
+        - HTTP API or SSE
+        - Executor adapter - Codex
+        - Executor adapter - Claude Code
+        - ACP server
+        - Terminal client
+        - Telegram adapter
+        - OpenSpec/GitHub integration
+        - CI/process/docs
+        - Unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+      placeholder: Briefly describe the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest reliable reproduction steps.
+      placeholder: |
+        1. Run ...
+        2. Call ...
+        3. See ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: contract
+    attributes:
+      label: Contract impact
+      description: Does this affect API responses, execution events, persistence layout, or external adapter behavior?
+      placeholder: Describe known contract impact, or write "none/unsure".
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation context
+      description: Commands, logs, environment, or versions that help diagnose the issue.
+      placeholder: |
+        - Command:
+        - Relevant output:
+        - Node/pnpm version:
+        - Provider/backend profile:
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Reporter checks
+      options:
+        - label: I searched existing issues/PRs for duplicates.
+          required: false
+        - label: I included relevant logs or command output when available.
+          required: false
