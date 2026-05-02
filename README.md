@@ -172,9 +172,10 @@ At runtime the API writes under `SPECRAIL_DATA_DIR` (default from config), with 
 ```
 
 Notes:
-- `artifacts/tracks/<trackId>/events.jsonl` is materialized as part of the artifact contract.
-- the current API reads run events from `state/events/<runId>.jsonl`.
-- session-level executor logs are also persisted separately under `sessions/`.
+- `state/events/<runId>.jsonl` is the canonical run-event log used by JSON history, SSE streams, summaries, and lifecycle reconciliation.
+- `artifacts/tracks/<trackId>/events.jsonl` is a reserved runtime artifact placeholder in the current MVP; the API does not read it as run history.
+- repo-visible track artifacts contain `spec.md`, `plan.md`, `tasks.md`, and `sync.json`, but not canonical run history.
+- session-level executor logs are provider telemetry persisted separately under `sessions/`.
 
 ## Domain model snapshot
 

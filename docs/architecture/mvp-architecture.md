@@ -27,7 +27,7 @@ Owns product, planning, workflow, and artifact state.
 Currently implemented:
 - default project bootstrap
 - track creation, inspection, listing, sorting, and workflow/approval status updates
-- generated per-track `spec.md`, `plan.md`, `tasks.md`, and artifact-local `events.jsonl`
+- generated per-track `spec.md`, `plan.md`, `tasks.md`, and reserved runtime artifact `events.jsonl` placeholders
 - planning sessions and planning messages
 - artifact revision proposal and approval request workflows
 - approved artifact materialization back into the artifact tree
@@ -37,7 +37,13 @@ Currently implemented:
 Primary artifacts:
 - Markdown: `spec.md`, `plan.md`, `tasks.md`, index/workflow/track summaries
 - JSON: project, track, planning, approval, channel, attachment, and execution metadata
-- JSONL: run events, planning messages, and session-local adapter events
+- JSONL: authoritative run events, planning messages, and session-local adapter events
+
+Event-history ownership:
+- `state/events/<runId>.jsonl` is the canonical run-event log used by HTTP history, SSE replay, run summaries, and lifecycle reconciliation.
+- `sessions/<sessionRef>.events.jsonl` is provider-adapter telemetry for debugging and replaying executor output; normalized domain events are copied into `state/events/<runId>.jsonl`.
+- `artifacts/tracks/<trackId>/events.jsonl` is a reserved runtime artifact placeholder in the current MVP. It is not read by the API and must not be treated as the source of truth.
+- the repo-visible artifact tree intentionally contains only `spec.md`, `plan.md`, `tasks.md`, and `sync.json` for each track; run history should be exposed through API/SSE until a future export contract is designed.
 
 ### 2. Execution plane
 
@@ -364,7 +370,7 @@ workspaces/
 1. caller submits title/description/priority
 2. service ensures a default project exists
 3. service creates a track record
-4. service writes `track.json`, `spec.md`, `plan.md`, `tasks.md`, and a placeholder artifact-local `events.jsonl`
+4. service writes `track.json`, `spec.md`, `plan.md`, `tasks.md`, and a reserved runtime artifact `events.jsonl` placeholder
 5. caller can fetch the track plus artifact contents and inferred planning context
 
 ### Update track workflow state
@@ -400,8 +406,8 @@ workspaces/
 
 ### Stream run events
 1. caller opens SSE stream for a run
-2. API replays existing persisted events first
-3. file watcher tails appended JSONL lines
+2. API replays existing persisted events from `state/events/<runId>.jsonl` first
+3. file watcher plus polling fallback tails appended JSONL lines from the same canonical state log
 4. keep-alive comments preserve long-lived connection health
 
 ### Bind channel and register attachments
