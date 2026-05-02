@@ -467,6 +467,74 @@ test("API supports resuming and cancelling a run", async () => {
   });
 });
 
+test("API resolves runtime approval requests", async () => {
+  await withServer(async (baseUrl, { dataDir }) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Runtime approval",
+        description: "Exercise runtime approval resolution route.",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const createRunResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        prompt: "Start gated work",
+      }),
+    });
+    const runPayload = (await createRunResponse.json()) as { run: { id: string } };
+    const requestId = `${runPayload.run.id}:approval-requested`;
+
+    await writeFile(
+      path.join(dataDir, "state", "events", `${runPayload.run.id}.jsonl`),
+      `${JSON.stringify({
+        id: requestId,
+        executionId: runPayload.run.id,
+        type: "approval_requested",
+        timestamp: "2026-04-09T07:00:00.000Z",
+        source: "codex",
+        summary: "Approve Bash",
+        payload: { toolName: "Bash", toolUseId: "toolu-runtime" },
+      })}\n`,
+      { encoding: "utf8", flag: "a" },
+    );
+
+    const approveResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/${requestId}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "user", comment: "approved" }),
+    });
+    assert.equal(approveResponse.status, 200);
+    const approvePayload = (await approveResponse.json()) as {
+      event: { type: string; payload: { requestId: string; outcome: string; status: string; toolName: string } };
+    };
+    assert.equal(approvePayload.event.type, "approval_resolved");
+    assert.equal(approvePayload.event.payload.requestId, requestId);
+    assert.equal(approvePayload.event.payload.outcome, "approved");
+    assert.equal(approvePayload.event.payload.status, "running");
+    assert.equal(approvePayload.event.payload.toolName, "Bash");
+
+    const duplicateResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/${requestId}/reject`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "user" }),
+    });
+    assert.equal(duplicateResponse.status, 422);
+
+    const unknownResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/missing-request/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "user" }),
+    });
+    assert.equal(unknownResponse.status, 404);
+  });
+});
+
 test("API blocks run start when planning revisions are still pending approval", async () => {
   await withServer(async (baseUrl) => {
     const trackResponse = await fetch(`${baseUrl}/tracks`, {

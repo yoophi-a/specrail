@@ -177,6 +177,14 @@ export interface DecideApprovalRequestInput {
   comment?: string;
 }
 
+export interface ResolveRuntimeApprovalRequestInput {
+  runId: string;
+  requestId: string;
+  outcome: "approved" | "rejected";
+  decidedBy: ApprovalRequest["requestedBy"];
+  comment?: string;
+}
+
 export interface BindChannelInput {
   projectId: string;
   channelType: ChannelBinding["channelType"];
@@ -254,6 +262,11 @@ function readExecutionStatus(event: ExecutionEvent): ExecutionStatus | null {
   }
 
   if (event.type === "approval_resolved") {
+    const status = event.payload?.status;
+    if (status === "running" || status === "cancelled") {
+      return status;
+    }
+
     return "running";
   }
 
@@ -911,15 +924,66 @@ export class SpecRailService {
 
   async recordExecutionEvent(event: ExecutionEvent): Promise<void> {
     await this.dependencies.eventStore.append(event);
+    await this.reconcileExecutionFromEvents(event.executionId);
+  }
 
-    const execution = await this.dependencies.executionRepository.getById(event.executionId);
+  async resolveRuntimeApprovalRequest(input: ResolveRuntimeApprovalRequestInput): Promise<ExecutionEvent> {
+    const execution = await this.requireRun(input.runId);
+    const events = await this.dependencies.eventStore.listByExecution(execution.id);
+    const requestedEvent = events.find(
+      (event) =>
+        event.type === "approval_requested" &&
+        (event.id === input.requestId || event.payload?.requestId === input.requestId),
+    );
+
+    if (!requestedEvent) {
+      throw new NotFoundError(`Runtime approval request not found: ${input.requestId}`);
+    }
+
+    const alreadyResolved = events.some(
+      (event) =>
+        event.type === "approval_resolved" &&
+        (event.payload?.requestId === input.requestId || event.payload?.requestEventId === requestedEvent.id),
+    );
+
+    if (alreadyResolved) {
+      throw new ValidationError(`Runtime approval request is already resolved: ${input.requestId}`);
+    }
+
+    const event: ExecutionEvent = {
+      id: `${execution.id}:approval-resolved:${this.dependencies.idGenerator?.() ?? randomUUID()}`,
+      executionId: execution.id,
+      type: "approval_resolved",
+      timestamp: this.now(),
+      source: "specrail",
+      summary: `${input.outcome === "approved" ? "Approved" : "Rejected"} runtime approval request ${input.requestId}`,
+      payload: {
+        status: input.outcome === "approved" ? "running" : "cancelled",
+        requestId: input.requestId,
+        requestEventId: requestedEvent.id,
+        outcome: input.outcome,
+        decidedBy: input.decidedBy,
+        comment: input.comment,
+        toolName: requestedEvent.payload?.toolName,
+        toolUseId: requestedEvent.payload?.toolUseId,
+      },
+    };
+
+    await this.dependencies.eventStore.append(event);
+    await this.reconcileExecutionFromEvents(execution.id);
+
+    return event;
+  }
+
+  private async reconcileExecutionFromEvents(executionId: string): Promise<void> {
+    const execution = await this.dependencies.executionRepository.getById(executionId);
     if (!execution) {
       return;
     }
 
     const reconciledExecution = buildExecutionSnapshot(
       execution,
-      await this.dependencies.eventStore.listByExecution(event.executionId),
+      await this.dependencies.eventStore.listByExecution(executionId),
     );
     await this.dependencies.executionRepository.update(await this.hydrateExecutionPlanningContext(reconciledExecution));
     await this.reconcileTrackStatusFromRun(reconciledExecution.trackId, reconciledExecution);

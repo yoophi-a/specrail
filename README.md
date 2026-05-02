@@ -109,6 +109,12 @@ Current endpoints in `apps/api/src/index.ts`:
   - `backend` is optional and must match the run's persisted backend when provided
 - `POST /runs/:runId/cancel`
   - cancel a running run
+- `POST /runs/:runId/approval-requests/:requestId/approve`
+  - resolve a pending runtime approval request as approved
+  - body: `{ decidedBy, comment? }`
+- `POST /runs/:runId/approval-requests/:requestId/reject`
+  - resolve a pending runtime approval request as rejected
+  - body: `{ decidedBy, comment? }`
 - `GET /runs/:runId/events`
   - return persisted normalized events as JSON
 - `GET /runs/:runId/events/stream`

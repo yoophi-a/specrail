@@ -174,6 +174,8 @@ Implemented routes:
 - `GET /runs/:runId`
 - `POST /runs/:runId/resume`
 - `POST /runs/:runId/cancel`
+- `POST /runs/:runId/approval-requests/:requestId/approve`
+- `POST /runs/:runId/approval-requests/:requestId/reject`
 - `GET /runs/:runId/events`
 - `GET /runs/:runId/events/stream`
 
@@ -186,7 +188,6 @@ Implemented routes:
 Not implemented yet:
 - project CRUD endpoints beyond default project bootstrap
 - direct artifact edit/update endpoints outside the proposal/approval flow
-- backend-native approval action callbacks for executor-level permission brokers
 - webhook callback endpoints for GitHub or other hosted integrations
 
 ## Data model snapshot

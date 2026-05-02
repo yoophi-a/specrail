@@ -601,25 +601,18 @@ export class SpecRailAcpServer {
       throw new ValidationError("_meta.specrail.permissionResolution.outcome must be approved or rejected");
     }
 
-    const event: ExecutionEvent = {
-      id: `${execution.id}:approval_resolved:${this.now()}`,
-      executionId: execution.id,
-      type: "approval_resolved",
-      timestamp: this.now(),
-      source: "acp_server",
-      summary: `${outcome === "approved" ? "Approved" : "Rejected"} runtime permission request ${requestId}`,
-      payload: {
-        status: outcome === "approved" ? "running" : "cancelled",
-        requestId,
-        outcome,
-        decidedBy: this.optionalString(resolution?.decidedBy),
-        comment: this.optionalString(resolution?.comment),
-        toolName: pending.toolName,
-        toolUseId: pending.toolUseId,
-      },
-    };
+    const decidedBy = this.optionalString(resolution?.decidedBy) ?? "user";
+    if (decidedBy !== "user" && decidedBy !== "agent" && decidedBy !== "system") {
+      throw new ValidationError("_meta.specrail.permissionResolution.decidedBy must be user, agent, or system");
+    }
 
-    await this.options.service.recordExecutionEvent?.(event);
+    const event = await this.options.service.resolveRuntimeApprovalRequest({
+      runId: execution.id,
+      requestId,
+      outcome,
+      decidedBy,
+      comment: this.optionalString(resolution?.comment),
+    });
 
     const updatedSession: AcpSessionRecord = {
       ...session,

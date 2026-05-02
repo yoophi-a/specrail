@@ -915,8 +915,15 @@ test("SpecRailService derives waiting approval and resumed running state from ap
     },
     workspaceRoot: path.join(rootDir, "workspaces"),
     now: (() => {
-      const values = ["2026-04-09T06:00:00.000Z", "2026-04-09T06:00:01.000Z", "2026-04-09T06:00:02.000Z"];
-      return () => values.shift() ?? "2026-04-09T06:00:02.000Z";
+      const values = [
+        "2026-04-09T06:00:00.000Z",
+        "2026-04-09T06:00:01.000Z",
+        "2026-04-09T06:00:02.000Z",
+        "2026-04-09T06:00:03.000Z",
+        "2026-04-09T06:00:04.000Z",
+        "2026-04-09T06:00:05.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-09T06:00:05.000Z";
     })(),
     idGenerator: (() => {
       const values = ["track-approval", "run-approval"];
@@ -956,18 +963,27 @@ test("SpecRailService derives waiting approval and resumed running state from ap
     lastEventAt: "2026-04-09T06:00:01.000Z",
   });
 
-  await service.recordExecutionEvent({
-    id: `${run.id}:approval-resolved`,
-    executionId: run.id,
-    type: "approval_resolved",
-    timestamp: "2026-04-09T06:00:02.000Z",
-    source: "codex",
-    summary: "Approval resolved",
-    payload: {
-      gate: "plan",
-      resolution: "approved",
-    },
+  const resolutionEvent = await service.resolveRuntimeApprovalRequest({
+    runId: run.id,
+    requestId: `${run.id}:approval-requested`,
+    outcome: "approved",
+    decidedBy: "user",
+    comment: "approved for test",
   });
+  assert.equal(resolutionEvent.type, "approval_resolved");
+  assert.equal(resolutionEvent.payload?.requestId, `${run.id}:approval-requested`);
+  assert.equal(resolutionEvent.payload?.outcome, "approved");
+  assert.equal(resolutionEvent.payload?.status, "running");
+
+  await assert.rejects(
+    service.resolveRuntimeApprovalRequest({
+      runId: run.id,
+      requestId: `${run.id}:approval-requested`,
+      outcome: "approved",
+      decidedBy: "user",
+    }),
+    /already resolved/,
+  );
 
   const resumedRun = await service.getRun(run.id);
   assert.equal(resumedRun?.status, "running");
@@ -975,9 +991,49 @@ test("SpecRailService derives waiting approval and resumed running state from ap
   assert.equal(resumedRun?.finishedAt, undefined);
   assert.deepEqual(resumedRun?.summary, {
     eventCount: 3,
-    lastEventSummary: "Approval resolved",
-    lastEventAt: "2026-04-09T06:00:02.000Z",
+    lastEventSummary: `Approved runtime approval request ${run.id}:approval-requested`,
+    lastEventAt: "2026-04-09T06:00:03.000Z",
   });
+
+  const rejectedTrack = await service.createTrack({
+    title: "Rejected approval run",
+    description: "Reconcile rejected runtime approval from normalized events.",
+  });
+  const rejectedRun = await service.startRun({
+    trackId: rejectedTrack.id,
+    prompt: "Start the rejected gated work",
+  });
+
+  await service.recordExecutionEvent({
+    id: `${rejectedRun.id}:approval-requested`,
+    executionId: rejectedRun.id,
+    type: "approval_requested",
+    timestamp: "2026-04-09T06:00:04.000Z",
+    source: "codex",
+    summary: "Approval requested for risky command",
+    payload: {
+      toolName: "Bash",
+      toolUseId: "toolu-rejected",
+    },
+  });
+
+  const rejectedResolution = await service.resolveRuntimeApprovalRequest({
+    runId: rejectedRun.id,
+    requestId: `${rejectedRun.id}:approval-requested`,
+    outcome: "rejected",
+    decidedBy: "agent",
+    comment: "too risky",
+  });
+  assert.equal(rejectedResolution.payload?.status, "cancelled");
+  assert.equal(rejectedResolution.payload?.outcome, "rejected");
+  assert.equal(rejectedResolution.payload?.toolName, "Bash");
+
+  const cancelledRun = await service.getRun(rejectedRun.id);
+  assert.equal(cancelledRun?.status, "cancelled");
+  assert.equal(cancelledRun?.finishedAt, "2026-04-09T06:00:05.000Z");
+
+  const blockedTrack = await service.getTrack(rejectedTrack.id);
+  assert.equal(blockedTrack?.status, "blocked");
 });
 
 test("SpecRailService lists tracks and runs with basic filters", async () => {
