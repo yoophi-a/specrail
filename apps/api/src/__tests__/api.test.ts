@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -16,11 +16,28 @@ async function withServer(
   const previousDataDir = process.env.SPECRAIL_DATA_DIR;
   const previousPort = process.env.SPECRAIL_PORT;
   const previousRepoArtifactDir = process.env.SPECRAIL_REPO_ARTIFACT_DIR;
+  const previousPath = process.env.PATH;
 
   process.env.NODE_ENV = "test";
   process.env.SPECRAIL_DATA_DIR = dataDir;
   process.env.SPECRAIL_REPO_ARTIFACT_DIR = repoArtifactDir;
   process.env.SPECRAIL_PORT = "0";
+
+  const fakeBinDir = path.join(dataDir, "bin");
+  const fakeCodexPath = path.join(fakeBinDir, "codex");
+  await mkdir(fakeBinDir, { recursive: true });
+  await writeFile(
+    fakeCodexPath,
+    `#!/usr/bin/env node
+process.on("SIGTERM", () => process.exit(0));
+process.on("SIGINT", () => process.exit(0));
+console.log(JSON.stringify({ session_id: "fake-codex-" + process.pid }));
+setTimeout(() => process.exit(0), 25);
+`,
+    "utf8",
+  );
+  await chmod(fakeCodexPath, 0o755);
+  process.env.PATH = `${fakeBinDir}${path.delimiter}${previousPath ?? ""}`;
 
   const server = createDefaultServer();
 
@@ -44,6 +61,7 @@ async function withServer(
     process.env.SPECRAIL_DATA_DIR = previousDataDir;
     process.env.SPECRAIL_PORT = previousPort;
     process.env.SPECRAIL_REPO_ARTIFACT_DIR = previousRepoArtifactDir;
+    process.env.PATH = previousPath;
   }
 }
 
@@ -279,12 +297,10 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
 
     const eventsResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
     assert.equal(eventsResponse.status, 200);
-    const eventsPayload = (await eventsResponse.json()) as { events: Array<{ type: string }> };
-    assert.equal(eventsPayload.events.length, 2);
-    assert.deepEqual(
-      eventsPayload.events.map((event) => event.type),
-      ["task_status_changed", "shell_command"],
-    );
+    const eventsPayload = (await eventsResponse.json()) as { events: Array<{ type: string; summary: string }> };
+    assert.ok(eventsPayload.events.length >= 2);
+    assert.equal(eventsPayload.events[0]?.summary, "Run started");
+    assert.ok(eventsPayload.events.some((event) => event.type === "shell_command" && /Spawned Codex session/.test(event.summary)));
   });
 });
 
