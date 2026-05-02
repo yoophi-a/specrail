@@ -39,6 +39,9 @@ jobs:
       - name: Typecheck packages
         run: pnpm check
 
+      - name: Check Markdown links
+        run: pnpm check:links
+
       - name: Run tests
         run: pnpm test
 
