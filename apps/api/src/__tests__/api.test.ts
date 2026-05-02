@@ -89,6 +89,9 @@ async function openSseStream(url: string): Promise<{
       (response) => {
         response.setEncoding("utf8");
         let buffer = "";
+        response.on("data", (chunk: string) => {
+          buffer += chunk;
+        });
 
         resolve({
           statusCode: response.statusCode ?? 0,
@@ -104,8 +107,7 @@ async function openSseStream(url: string): Promise<{
                 innerReject(new Error(`timed out waiting for ${expectedCount} SSE events`));
               }, 5000);
 
-              const onData = (chunk: string): void => {
-                buffer += chunk;
+              const onData = (): void => {
                 const events = parseSseEvents(buffer);
 
                 if (events.length >= expectedCount) {
@@ -140,8 +142,7 @@ async function openSseStream(url: string): Promise<{
                 innerReject(new Error("timed out waiting for matching SSE event"));
               }, 10000);
 
-              const onData = (chunk: string): void => {
-                buffer += chunk;
+              const onData = (): void => {
                 const events = parseSseEvents(buffer);
 
                 if (events.some(matches)) {
