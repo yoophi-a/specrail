@@ -192,6 +192,17 @@ export interface ResolveRuntimeApprovalRequestInput {
   comment?: string;
 }
 
+export interface RuntimeApprovalCallbackDelivery {
+  status: "handled" | "unsupported" | "failed";
+  events: ExecutionEvent[];
+  error?: string;
+}
+
+export interface RuntimeApprovalResolutionResult {
+  event: ExecutionEvent;
+  callback: RuntimeApprovalCallbackDelivery;
+}
+
 export interface BindChannelInput {
   projectId: string;
   channelType: ChannelBinding["channelType"];
@@ -934,7 +945,7 @@ export class SpecRailService {
     await this.reconcileExecutionFromEvents(event.executionId);
   }
 
-  async resolveRuntimeApprovalRequest(input: ResolveRuntimeApprovalRequestInput): Promise<ExecutionEvent> {
+  async resolveRuntimeApprovalRequest(input: ResolveRuntimeApprovalRequestInput): Promise<RuntimeApprovalResolutionResult> {
     const execution = await this.requireRun(input.runId);
     const events = await this.dependencies.eventStore.listByExecution(execution.id);
     const requestedEvent = events.find(
@@ -978,24 +989,24 @@ export class SpecRailService {
 
     await this.dependencies.eventStore.append(event);
     await this.reconcileExecutionFromEvents(execution.id);
-    await this.deliverRuntimeApprovalDecision(execution.id, requestedEvent, event);
+    const callback = await this.deliverRuntimeApprovalDecision(execution.id, requestedEvent, event);
 
-    return event;
+    return { event, callback };
   }
 
   private async deliverRuntimeApprovalDecision(
     executionId: string,
     approvalRequestedEvent: ExecutionEvent,
     approvalResolvedEvent: ExecutionEvent,
-  ): Promise<void> {
+  ): Promise<RuntimeApprovalCallbackDelivery> {
     const execution = await this.dependencies.executionRepository.getById(executionId);
     if (!execution) {
-      return;
+      return { status: "failed", events: [], error: `Execution not found: ${executionId}` };
     }
 
     const executor = this.resolveExecutor(execution.backend);
     if (!executor.resolveRuntimeApproval) {
-      await this.dependencies.eventStore.append({
+      const event: ExecutionEvent = {
         id: `${execution.id}:approval-callback-unsupported:${this.idGenerator()}`,
         executionId: execution.id,
         type: "summary",
@@ -1007,9 +1018,10 @@ export class SpecRailService {
           outcome: approvalResolvedEvent.payload?.outcome,
           executor: executor.name,
         },
-      });
+      };
+      await this.dependencies.eventStore.append(event);
       await this.reconcileExecutionFromEvents(execution.id);
-      return;
+      return { status: "unsupported", events: [event] };
     }
 
     try {
@@ -1025,8 +1037,9 @@ export class SpecRailService {
       if (callbackEvents.length > 0) {
         await this.reconcileExecutionFromEvents(execution.id);
       }
+      return { status: "handled", events: callbackEvents };
     } catch (error) {
-      await this.dependencies.eventStore.append({
+      const event: ExecutionEvent = {
         id: `${execution.id}:approval-callback-failed:${this.idGenerator()}`,
         executionId: execution.id,
         type: "summary",
@@ -1039,8 +1052,14 @@ export class SpecRailService {
           executor: executor.name,
           error: error instanceof Error ? error.message : String(error),
         },
-      });
+      };
+      await this.dependencies.eventStore.append(event);
       await this.reconcileExecutionFromEvents(execution.id);
+      return {
+        status: "failed",
+        events: [event],
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 

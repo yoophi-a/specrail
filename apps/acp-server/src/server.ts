@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   type Execution,
   type ExecutionEvent,
+  type RuntimeApprovalResolutionResult,
   type SpecRailService,
   NotFoundError,
   ValidationError,
@@ -271,7 +272,12 @@ export class SpecRailAcpServer {
       let execution: Execution;
       let startingEventCount = 0;
 
-      if (session.runId) {
+      const permissionResolution = body._meta?.specrail?.permissionResolution;
+
+      if (session.runId && permissionResolution) {
+        execution = await this.requireRun(session.runId);
+        startingEventCount = (await this.options.service.listRunEvents(execution.id)).length;
+      } else if (session.runId) {
         execution = await this.options.service.resumeRun({ runId: session.runId, prompt, profile: session.profile, backend: session.backend });
         startingEventCount = (await this.options.service.listRunEvents(execution.id)).length;
       } else {
@@ -296,11 +302,18 @@ export class SpecRailAcpServer {
       await this.writeSession(updatedSession);
       notify(this.toSessionInfoUpdate(updatedSession, execution));
 
-      const permissionResolution = body._meta?.specrail?.permissionResolution;
       if (permissionResolution) {
-        const resolutionEvent = await this.resolvePendingPermission(updatedSession, execution, permissionResolution);
-        if (resolutionEvent) {
-          notify(this.toSessionUpdate(updatedSession.sessionId, resolutionEvent));
+        const resolution = await this.resolvePendingPermission(updatedSession, execution, permissionResolution);
+        if (resolution) {
+          notify(this.toSessionUpdate(updatedSession.sessionId, resolution.event));
+          if (permissionResolution.outcome === "approved" && resolution.callback.status !== "handled") {
+            execution = await this.options.service.resumeRun({
+              runId: execution.id,
+              prompt,
+              profile: session.profile,
+              backend: session.backend,
+            });
+          }
         }
       }
 
@@ -585,7 +598,7 @@ export class SpecRailAcpServer {
         ? R
         : never
       : never,
-  ): Promise<ExecutionEvent | null> {
+  ): Promise<RuntimeApprovalResolutionResult | null> {
     const pending = session.pendingPermissionRequest;
     if (!pending) {
       throw new ValidationError("permissionResolution provided but there is no pending runtime permission request");
@@ -606,7 +619,7 @@ export class SpecRailAcpServer {
       throw new ValidationError("_meta.specrail.permissionResolution.decidedBy must be user, agent, or system");
     }
 
-    const event = await this.options.service.resolveRuntimeApprovalRequest({
+    const result = await this.options.service.resolveRuntimeApprovalRequest({
       runId: execution.id,
       requestId,
       outcome,
@@ -623,7 +636,7 @@ export class SpecRailAcpServer {
     await this.writeSession(updatedSession);
     Object.assign(session, updatedSession);
 
-    return event;
+    return result;
   }
 
   private async requireRun(runId: string): Promise<Execution> {
