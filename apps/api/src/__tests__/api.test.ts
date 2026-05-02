@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -32,7 +32,7 @@ async function withServer(
 process.on("SIGTERM", () => process.exit(0));
 process.on("SIGINT", () => process.exit(0));
 console.log(JSON.stringify({ session_id: "fake-codex-" + process.pid }));
-setTimeout(() => process.exit(0), 1_000);
+setTimeout(() => process.exit(0), 10_000);
 `,
     "utf8",
   );
@@ -483,6 +483,37 @@ test("API supports resuming and cancelling a run", async () => {
     assert.equal(cleanupPreviewPayload.cleanupPlan.mode, "directory");
     assert.equal(cleanupPreviewPayload.cleanupPlan.operations[0]?.kind, "remove_directory");
     assert.deepEqual(cleanupPreviewPayload.cleanupPlan.refusalReasons, []);
+
+    const refusedCleanupResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirm: "cleanup" }),
+    });
+    assert.equal(refusedCleanupResponse.status, 200);
+    const refusedCleanupPayload = (await refusedCleanupResponse.json()) as {
+      cleanupResult: { status: string; applied: boolean; refusalReasons: string[] };
+      expectedConfirmation: string;
+    };
+    assert.equal(refusedCleanupPayload.expectedConfirmation, `apply workspace cleanup for ${runPayload.run.id}`);
+    assert.equal(refusedCleanupPayload.cleanupResult.status, "refused");
+    assert.equal(refusedCleanupPayload.cleanupResult.applied, false);
+    assert.deepEqual(refusedCleanupPayload.cleanupResult.refusalReasons, [
+      "Workspace cleanup apply requires explicit confirmation",
+    ]);
+
+    const appliedCleanupResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirm: `apply workspace cleanup for ${runPayload.run.id}` }),
+    });
+    assert.equal(appliedCleanupResponse.status, 200);
+    const appliedCleanupPayload = (await appliedCleanupResponse.json()) as {
+      cleanupResult: { status: string; applied: boolean; operations: Array<{ status: string }> };
+    };
+    assert.equal(appliedCleanupPayload.cleanupResult.status, "applied");
+    assert.equal(appliedCleanupPayload.cleanupResult.applied, true);
+    assert.deepEqual(appliedCleanupPayload.cleanupResult.operations.map((operation) => operation.status), ["applied"]);
+    await assert.rejects(() => access(cleanupPreviewPayload.cleanupPlan.operations[0]?.path ?? ""));
   });
 });
 

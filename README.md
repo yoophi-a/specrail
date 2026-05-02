@@ -112,6 +112,10 @@ Current endpoints in `apps/api/src/index.ts`:
 - `GET /runs/:runId/workspace-cleanup/preview`
   - return a non-destructive cleanup plan for the run workspace
   - response includes `cleanupPlan: { dryRun: true, eligible, operations, refusalReasons }`
+- `POST /runs/:runId/workspace-cleanup/apply`
+  - apply the server-side cleanup plan for the run workspace
+  - body: `{ confirm: "apply workspace cleanup for <runId>" }`
+  - response includes `cleanupResult` plus the exact `expectedConfirmation`
 - `POST /runs/:runId/approval-requests/:requestId/approve`
   - resolve a pending runtime approval request as approved
   - body: `{ decidedBy, comment? }`

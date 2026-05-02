@@ -34,6 +34,7 @@ import {
   SpecRailService,
   TRACK_STATUSES,
   createExecutionWorkspaceManager,
+  ExecutionWorkspaceCleanupApplier,
   planExecutionWorkspaceCleanup,
   type ExecutionWorkspaceMode,
   type ExecutionEvent,
@@ -53,6 +54,7 @@ interface ApiDeps {
   workspaceRoot: string;
   executionWorkspaceMode: ExecutionWorkspaceMode;
   localRepoPath?: string;
+  cleanupApplier: ExecutionWorkspaceCleanupApplier;
 }
 
 interface TrackRequestBody {
@@ -108,6 +110,10 @@ interface DecideApprovalRequestBody {
 interface ResolveRuntimeApprovalRequestBody {
   decidedBy: "user" | "agent" | "system";
   comment?: string;
+}
+
+interface ApplyWorkspaceCleanupRequestBody {
+  confirm: string;
 }
 
 interface BindChannelRequestBody {
@@ -299,6 +305,10 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
     localRepoPath: serviceDependencies.defaultProject.localRepoPath,
     serviceDependencies,
   };
+}
+
+function buildWorkspaceCleanupConfirmation(runId: string): string {
+  return `apply workspace cleanup for ${runId}`;
 }
 
 async function readJson<T>(request: IncomingMessage): Promise<T> {
@@ -1224,6 +1234,30 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "POST" && segments.length === 4 && segments[0] === "runs" && segments[2] === "workspace-cleanup" && segments[3] === "apply") {
+        const run = await deps.service.getRun(segments[1] ?? "");
+
+        if (!run) {
+          sendError(response, 404, "not_found", "run not found");
+          return;
+        }
+
+        const body = await readJson<ApplyWorkspaceCleanupRequestBody>(request);
+        const expectedConfirmation = buildWorkspaceCleanupConfirmation(run.id);
+        const cleanupPlan = planExecutionWorkspaceCleanup({
+          execution: run,
+          workspaceRoot: deps.workspaceRoot,
+          mode: deps.executionWorkspaceMode,
+          localRepoPath: deps.localRepoPath,
+        });
+        const cleanupResult = await deps.cleanupApplier.apply({
+          plan: cleanupPlan,
+          confirm: body.confirm === expectedConfirmation,
+        });
+        sendJson(response, 200, { cleanupResult, expectedConfirmation });
+        return;
+      }
+
       if (method === "GET" && segments.length === 2 && segments[0] === "runs") {
         const run = await deps.service.getRun(segments[1] ?? "");
 
@@ -1300,6 +1334,7 @@ export function createDefaultServer(): http.Server {
     workspaceRoot: dependencies.workspaceRoot,
     executionWorkspaceMode: dependencies.executionWorkspaceMode,
     localRepoPath: dependencies.localRepoPath,
+    cleanupApplier: new ExecutionWorkspaceCleanupApplier(),
   });
 }
 

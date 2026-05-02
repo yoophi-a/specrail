@@ -71,6 +71,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - non-destructive cleanup planner previews directory and git worktree operations with guardrail refusal reasons
 - API cleanup preview endpoint exposes dry-run plans without filesystem or git side effects
 - core cleanup applier requires explicit confirmation and injectable filesystem/git runners before applying previewed operations
+- API cleanup apply endpoint requires a run-id-specific confirmation phrase and reconstructs the plan server-side
 
 ### Milestone D — Project management APIs
 - expose project create/list/get/update endpoints
@@ -84,8 +85,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Expose execution workspace cleanup apply API**
-   - require a fresh preview/confirmation token before applying owned workspace/branch cleanup through HTTP.
+1. **Record workspace cleanup apply events**
+   - append normalized summary events for applied/refused/failed cleanup attempts.
 3. **Add project management APIs**
    - move beyond the default bootstrap project.
 5. **Plan the first hosted operator UI slice**
