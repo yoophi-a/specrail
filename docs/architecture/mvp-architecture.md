@@ -484,7 +484,8 @@ Expected callback behavior:
 
 - `approved`: continue the blocked operation when the provider exposes a permission-continuation primitive; otherwise resume the run with a clear event explaining the fallback path.
 - `rejected`: do not retry the blocked operation; mark or keep the run cancelled unless a backend can represent a narrower blocked-step state.
-- unsupported callbacks append a `summary` event so the gap is visible in run history.
+- unsupported callbacks append a `summary` event so the gap is visible in run history and edge adapters can use their fallback resume path.
+- handled callbacks let edge adapters skip duplicate resume/continuation behavior.
 - callback failure after the domain event is recorded appends an additional `summary` event rather than mutating the approval decision.
 
 Provider-specific metadata can remain under event `payload` / `_meta`, but the callback boundary should not require callers to know Codex, Claude Code, or ACP transport details. That keeps the core event contract stable while adapter fidelity improves incrementally.

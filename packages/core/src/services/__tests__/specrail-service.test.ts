@@ -963,17 +963,18 @@ test("SpecRailService derives waiting approval and resumed running state from ap
     lastEventAt: "2026-04-09T06:00:01.000Z",
   });
 
-  const resolutionEvent = await service.resolveRuntimeApprovalRequest({
+  const resolution = await service.resolveRuntimeApprovalRequest({
     runId: run.id,
     requestId: `${run.id}:approval-requested`,
     outcome: "approved",
     decidedBy: "user",
     comment: "approved for test",
   });
-  assert.equal(resolutionEvent.type, "approval_resolved");
-  assert.equal(resolutionEvent.payload?.requestId, `${run.id}:approval-requested`);
-  assert.equal(resolutionEvent.payload?.outcome, "approved");
-  assert.equal(resolutionEvent.payload?.status, "running");
+  assert.equal(resolution.event.type, "approval_resolved");
+  assert.equal(resolution.event.payload?.requestId, `${run.id}:approval-requested`);
+  assert.equal(resolution.event.payload?.outcome, "approved");
+  assert.equal(resolution.event.payload?.status, "running");
+  assert.equal(resolution.callback.status, "unsupported");
 
   await assert.rejects(
     service.resolveRuntimeApprovalRequest({
@@ -1024,9 +1025,9 @@ test("SpecRailService derives waiting approval and resumed running state from ap
     decidedBy: "agent",
     comment: "too risky",
   });
-  assert.equal(rejectedResolution.payload?.status, "cancelled");
-  assert.equal(rejectedResolution.payload?.outcome, "rejected");
-  assert.equal(rejectedResolution.payload?.toolName, "Bash");
+  assert.equal(rejectedResolution.event.payload?.status, "cancelled");
+  assert.equal(rejectedResolution.event.payload?.outcome, "rejected");
+  assert.equal(rejectedResolution.event.payload?.toolName, "Bash");
 
   const cancelledRun = await service.getRun(rejectedRun.id);
   assert.equal(cancelledRun?.status, "cancelled");
@@ -1152,12 +1153,13 @@ test("SpecRailService delivers runtime approval decisions to executor callbacks"
     payload: { toolName: "Bash", toolUseId: "toolu-callback" },
   });
 
-  await service.resolveRuntimeApprovalRequest({
+  const callbackResolution = await service.resolveRuntimeApprovalRequest({
     runId: run.id,
     requestId: `${run.id}:approval-requested`,
     outcome: "approved",
     decidedBy: "user",
   });
+  assert.equal(callbackResolution.callback.status, "handled");
 
   const callbackEvents = await service.listRunEvents(run.id);
   assert.ok(callbackEvents.some((event) => event.summary === "Runtime approval callback delivered to executor"));
@@ -1183,12 +1185,14 @@ test("SpecRailService delivers runtime approval decisions to executor callbacks"
     payload: { toolName: "Bash", toolUseId: "toolu-failing" },
   });
 
-  await service.resolveRuntimeApprovalRequest({
+  const failingResolution = await service.resolveRuntimeApprovalRequest({
     runId: failingRun.id,
     requestId: `${failingRun.id}:approval-requested`,
     outcome: "approved",
     decidedBy: "system",
   });
+  assert.equal(failingResolution.callback.status, "failed");
+  assert.equal(failingResolution.callback.error, "callback transport unavailable");
 
   const failingEvents = await service.listRunEvents(failingRun.id);
   assert.ok(failingEvents.some((event) => event.summary === "Runtime approval callback delivery failed"));

@@ -1072,14 +1072,14 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       ) {
         const body = await readJson<ResolveRuntimeApprovalRequestBody>(request);
         assertValidResolveRuntimeApprovalRequestBody(body);
-        const event = await deps.service.resolveRuntimeApprovalRequest({
+        const result = await deps.service.resolveRuntimeApprovalRequest({
           runId: segments[1] ?? "",
           requestId: segments[3] ?? "",
           outcome: segments[4] === "approve" ? "approved" : "rejected",
           decidedBy: body.decidedBy,
           comment: body.comment,
         });
-        sendJson(response, 200, { event });
+        sendJson(response, 200, { event: result.event });
         return;
       }
 

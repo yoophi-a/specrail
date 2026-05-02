@@ -187,7 +187,7 @@ function createFakeService() {
         },
       };
       await service.recordExecutionEvent(event);
-      return event;
+      return { event, callback: { status: "unsupported" as const, events: [] } };
     },
   } satisfies Pick<
     SpecRailService,
@@ -207,7 +207,7 @@ function createFakeService() {
 test("ACP server initializes and maps session/new + prompt to SpecRail run lifecycle", async () => {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
   const server = new SpecRailAcpServer({
-    service: createFakeService() as SpecRailService,
+    service: createFakeService() as unknown as SpecRailService,
     stateDir,
     now: () => "2026-04-13T12:00:00.000Z",
     pollIntervalMs: 1,
@@ -290,7 +290,7 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
 test("ACP server emits richer permission request and resolution updates", async () => {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
   const server = new SpecRailAcpServer({
-    service: createFakeService() as SpecRailService,
+    service: createFakeService() as unknown as SpecRailService,
     stateDir,
     now: () => "2026-04-13T12:00:00.000Z",
     pollIntervalMs: 1,
