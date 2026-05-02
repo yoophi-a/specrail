@@ -37,6 +37,7 @@ import {
   ExecutionWorkspaceCleanupApplier,
   planExecutionWorkspaceCleanup,
   type ExecutionWorkspaceMode,
+  type ApplyExecutionWorkspaceCleanupResult,
   type ExecutionEvent,
   type ApprovalStatus,
   type ArtifactKind,
@@ -309,6 +310,26 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
 
 function buildWorkspaceCleanupConfirmation(runId: string): string {
   return `apply workspace cleanup for ${runId}`;
+}
+
+function buildWorkspaceCleanupEvent(runId: string, result: ApplyExecutionWorkspaceCleanupResult): ExecutionEvent {
+  const timestamp = new Date().toISOString();
+
+  return {
+    id: `${runId}:workspace-cleanup:${timestamp}`,
+    executionId: runId,
+    type: "summary",
+    timestamp,
+    source: "specrail",
+    summary: `Workspace cleanup ${result.status} for execution ${runId}`,
+    payload: {
+      status: result.status,
+      applied: result.applied,
+      operationCount: result.operations.length,
+      operations: result.operations,
+      refusalReasons: result.refusalReasons,
+    },
+  };
 }
 
 async function readJson<T>(request: IncomingMessage): Promise<T> {
@@ -1254,6 +1275,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           plan: cleanupPlan,
           confirm: body.confirm === expectedConfirmation,
         });
+        await deps.service.recordExecutionEvent(buildWorkspaceCleanupEvent(run.id, cleanupResult));
         sendJson(response, 200, { cleanupResult, expectedConfirmation });
         return;
       }

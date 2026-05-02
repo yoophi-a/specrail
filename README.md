@@ -116,6 +116,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - apply the server-side cleanup plan for the run workspace
   - body: `{ confirm: "apply workspace cleanup for <runId>" }`
   - response includes `cleanupResult` plus the exact `expectedConfirmation`
+  - appends a `summary` run event for applied, refused, and failed cleanup attempts
 - `POST /runs/:runId/approval-requests/:requestId/approve`
   - resolve a pending runtime approval request as approved
   - body: `{ decidedBy, comment? }`
