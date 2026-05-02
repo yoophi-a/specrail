@@ -54,9 +54,11 @@ setTimeout(() => process.exit(0), 25);
   try {
     await run(`http://127.0.0.1:${address.port}`, { dataDir, repoArtifactDir });
   } finally {
-    await new Promise<void>((resolve, reject) => {
+    const closePromise = new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
+    server.closeAllConnections();
+    await closePromise;
     process.env.NODE_ENV = previousNodeEnv;
     process.env.SPECRAIL_DATA_DIR = previousDataDir;
     process.env.SPECRAIL_PORT = previousPort;
