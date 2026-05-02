@@ -1,4 +1,4 @@
-import type { CommandExecutionMetadata, ExecutionEvent } from "@specrail/core";
+import type { CommandExecutionMetadata, ExecutionEvent, RuntimeApprovalDecisionInput } from "@specrail/core";
 
 export type ExecutionBackend = "codex" | "claude_code" | (string & {});
 
@@ -80,5 +80,6 @@ export interface ExecutorAdapter {
   spawn(input: SpawnExecutionInput): Promise<SpawnExecutionResult>;
   resume(input: ResumeExecutionInput): Promise<ResumeExecutionResult>;
   cancel(input: CancelExecutionInput): Promise<ExecutionEvent>;
+  resolveRuntimeApproval?(input: RuntimeApprovalDecisionInput): Promise<ExecutionEvent[]>;
   normalize(rawEvent: unknown): ExecutionEvent | null;
 }

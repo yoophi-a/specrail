@@ -136,9 +136,10 @@ These are current, expected limitations of the MVP:
    - `*.claude-stream.jsonl` captures Claude stdout stream-json output.
    - stderr is normalized into SpecRail events, but not mirrored into that raw stdout transcript file.
 
-6. approval decisions are persisted, but not delivered back into Claude Code yet.
+6. approval decisions are persisted and delivered through the Claude Code executor callback hook.
    - `approval_requested` events can be resolved through the core service/API.
-   - a future executor callback still needs to bridge approved/rejected decisions into Claude Code continuation behavior when the CLI exposes a usable primitive.
+   - approved decisions currently spawn the normal Claude Code resume fallback because the CLI does not expose a narrower permission-continuation primitive.
+   - rejected decisions are recorded as no-retry outcomes and mark the adapter session cancelled.
 
 ## Recovery guide
 

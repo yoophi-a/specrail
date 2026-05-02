@@ -9,7 +9,7 @@ import {
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { CommandExecutionMetadata, ExecutionEvent } from "@specrail/core";
+import type { CommandExecutionMetadata, ExecutionEvent, RuntimeApprovalDecisionInput } from "@specrail/core";
 import type {
   CancelExecutionInput,
   ExecutorAdapter,
@@ -376,6 +376,72 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
       command: toCommandMetadata(command, input.prompt, resumeSessionRef),
       events: event ? [event] : [],
     };
+  }
+
+  async resolveRuntimeApproval(input: RuntimeApprovalDecisionInput): Promise<ExecutionEvent[]> {
+    if (!input.execution.sessionRef) {
+      throw new Error(`Claude Code runtime approval callback requires a sessionRef for execution ${input.execution.id}`);
+    }
+
+    const metadata = await readSessionMetadata(this.sessionsDir, input.execution.sessionRef);
+    const outcome = input.approvalResolvedEvent.payload?.outcome;
+    const requestId = input.approvalResolvedEvent.payload?.requestId;
+    const approved = outcome === "approved";
+    const resumeEvents = approved
+      ? (await this.resume({
+          sessionRef: metadata.sessionRef,
+          prompt: "Permission approved. Continue the blocked operation.",
+          workspacePath: metadata.workspacePath,
+          profile: metadata.profile,
+        })).events
+      : [];
+    const latestMetadata = approved ? await readSessionMetadata(this.sessionsDir, metadata.sessionRef) : metadata;
+    const timestamp = this.now();
+    const updatedMetadata: ExecutorSessionMetadata = {
+      ...latestMetadata,
+      status: approved ? "running" : "cancelled",
+      updatedAt: timestamp,
+      finishedAt: approved ? latestMetadata.finishedAt : (latestMetadata.finishedAt ?? timestamp),
+      providerMetadata: mergeProviderMetadata(latestMetadata, {
+        runtimeApproval: {
+          requestId,
+          requestEventId: input.approvalResolvedEvent.payload?.requestEventId,
+          outcome,
+          decidedBy: input.approvalResolvedEvent.payload?.decidedBy,
+          resolvedAt: input.approvalResolvedEvent.timestamp,
+          handledAt: timestamp,
+          strategy: approved ? "claude-code-resume-fallback" : "claude-code-reject-no-retry",
+        },
+      }),
+    };
+    await writeSessionMetadata(this.sessionsDir, updatedMetadata);
+
+    const event: ExecutionEvent = {
+      id: `${input.execution.id}:claude-code-approval-callback:${timestamp}`,
+      executionId: input.execution.id,
+      type: "summary",
+      timestamp,
+      source: this.name,
+      summary: approved
+        ? `Claude Code runtime approval ${String(requestId)} accepted; spawned normal resume fallback`
+        : `Claude Code runtime approval ${String(requestId)} rejected; blocked operation will not be retried`,
+      payload: {
+        sessionRef: metadata.sessionRef,
+        providerSessionId: metadata.providerSessionId,
+        providerInvocationId: metadata.providerInvocationId,
+        requestId,
+        requestEventId: input.approvalResolvedEvent.payload?.requestEventId,
+        outcome,
+        strategy: approved ? "resume_fallback" : "no_retry",
+        toolName: input.approvalResolvedEvent.payload?.toolName,
+        toolUseId: input.approvalResolvedEvent.payload?.toolUseId,
+      },
+    };
+    for (const resumeEvent of resumeEvents) {
+      appendSessionEventSync(this.sessionsDir, metadata.sessionRef, resumeEvent);
+    }
+    appendSessionEventSync(this.sessionsDir, metadata.sessionRef, event);
+    return [...resumeEvents, event];
   }
 
   async cancel(input: CancelExecutionInput | string): Promise<ExecutionEvent> {

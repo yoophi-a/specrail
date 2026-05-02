@@ -60,10 +60,11 @@ Currently implemented:
 - run summary derivation from persisted events
 - terminal-state reconciliation back into track status (`completed -> review`, `failed -> failed`, `cancelled -> blocked`)
 - planning-context capture for runs, including stale-context rejection when newer planning revisions are pending approval
+- executor callback delivery for runtime approval decisions through Codex and Claude Code resume/no-retry fallbacks
 
 Currently not implemented:
 - worktree/git orchestration beyond metadata/workspace path allocation
-- executor callback delivery for already-recorded runtime approval decisions when a backend implements `resolveRuntimeApproval(...)`
+- provider-native permission continuation beyond normal resume fallback behavior
 - scheduler/queue management
 
 ### 3. Interface plane
@@ -495,7 +496,7 @@ Provider-specific metadata can remain under event `payload` / `_meta`, but the c
 - database layer
 - production auth system
 - production deployment manifests
-- provider-specific executor continuation implementations for runtime approval decisions
+- provider-native permission continuation primitives beyond current resume fallback behavior
 - rich artifact editing/versioning API outside the current proposal/approval flow
 - multi-project tenant management beyond default project bootstrap
 - hosted GitHub app/webhook automation
