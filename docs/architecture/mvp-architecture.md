@@ -63,7 +63,7 @@ Currently implemented:
 
 Currently not implemented:
 - worktree/git orchestration beyond metadata/workspace path allocation
-- backend-native approval broker callbacks independent of adapters
+- executor callback delivery for already-recorded runtime approval decisions
 - scheduler/queue management
 
 ### 3. Interface plane
@@ -451,16 +451,49 @@ Current Claude Code coverage:
 Current ACP edge coverage:
 - `task_status_changed` updates ACP session status metadata
 - `approval_requested` can be projected as ACP `session/request_permission`
-- client `_meta.specrail.permissionResolution` can synthesize an `approval_resolved` event and resume the run
+- client `_meta.specrail.permissionResolution` is resolved through `SpecRailService.resolveRuntimeApprovalRequest(...)` and then resumes the run
 
-Some provider-specific details are still carried in event `payload` / `_meta` rather than promoted into a larger native taxonomy. That keeps the core event contract stable while adapter fidelity improves incrementally.
+### Runtime approval callback contract
+
+Runtime approval resolution has two separate responsibilities:
+
+1. persist the domain decision in SpecRail
+2. deliver that decision to the active executor when the backend supports continuation callbacks
+
+The implemented domain decision path is canonical:
+
+```text
+POST /runs/:runId/approval-requests/:requestId/approve|reject
+  -> SpecRailService.resolveRuntimeApprovalRequest(...)
+  -> append approval_resolved to state/events/<runId>.jsonl
+  -> reconcile the run snapshot from persisted execution events
+```
+
+Executors should treat the persisted `approval_resolved` event as the durable source of truth. A future executor callback receives the resolved event plus the current execution snapshot, not a provider-specific API shape. The stable fields are:
+
+- `executionId`
+- `payload.requestId`
+- `payload.requestEventId`
+- `payload.outcome` (`approved` or `rejected`)
+- `payload.decidedBy` (`user`, `agent`, or `system`)
+- `payload.comment`
+- `payload.toolName`
+- `payload.toolUseId`
+
+Expected callback behavior:
+
+- `approved`: continue the blocked operation when the provider exposes a permission-continuation primitive; otherwise resume the run with a clear event explaining the fallback path.
+- `rejected`: do not retry the blocked operation; mark or keep the run cancelled unless a backend can represent a narrower blocked-step state.
+- callback failure after the domain event is recorded must append an additional `task_status_changed` or `summary` event rather than mutating the approval decision.
+
+Provider-specific metadata can remain under event `payload` / `_meta`, but the callback boundary should not require callers to know Codex, Claude Code, or ACP transport details. That keeps the core event contract stable while adapter fidelity improves incrementally.
 
 ## Out of scope for the current MVP
 
 - database layer
 - production auth system
 - production deployment manifests
-- backend-native approval broker callbacks
+- executor callback delivery for runtime approval decisions
 - rich artifact editing/versioning API outside the current proposal/approval flow
 - multi-project tenant management beyond default project bootstrap
 - hosted GitHub app/webhook automation
