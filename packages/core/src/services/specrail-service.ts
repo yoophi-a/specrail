@@ -774,6 +774,7 @@ export class SpecRailService {
     const workspace = await this.workspaceManager.allocate({
       executionId,
       workspaceRoot: this.dependencies.workspaceRoot,
+      localRepoPath: this.dependencies.defaultProject.localRepoPath,
     });
     const prompt = normalizeRequiredString(input.prompt);
     const profile = normalizeProfile(this.resolveExecutionProfile(input.profile));
