@@ -392,10 +392,21 @@ Branch and worktree ownership rules:
 
 Cleanup expectations:
 
-- `completed`: keep the workspace by default until review/merge tooling decides what to do.
-- `failed`: keep the workspace for debugging.
-- `cancelled`: keep the workspace for inspection unless explicit cleanup is requested.
+- `completed`: eligible for cleanup only after review/merge/export tooling no longer needs the workspace.
+- `failed`: not eligible by default; keep the workspace for debugging unless an operator explicitly requests cleanup.
+- `cancelled`: not eligible by default; keep the workspace for inspection unless an operator explicitly requests cleanup.
+- active states such as `running` and `waiting_approval`: never eligible for cleanup.
 - interrupted process: recover from persisted execution metadata and event history; do not assume the worktree can be deleted automatically.
+
+Cleanup safety contract:
+
+1. Cleanup must have a dry-run/preview path that reports the exact workspace path, branch name, workspace mode, and git commands/filesystem operations that would be used.
+2. Destructive cleanup must require an explicit non-dry-run request and must only target persisted `workspacePath` values under the configured `workspaceRoot`.
+3. Branch cleanup must only target persisted `branchName` values matching `specrail/<runId>` for the same execution id.
+4. `directory` mode cleanup may remove `workspaces/<runId>/` only after the path ownership check passes.
+5. `git_worktree` mode cleanup should run worktree removal before branch deletion, for example `git worktree remove <workspacePath>` followed by `git branch -D specrail/<runId>` only when the branch is still owned and local.
+6. Cleanup should append a normalized `summary` event with dry-run versus applied outcome, attempted operations, and any verification notes.
+7. Partial failures must preserve the execution record and append a failure summary event; they must not retry destructive operations automatically.
 
 The first implementation slice provides a workspace manager abstraction with:
 
