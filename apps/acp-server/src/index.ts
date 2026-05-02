@@ -20,12 +20,14 @@ import {
   JsonlEventStore,
   JsonlPlanningMessageStore,
   SpecRailService,
+  createExecutionWorkspaceManager,
   type SpecRailServiceDependencies,
 } from "@specrail/core";
 
 import { SpecRailAcpServer, type JsonRpcRequest } from "./server.js";
 
 function createService(dataDir: string, repoArtifactRoot: string): SpecRailService {
+  const config = loadConfig();
   const stateDir = path.join(dataDir, "state");
   const artifactRoot = path.join(dataDir, "artifacts");
   const workspaceRoot = path.join(dataDir, "workspaces");
@@ -109,8 +111,8 @@ function createService(dataDir: string, repoArtifactRoot: string): SpecRailServi
       codex: codexExecutor,
       claude_code: claudeCodeExecutor,
     },
-    defaultExecutionBackend: loadConfig().executionBackend,
-    defaultExecutionProfile: loadConfig().executionProfile,
+    defaultExecutionBackend: config.executionBackend,
+    defaultExecutionProfile: config.executionProfile,
     defaultProject: {
       id: "project-default",
       name: "SpecRail",
@@ -119,6 +121,7 @@ function createService(dataDir: string, repoArtifactRoot: string): SpecRailServi
       defaultWorkflowPolicy: "artifact-first-mvp",
     },
     workspaceRoot,
+    workspaceManager: createExecutionWorkspaceManager(config.executionWorkspaceMode),
   };
 
   service = new SpecRailService(dependencies);

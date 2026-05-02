@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   DirectoryExecutionWorkspaceManager,
   GitWorktreeExecutionWorkspaceManager,
+  createExecutionWorkspaceManager,
   type GitCommandRunner,
 } from "../execution-workspace-manager.js";
 
@@ -21,6 +22,11 @@ test("DirectoryExecutionWorkspaceManager allocates stable workspace and branch m
   assert.equal(workspace.branchName, "specrail/run-workspace-a");
   assert.equal(workspace.mode, "directory");
   assert.equal((await stat(workspace.workspacePath)).isDirectory(), true);
+});
+
+test("createExecutionWorkspaceManager selects directory and git worktree managers", () => {
+  assert.ok(createExecutionWorkspaceManager("directory") instanceof DirectoryExecutionWorkspaceManager);
+  assert.ok(createExecutionWorkspaceManager("git_worktree") instanceof GitWorktreeExecutionWorkspaceManager);
 });
 
 test("GitWorktreeExecutionWorkspaceManager plans git worktree allocation commands", async () => {

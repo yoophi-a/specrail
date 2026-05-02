@@ -33,6 +33,7 @@ import {
   getStatePaths,
   SpecRailService,
   TRACK_STATUSES,
+  createExecutionWorkspaceManager,
   type ExecutionEvent,
   type ApprovalStatus,
   type ArtifactKind,
@@ -183,6 +184,7 @@ class RequestValidationError extends Error {
 }
 
 function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultDependencies {
+  const config = loadConfig();
   const stateDir = path.join(dataDir, "state");
   const artifactRoot = path.join(dataDir, "artifacts");
   const workspaceRoot = path.join(dataDir, "workspaces");
@@ -266,8 +268,8 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
       codex: codexExecutor,
       claude_code: claudeCodeExecutor,
     },
-    defaultExecutionBackend: loadConfig().executionBackend,
-    defaultExecutionProfile: loadConfig().executionProfile,
+    defaultExecutionBackend: config.executionBackend,
+    defaultExecutionProfile: config.executionProfile,
     defaultProject: {
       id: "project-default",
       name: "SpecRail",
@@ -276,6 +278,7 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
       defaultWorkflowPolicy: "artifact-first-mvp",
     },
     workspaceRoot,
+    workspaceManager: createExecutionWorkspaceManager(config.executionWorkspaceMode),
   };
 
   service = new SpecRailService(serviceDependencies);
