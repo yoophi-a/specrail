@@ -397,7 +397,13 @@ Cleanup expectations:
 - `cancelled`: keep the workspace for inspection unless explicit cleanup is requested.
 - interrupted process: recover from persisted execution metadata and event history; do not assume the worktree can be deleted automatically.
 
-First implementation slice should add a workspace manager abstraction and tests for `directory` mode plus git command planning. Actual branch deletion/cleanup should be a separate explicit operation.
+The first implementation slice provides a workspace manager abstraction with:
+
+- `DirectoryExecutionWorkspaceManager` for the default plain directory behavior.
+- `GitWorktreeExecutionWorkspaceManager` for explicit `git worktree add -b specrail/<runId> workspaces/<runId>` allocation when a local repository path is provided.
+- `GitCommandRunner` injection so tests and future operators can validate command planning without invoking git directly.
+
+Actual branch deletion/cleanup remains a separate explicit operation.
 
 ## Request flow
 

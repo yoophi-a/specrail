@@ -23,7 +23,7 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-"));
   const artifactRoot = path.join(rootDir, ".specrail");
   const workspaceRoot = path.join(rootDir, "workspaces");
-  const workspaceAllocations: Array<{ executionId: string; workspaceRoot: string }> = [];
+  const workspaceAllocations: Array<{ executionId: string; workspaceRoot: string; localRepoPath?: string }> = [];
 
   const service = new SpecRailService({
     projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
@@ -192,7 +192,7 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(run.sessionRef, "session:run-run-a");
   assert.equal(run.workspacePath, path.join(workspaceRoot, "run-run-a"));
   assert.equal(run.branchName, "specrail/run-run-a");
-  assert.deepEqual(workspaceAllocations, [{ executionId: "run-run-a", workspaceRoot }]);
+  assert.deepEqual(workspaceAllocations, [{ executionId: "run-run-a", workspaceRoot, localRepoPath: undefined }]);
   assert.equal(run.command?.command, "codex");
   assert.equal(run.status, "running");
   assert.deepEqual(run.summary, {

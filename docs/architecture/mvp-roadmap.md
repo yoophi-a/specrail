@@ -63,8 +63,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - future provider-native permission continuation can replace the resume fallback when available
 
 ### Milestone C — Worktree and branch orchestration
-- current contract defines `directory` and future `git_worktree` workspace modes
-- create isolated git worktrees per execution when requested
+- current contract defines `directory` and `git_worktree` workspace modes
+- workspace manager abstraction supports default directory allocation and explicit git worktree command planning/execution
 - record branch/worktree metadata consistently
 - define explicit cleanup and recovery behavior for interrupted runs
 
@@ -80,10 +80,10 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Add execution workspace manager abstraction**
-   - implement the documented `directory` fallback and prepare `git_worktree` command planning.
-2. **Add execution git worktree orchestration**
-   - isolate agent runs and track branch/worktree lifecycle.
+1. **Add execution workspace mode selection**
+   - expose directory vs git worktree mode through config/API without changing execution records.
+2. **Add execution workspace cleanup operations**
+   - explicitly clean up owned `specrail/<runId>` worktrees/branches after review.
 3. **Add project management APIs**
    - move beyond the default bootstrap project.
 5. **Plan the first hosted operator UI slice**
