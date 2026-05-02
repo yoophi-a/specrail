@@ -68,6 +68,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - config/env wiring exposes workspace mode selection to API and ACP server entrypoints
 - record branch/worktree metadata consistently
 - cleanup safety contract defines dry-run, ownership checks, event recording, and partial-failure behavior
+- non-destructive cleanup planner previews directory and git worktree operations with guardrail refusal reasons
 
 ### Milestone D — Project management APIs
 - expose project create/list/get/update endpoints
@@ -81,8 +82,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Add execution workspace cleanup planner**
-   - implement non-destructive cleanup previews for owned `specrail/<runId>` worktrees/branches.
+1. **Add execution workspace cleanup API preview endpoint**
+   - expose the non-destructive cleanup planner through API/operator surfaces.
 2. **Add execution workspace cleanup apply path**
    - explicitly clean up owned workspaces/branches after review using the previewed operations.
 3. **Add project management APIs**
