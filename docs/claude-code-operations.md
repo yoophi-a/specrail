@@ -136,8 +136,9 @@ These are current, expected limitations of the MVP:
    - `*.claude-stream.jsonl` captures Claude stdout stream-json output.
    - stderr is normalized into SpecRail events, but not mirrored into that raw stdout transcript file.
 
-6. no approval broker exists yet.
-   - SpecRail advertises the capability shape, but there is not yet a separate approval workflow layered on top of Claude Code.
+6. approval decisions are persisted, but not delivered back into Claude Code yet.
+   - `approval_requested` events can be resolved through the core service/API.
+   - a future executor callback still needs to bridge approved/rejected decisions into Claude Code continuation behavior when the CLI exposes a usable primitive.
 
 ## Recovery guide
 

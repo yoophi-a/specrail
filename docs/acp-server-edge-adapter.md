@@ -51,12 +51,13 @@ The adapter now keeps the raw SpecRail event payload in `_meta.specrail.executio
 
 ### Permission round-trip
 
-Runtime approval is still adapter-mediated, but the ACP edge now supports a basic round-trip shape:
+Runtime approval decisions now use the same domain service/API path as non-ACP clients:
 
 1. SpecRail emits `approval_requested`.
 2. The ACP adapter publishes `session/request_permission` with the original event attached in `_meta.specrail.executionEvent`.
 3. The client answers on the next `session/prompt` with `_meta.specrail.permissionResolution`.
-4. The adapter records a synthetic `approval_resolved` execution event and resumes the linked SpecRail run.
+4. The adapter calls `SpecRailService.resolveRuntimeApprovalRequest(...)` to record the canonical `approval_resolved` event.
+5. The adapter resumes the linked SpecRail run after an approved decision; rejected decisions keep the run cancelled.
 
 Example client payload:
 
@@ -83,11 +84,11 @@ This is intentionally an initial bridge, not a full ACP implementation.
 
 1. `session/new` currently requires SpecRail-specific metadata, especially `_meta.specrail.trackId`.
 2. Planning artifacts, approvals, channel bindings, and attachment flows stay in the existing REST API.
-3. Runtime permission requests are translated into ACP-friendly updates, but they are still mediated by the adapter rather than a backend-native approval broker.
+3. Runtime permission requests are translated into ACP-friendly updates; decisions are persisted through the core approval path, but active executor callback delivery is not implemented yet.
 4. Event updates are richer than the initial bridge, but the mapping still collapses many provider-specific details into `session/update` plus `_meta` rather than a full ACP-native event taxonomy.
 5. The adapter stores ACP session records locally, but run state still lives in the normal SpecRail repositories.
 6. Terminal and filesystem ACP capabilities are not exposed yet, because SpecRail-managed workspaces need a clearer ownership model first.
-7. `approval_resolved` is currently synthesized by the ACP adapter when the client sends `permissionResolution`, so the persisted event expresses the ACP decision clearly but does not yet prove that the underlying executor consumed a real broker callback.
+7. `approval_resolved` is persisted by the core service when the client sends `permissionResolution`, but the event does not yet prove that the underlying executor consumed a real callback.
 
 ## Why this shape
 
@@ -99,7 +100,7 @@ This follows the ACP fit analysis in `docs/research/acp-fit-for-specrail.md`:
 ## Near-term follow-up
 
 Good next steps from the current bridge:
-- move runtime permission handling behind a backend-native approval broker so ACP decisions are not only adapter-synthesized events
+- deliver persisted runtime approval decisions into active executor callbacks where providers support continuation
 - expand the ACP-facing event taxonomy beyond readable `agent_message_chunk` fallbacks for provider-specific details that clients need to render natively
 - define workspace ownership rules before exposing filesystem or terminal ACP capabilities for SpecRail-managed workspaces
 - build an ACP-aware terminal or editor client spike against this adapter to validate the session/update and permission request shapes with a real client
