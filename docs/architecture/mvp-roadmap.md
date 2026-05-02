@@ -31,7 +31,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - approval workflow depth
   - artifact revision approval is implemented
   - runtime permission request resolution is available through core service and HTTP APIs
-  - active executor callback wiring is still adapter-specific
+  - Codex and Claude Code runtime approval callbacks use provider-specific resume/no-retry fallbacks
 - artifact contract convergence
   - generated track artifacts exist in the repo-visible layout
   - authoritative run events still live under `state/events/<runId>.jsonl`
@@ -57,14 +57,16 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - connect completed run summaries back into track artifacts if desired
 
 ### Milestone B — Runtime approval broker
-- route core/API approval decisions back to active executors when a backend supports continuation callbacks
-- keep approval requested/resolved events provider-neutral while preserving provider metadata
-- document fallback behavior for rejected approvals and interrupted sessions
+- core/API approval decisions route back to active executors through callback hooks
+- approval requested/resolved events stay provider-neutral while preserving provider metadata
+- Codex and Claude Code currently use normal resume fallbacks for approved decisions and no-retry cancellation for rejected decisions
+- future provider-native permission continuation can replace the resume fallback when available
 
 ### Milestone C — Worktree and branch orchestration
-- create isolated workspaces per execution when requested
+- current contract defines `directory` and future `git_worktree` workspace modes
+- create isolated git worktrees per execution when requested
 - record branch/worktree metadata consistently
-- define cleanup and recovery behavior for interrupted runs
+- define explicit cleanup and recovery behavior for interrupted runs
 
 ### Milestone D — Project management APIs
 - expose project create/list/get/update endpoints
@@ -78,13 +80,11 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Define artifact/state event-history ownership**
-   - settle what belongs in repo-visible artifacts versus internal state.
-2. **Wire runtime approval decisions into active executors**
-   - continue from the new core/API resolution path into backend-specific callbacks.
-3. **Add execution worktree orchestration**
+1. **Add execution workspace manager abstraction**
+   - implement the documented `directory` fallback and prepare `git_worktree` command planning.
+2. **Add execution git worktree orchestration**
    - isolate agent runs and track branch/worktree lifecycle.
-4. **Add project management APIs**
+3. **Add project management APIs**
    - move beyond the default bootstrap project.
 5. **Plan the first hosted operator UI slice**
    - build on the stabilized HTTP/SSE API rather than adding new core behavior.
