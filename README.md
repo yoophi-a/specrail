@@ -109,6 +109,9 @@ Current endpoints in `apps/api/src/index.ts`:
   - `backend` is optional and must match the run's persisted backend when provided
 - `POST /runs/:runId/cancel`
   - cancel a running run
+- `GET /runs/:runId/workspace-cleanup/preview`
+  - return a non-destructive cleanup plan for the run workspace
+  - response includes `cleanupPlan: { dryRun: true, eligible, operations, refusalReasons }`
 - `POST /runs/:runId/approval-requests/:requestId/approve`
   - resolve a pending runtime approval request as approved
   - body: `{ decidedBy, comment? }`

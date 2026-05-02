@@ -34,6 +34,8 @@ import {
   SpecRailService,
   TRACK_STATUSES,
   createExecutionWorkspaceManager,
+  planExecutionWorkspaceCleanup,
+  type ExecutionWorkspaceMode,
   type ExecutionEvent,
   type ApprovalStatus,
   type ArtifactKind,
@@ -48,6 +50,9 @@ interface ApiDeps {
   artifactRoot: string;
   eventLogDir: string;
   service: SpecRailService;
+  workspaceRoot: string;
+  executionWorkspaceMode: ExecutionWorkspaceMode;
+  localRepoPath?: string;
 }
 
 interface TrackRequestBody {
@@ -157,6 +162,9 @@ interface ListMeta {
 interface DefaultDependencies {
   artifactRoot: string;
   eventLogDir: string;
+  workspaceRoot: string;
+  executionWorkspaceMode: ExecutionWorkspaceMode;
+  localRepoPath?: string;
   serviceDependencies: SpecRailServiceDependencies;
 }
 
@@ -286,6 +294,9 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
   return {
     artifactRoot,
     eventLogDir: getStatePaths(stateDir).eventsDir,
+    workspaceRoot,
+    executionWorkspaceMode: config.executionWorkspaceMode,
+    localRepoPath: serviceDependencies.defaultProject.localRepoPath,
     serviceDependencies,
   };
 }
@@ -1195,6 +1206,24 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "GET" && segments.length === 4 && segments[0] === "runs" && segments[2] === "workspace-cleanup" && segments[3] === "preview") {
+        const run = await deps.service.getRun(segments[1] ?? "");
+
+        if (!run) {
+          sendError(response, 404, "not_found", "run not found");
+          return;
+        }
+
+        const cleanupPlan = planExecutionWorkspaceCleanup({
+          execution: run,
+          workspaceRoot: deps.workspaceRoot,
+          mode: deps.executionWorkspaceMode,
+          localRepoPath: deps.localRepoPath,
+        });
+        sendJson(response, 200, { cleanupPlan });
+        return;
+      }
+
       if (method === "GET" && segments.length === 2 && segments[0] === "runs") {
         const run = await deps.service.getRun(segments[1] ?? "");
 
@@ -1268,6 +1297,9 @@ export function createDefaultServer(): http.Server {
     artifactRoot: dependencies.artifactRoot,
     eventLogDir: dependencies.eventLogDir,
     service: new SpecRailService(dependencies.serviceDependencies),
+    workspaceRoot: dependencies.workspaceRoot,
+    executionWorkspaceMode: dependencies.executionWorkspaceMode,
+    localRepoPath: dependencies.localRepoPath,
   });
 }
 
