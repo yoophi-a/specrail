@@ -464,6 +464,60 @@ test("API supports resuming and cancelling a run", async () => {
     assert.match(eventsPayload.events[1]?.summary ?? "", /Spawned Codex session/);
     assert.ok(eventsPayload.events.some((event) => /Resumed Codex session/.test(event.summary)));
     assert.ok(eventsPayload.events.some((event) => /Cancelled Codex session/.test(event.summary)));
+
+    const cleanupPreviewResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/preview`);
+    assert.equal(cleanupPreviewResponse.status, 200);
+    const cleanupPreviewPayload = (await cleanupPreviewResponse.json()) as {
+      cleanupPlan: {
+        executionId: string;
+        eligible: boolean;
+        dryRun: boolean;
+        mode: string;
+        operations: Array<{ kind: string; path?: string }>;
+        refusalReasons: string[];
+      };
+    };
+    assert.equal(cleanupPreviewPayload.cleanupPlan.executionId, runPayload.run.id);
+    assert.equal(cleanupPreviewPayload.cleanupPlan.eligible, true);
+    assert.equal(cleanupPreviewPayload.cleanupPlan.dryRun, true);
+    assert.equal(cleanupPreviewPayload.cleanupPlan.mode, "directory");
+    assert.equal(cleanupPreviewPayload.cleanupPlan.operations[0]?.kind, "remove_directory");
+    assert.deepEqual(cleanupPreviewPayload.cleanupPlan.refusalReasons, []);
+  });
+});
+
+test("API refuses workspace cleanup preview for active runs", async () => {
+  await withServer(async (baseUrl) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Cleanup active run",
+        description: "Preview cleanup guardrails.",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const createRunResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        prompt: "Start the work",
+      }),
+    });
+    const runPayload = (await createRunResponse.json()) as { run: { id: string } };
+
+    const cleanupPreviewResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/preview`);
+    assert.equal(cleanupPreviewResponse.status, 200);
+    const cleanupPreviewPayload = (await cleanupPreviewResponse.json()) as {
+      cleanupPlan: { eligible: boolean; operations: unknown[]; refusalReasons: string[] };
+    };
+    assert.equal(cleanupPreviewPayload.cleanupPlan.eligible, false);
+    assert.deepEqual(cleanupPreviewPayload.cleanupPlan.operations, []);
+    assert.deepEqual(cleanupPreviewPayload.cleanupPlan.refusalReasons, [
+      "Execution status running is not eligible for workspace cleanup",
+    ]);
   });
 });
 
