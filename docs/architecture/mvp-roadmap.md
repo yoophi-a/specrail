@@ -65,6 +65,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 ### Milestone C — Worktree and branch orchestration
 - current contract defines `directory` and `git_worktree` workspace modes
 - workspace manager abstraction supports default directory allocation and explicit git worktree command planning/execution
+- config/env wiring exposes workspace mode selection to API and ACP server entrypoints
 - record branch/worktree metadata consistently
 - define explicit cleanup and recovery behavior for interrupted runs
 
@@ -80,9 +81,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Add execution workspace mode selection**
-   - expose directory vs git worktree mode through config/API without changing execution records.
-2. **Add execution workspace cleanup operations**
+1. **Add execution workspace cleanup operations**
    - explicitly clean up owned `specrail/<runId>` worktrees/branches after review.
 3. **Add project management APIs**
    - move beyond the default bootstrap project.

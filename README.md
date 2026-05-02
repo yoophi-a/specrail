@@ -312,6 +312,7 @@ That workflow is intentionally gated behind repository variable `SPECRAIL_ENABLE
 For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`.
 
 For the API server, you can set `SPECRAIL_EXECUTION_BACKEND` and `SPECRAIL_EXECUTION_PROFILE` to choose the default executor/backend and profile used when callers omit them.
+Set `SPECRAIL_EXECUTION_WORKSPACE_MODE=directory` for the default plain workspace directory behavior, or `SPECRAIL_EXECUTION_WORKSPACE_MODE=git_worktree` to allocate execution workspaces with `git worktree add -b specrail/<runId> workspaces/<runId>` from the configured local repo path.
 
 Then call the API locally, for example:
 

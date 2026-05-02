@@ -19,6 +19,7 @@ Then confirm the runtime configuration you expect:
 - `SPECRAIL_REPO_ARTIFACT_DIR`
 - `SPECRAIL_EXECUTION_BACKEND`
 - `SPECRAIL_EXECUTION_PROFILE`
+- `SPECRAIL_EXECUTION_WORKSPACE_MODE` (`directory` or `git_worktree`)
 - `SPECRAIL_API_BASE_URL`
 
 ## API server does not start

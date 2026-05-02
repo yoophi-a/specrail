@@ -87,6 +87,15 @@ export class GitWorktreeExecutionWorkspaceManager implements ExecutionWorkspaceM
   }
 }
 
+export function createExecutionWorkspaceManager(mode: ExecutionWorkspaceMode): ExecutionWorkspaceManager {
+  switch (mode) {
+    case "directory":
+      return new DirectoryExecutionWorkspaceManager();
+    case "git_worktree":
+      return new GitWorktreeExecutionWorkspaceManager();
+  }
+}
+
 async function pathExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
