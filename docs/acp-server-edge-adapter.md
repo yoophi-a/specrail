@@ -100,7 +100,7 @@ This follows the ACP fit analysis in `docs/research/acp-fit-for-specrail.md`:
 ## Near-term follow-up
 
 Good next steps from the current bridge:
-- deliver persisted runtime approval decisions into active executor callbacks where providers support continuation
+- replace provider resume fallbacks with narrower provider-native permission continuation when Codex or Claude Code expose a usable primitive
 - expand the ACP-facing event taxonomy beyond readable `agent_message_chunk` fallbacks for provider-specific details that clients need to render natively
 - define workspace ownership rules before exposing filesystem or terminal ACP capabilities for SpecRail-managed workspaces
 - build an ACP-aware terminal or editor client spike against this adapter to validate the session/update and permission request shapes with a real client

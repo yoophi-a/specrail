@@ -307,6 +307,129 @@ test("ClaudeCodeAdapter records an explicit failure message when Claude exits no
   assert.equal(runtimeEvents.at(-1)?.subtype, "claude_failed");
 });
 
+
+test("ClaudeCodeAdapter records runtime approval callback outcomes", async () => {
+  const sessionsDir = await mkdtemp(path.join(os.tmpdir(), "specrail-claude-sessions-"));
+  const child = new FakeChildProcess(6262);
+  const adapter = new ClaudeCodeAdapter({
+    sessionsDir,
+    now: (() => {
+      const timestamps = ["2026-04-10T13:00:00.000Z", "2026-04-10T13:00:01.000Z", "2026-04-10T13:00:02.000Z"];
+      return () => timestamps.shift() ?? "2026-04-10T13:00:03.000Z";
+    })(),
+    spawnProcess: () => child,
+  });
+
+  const spawnResult = await adapter.spawn({
+    executionId: "run-claude-approval",
+    prompt: "Initial prompt",
+    workspacePath: "/tmp/specrail/run-claude-approval",
+    profile: "default",
+  });
+
+  child.stdout.emitData('{"type":"system","subtype":"init","session_id":"claude-approval-session","uuid":"init-approval"}\n');
+  await flush();
+
+  const approvedEvents = await adapter.resolveRuntimeApproval({
+    execution: {
+      id: "run-claude-approval",
+      trackId: "track-approval",
+      backend: "claude_code",
+      profile: "default",
+      workspacePath: "/tmp/specrail/run-claude-approval",
+      branchName: "specrail/run-claude-approval",
+      sessionRef: spawnResult.sessionRef,
+      status: "running",
+      createdAt: "2026-04-10T13:00:00.000Z",
+    },
+    approvalRequestedEvent: {
+      id: "run-claude-approval:approval-requested",
+      executionId: "run-claude-approval",
+      type: "approval_requested",
+      timestamp: "2026-04-10T13:00:00.500Z",
+      source: "claude_code",
+      summary: "Approval requested",
+      payload: { toolName: "Bash", toolUseId: "toolu-claude" },
+    },
+    approvalResolvedEvent: {
+      id: "run-claude-approval:approval-resolved",
+      executionId: "run-claude-approval",
+      type: "approval_resolved",
+      timestamp: "2026-04-10T13:00:01.500Z",
+      source: "specrail",
+      summary: "Approved runtime approval request",
+      payload: {
+        requestId: "run-claude-approval:approval-requested",
+        requestEventId: "run-claude-approval:approval-requested",
+        outcome: "approved",
+        decidedBy: "user",
+        toolName: "Bash",
+        toolUseId: "toolu-claude",
+      },
+    },
+  });
+
+  assert.equal(approvedEvents[0]?.summary, "Resumed Claude Code session run-claude-approval-claude");
+  assert.equal(approvedEvents[1]?.summary, "Claude Code runtime approval run-claude-approval:approval-requested accepted; spawned normal resume fallback");
+  assert.equal(approvedEvents[1]?.payload?.strategy, "resume_fallback");
+  let metadata = await readClaudeCodeSessionMetadata(sessionsDir, spawnResult.sessionRef);
+  assert.equal(metadata.status, "running");
+  assert.deepEqual(metadata.providerMetadata?.runtimeApproval, {
+    requestId: "run-claude-approval:approval-requested",
+    requestEventId: "run-claude-approval:approval-requested",
+    outcome: "approved",
+    decidedBy: "user",
+    resolvedAt: "2026-04-10T13:00:01.500Z",
+    handledAt: "2026-04-10T13:00:03.000Z",
+    strategy: "claude-code-resume-fallback",
+  });
+
+  const rejectedEvents = await adapter.resolveRuntimeApproval({
+    execution: {
+      id: "run-claude-approval",
+      trackId: "track-approval",
+      backend: "claude_code",
+      profile: "default",
+      workspacePath: "/tmp/specrail/run-claude-approval",
+      branchName: "specrail/run-claude-approval",
+      sessionRef: spawnResult.sessionRef,
+      status: "cancelled",
+      createdAt: "2026-04-10T13:00:00.000Z",
+    },
+    approvalRequestedEvent: {
+      id: "run-claude-approval:approval-requested-2",
+      executionId: "run-claude-approval",
+      type: "approval_requested",
+      timestamp: "2026-04-10T13:00:02.250Z",
+      source: "claude_code",
+      summary: "Approval requested",
+    },
+    approvalResolvedEvent: {
+      id: "run-claude-approval:approval-rejected",
+      executionId: "run-claude-approval",
+      type: "approval_resolved",
+      timestamp: "2026-04-10T13:00:02.500Z",
+      source: "specrail",
+      summary: "Rejected runtime approval request",
+      payload: {
+        requestId: "run-claude-approval:approval-requested-2",
+        requestEventId: "run-claude-approval:approval-requested-2",
+        outcome: "rejected",
+        decidedBy: "agent",
+      },
+    },
+  });
+
+  assert.equal(rejectedEvents[0]?.payload?.strategy, "no_retry");
+  metadata = await readClaudeCodeSessionMetadata(sessionsDir, spawnResult.sessionRef);
+  assert.equal(metadata.status, "cancelled");
+  assert.equal(metadata.finishedAt, "2026-04-10T13:00:03.000Z");
+
+  const runtimeEvents = await readClaudeCodeSessionEvents(sessionsDir, spawnResult.sessionRef);
+  assert.ok(runtimeEvents.some((event) => event.summary === approvedEvents[0]?.summary));
+  assert.ok(runtimeEvents.some((event) => event.summary === rejectedEvents[0]?.summary));
+});
+
 test("ClaudeCodeAdapter normalizes lifecycle and fallback stream events into shared execution events", () => {
   const adapter = new ClaudeCodeAdapter({ sessionsDir: "/tmp/specrail-claude" });
 

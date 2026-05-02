@@ -227,6 +227,129 @@ test("CodexAdapter resume prefers discovered Codex session id and cancel marks t
   assert.equal((await readCodexSessionMetadata(sessionsDir, spawnResult.sessionRef)).status, "cancelled");
 });
 
+
+test("CodexAdapter records runtime approval callback outcomes", async () => {
+  const sessionsDir = await mkdtemp(path.join(os.tmpdir(), "specrail-codex-sessions-"));
+  const child = new FakeChildProcess(5252);
+  const adapter = new CodexAdapter({
+    sessionsDir,
+    now: (() => {
+      const timestamps = ["2026-04-09T01:00:00.000Z", "2026-04-09T01:00:01.000Z", "2026-04-09T01:00:02.000Z"];
+      return () => timestamps.shift() ?? "2026-04-09T01:00:03.000Z";
+    })(),
+    spawnProcess: () => child,
+  });
+
+  const spawnResult = await adapter.spawn({
+    executionId: "run-codex-approval",
+    prompt: "Initial prompt",
+    workspacePath: "/tmp/specrail/run-codex-approval",
+    profile: "default",
+  });
+
+  const approvedEvents = await adapter.resolveRuntimeApproval({
+    execution: {
+      id: "run-codex-approval",
+      trackId: "track-approval",
+      backend: "codex",
+      profile: "default",
+      workspacePath: "/tmp/specrail/run-codex-approval",
+      branchName: "specrail/run-codex-approval",
+      sessionRef: spawnResult.sessionRef,
+      status: "running",
+      createdAt: "2026-04-09T01:00:00.000Z",
+    },
+    approvalRequestedEvent: {
+      id: "run-codex-approval:approval-requested",
+      executionId: "run-codex-approval",
+      type: "approval_requested",
+      timestamp: "2026-04-09T01:00:00.500Z",
+      source: "codex",
+      summary: "Approval requested",
+      payload: { toolName: "Bash", toolUseId: "toolu-codex" },
+    },
+    approvalResolvedEvent: {
+      id: "run-codex-approval:approval-resolved",
+      executionId: "run-codex-approval",
+      type: "approval_resolved",
+      timestamp: "2026-04-09T01:00:01.500Z",
+      source: "specrail",
+      summary: "Approved runtime approval request",
+      payload: {
+        requestId: "run-codex-approval:approval-requested",
+        requestEventId: "run-codex-approval:approval-requested",
+        outcome: "approved",
+        decidedBy: "user",
+        toolName: "Bash",
+        toolUseId: "toolu-codex",
+      },
+    },
+  });
+
+  assert.equal(approvedEvents[0]?.summary, "Resumed Codex session run-codex-approval-codex");
+  assert.equal(approvedEvents[1]?.summary, "Codex runtime approval run-codex-approval:approval-requested accepted; spawned normal resume fallback");
+  assert.equal(approvedEvents[1]?.payload?.strategy, "resume_fallback");
+  let metadata = await readCodexSessionMetadata(sessionsDir, spawnResult.sessionRef);
+  assert.equal(metadata.status, "running");
+  assert.deepEqual(metadata.providerMetadata?.runtimeApproval, {
+    requestId: "run-codex-approval:approval-requested",
+    requestEventId: "run-codex-approval:approval-requested",
+    outcome: "approved",
+    decidedBy: "user",
+    resolvedAt: "2026-04-09T01:00:01.500Z",
+    handledAt: "2026-04-09T01:00:02.000Z",
+    strategy: "codex-resume-fallback",
+  });
+
+  const rejectedEvents = await adapter.resolveRuntimeApproval({
+    execution: {
+      id: "run-codex-approval",
+      trackId: "track-approval",
+      backend: "codex",
+      profile: "default",
+      workspacePath: "/tmp/specrail/run-codex-approval",
+      branchName: "specrail/run-codex-approval",
+      sessionRef: spawnResult.sessionRef,
+      status: "cancelled",
+      createdAt: "2026-04-09T01:00:00.000Z",
+    },
+    approvalRequestedEvent: {
+      id: "run-codex-approval:approval-requested-2",
+      executionId: "run-codex-approval",
+      type: "approval_requested",
+      timestamp: "2026-04-09T01:00:01.750Z",
+      source: "codex",
+      summary: "Approval requested",
+    },
+    approvalResolvedEvent: {
+      id: "run-codex-approval:approval-rejected",
+      executionId: "run-codex-approval",
+      type: "approval_resolved",
+      timestamp: "2026-04-09T01:00:02.500Z",
+      source: "specrail",
+      summary: "Rejected runtime approval request",
+      payload: {
+        requestId: "run-codex-approval:approval-requested-2",
+        requestEventId: "run-codex-approval:approval-requested-2",
+        outcome: "rejected",
+        decidedBy: "agent",
+      },
+    },
+  });
+
+  assert.equal(rejectedEvents[0]?.payload?.strategy, "no_retry");
+  metadata = await readCodexSessionMetadata(sessionsDir, spawnResult.sessionRef);
+  assert.equal(metadata.status, "cancelled");
+  assert.equal(metadata.finishedAt, "2026-04-09T01:00:03.000Z");
+
+  const runtimeEvents = await readCodexSessionEvents(sessionsDir, spawnResult.sessionRef);
+  assert.deepEqual(runtimeEvents.map((event) => event.summary), [
+    approvedEvents[0]?.summary,
+    approvedEvents[1]?.summary,
+    rejectedEvents[0]?.summary,
+  ]);
+});
+
 test("CodexAdapter normalizes lifecycle and stream events into shared execution events", () => {
   const adapter = new CodexAdapter({ sessionsDir: "/tmp/specrail-codex" });
 
