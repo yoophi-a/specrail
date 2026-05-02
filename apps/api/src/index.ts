@@ -99,6 +99,11 @@ interface DecideApprovalRequestBody {
   comment?: string;
 }
 
+interface ResolveRuntimeApprovalRequestBody {
+  decidedBy: "user" | "agent" | "system";
+  comment?: string;
+}
+
 interface BindChannelRequestBody {
   projectId: string;
   channelType: "telegram";
@@ -580,6 +585,22 @@ function assertValidProposeArtifactRevisionBody(body: ProposeArtifactRevisionReq
 }
 
 function assertValidDecideApprovalRequestBody(body: DecideApprovalRequestBody): void {
+  const details = getDecisionBodyValidationDetails(body);
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidResolveRuntimeApprovalRequestBody(body: ResolveRuntimeApprovalRequestBody): void {
+  const details = getDecisionBodyValidationDetails(body);
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function getDecisionBodyValidationDetails(body: DecideApprovalRequestBody | ResolveRuntimeApprovalRequestBody): ApiErrorDetail[] {
   const details: ApiErrorDetail[] = [];
 
   if (body.decidedBy !== "user" && body.decidedBy !== "agent" && body.decidedBy !== "system") {
@@ -593,9 +614,7 @@ function assertValidDecideApprovalRequestBody(body: DecideApprovalRequestBody): 
     }
   }
 
-  if (details.length > 0) {
-    throw new RequestValidationError("request validation failed", details);
-  }
+  return details;
 }
 
 function assertValidBindChannelBody(body: BindChannelRequestBody): void {
@@ -1041,6 +1060,26 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           comment: body.comment,
         });
         sendJson(response, 200, { approvalRequest });
+        return;
+      }
+
+      if (
+        method === "POST" &&
+        segments.length === 5 &&
+        segments[0] === "runs" &&
+        segments[2] === "approval-requests" &&
+        (segments[4] === "approve" || segments[4] === "reject")
+      ) {
+        const body = await readJson<ResolveRuntimeApprovalRequestBody>(request);
+        assertValidResolveRuntimeApprovalRequestBody(body);
+        const event = await deps.service.resolveRuntimeApprovalRequest({
+          runId: segments[1] ?? "",
+          requestId: segments[3] ?? "",
+          outcome: segments[4] === "approve" ? "approved" : "rejected",
+          decidedBy: body.decidedBy,
+          comment: body.comment,
+        });
+        sendJson(response, 200, { event });
         return;
       }
 

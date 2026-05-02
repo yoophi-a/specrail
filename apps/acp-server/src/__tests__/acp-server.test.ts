@@ -158,7 +158,48 @@ function createFakeService() {
         });
       }
     },
-  } satisfies Pick<SpecRailService, "getTrack" | "startRun" | "resumeRun" | "cancelRun" | "getRun" | "listRunEvents" | "recordExecutionEvent">;
+    async resolveRuntimeApprovalRequest(input: {
+      runId: string;
+      requestId: string;
+      outcome: "approved" | "rejected";
+      decidedBy: "user" | "agent" | "system";
+      comment?: string;
+    }) {
+      const runEvents = events.get(input.runId) ?? [];
+      const requestedEvent = runEvents.find((event) => event.type === "approval_requested" && event.id === input.requestId);
+      if (!requestedEvent) {
+        throw new Error(`missing approval request ${input.requestId}`);
+      }
+
+      const event: ExecutionEvent = {
+        id: `${input.runId}-approval-resolved`,
+        executionId: input.runId,
+        type: "approval_resolved",
+        timestamp: "2026-04-13T00:00:01.500Z",
+        source: "specrail",
+        summary: `Approved runtime approval request ${input.requestId}`,
+        payload: {
+          status: input.outcome === "approved" ? "running" : "cancelled",
+          requestId: input.requestId,
+          outcome: input.outcome,
+          decidedBy: input.decidedBy,
+          comment: input.comment,
+        },
+      };
+      await service.recordExecutionEvent(event);
+      return event;
+    },
+  } satisfies Pick<
+    SpecRailService,
+    | "getTrack"
+    | "startRun"
+    | "resumeRun"
+    | "cancelRun"
+    | "getRun"
+    | "listRunEvents"
+    | "recordExecutionEvent"
+    | "resolveRuntimeApprovalRequest"
+  >;
 
   return service;
 }

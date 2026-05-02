@@ -30,7 +30,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - some provider-specific fields remain in `payload` / `_meta`
 - approval workflow depth
   - artifact revision approval is implemented
-  - runtime permission approval is still adapter-mediated rather than a backend-native broker callback
+  - runtime permission request resolution is available through core service and HTTP APIs
+  - active executor callback wiring is still adapter-specific
 - artifact contract convergence
   - generated track artifacts exist in the repo-visible layout
   - authoritative run events still live under `state/events/<runId>.jsonl`
@@ -56,9 +57,9 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - connect completed run summaries back into track artifacts if desired
 
 ### Milestone B — Runtime approval broker
-- model backend-native permission requests independent of adapter-specific payloads
-- persist approval requested/resolved events with a consistent domain contract
-- route approval decisions back to active executors without relying on edge-adapter synthesis
+- route core/API approval decisions back to active executors when a backend supports continuation callbacks
+- keep approval requested/resolved events provider-neutral while preserving provider metadata
+- document fallback behavior for rejected approvals and interrupted sessions
 
 ### Milestone C — Worktree and branch orchestration
 - create isolated workspaces per execution when requested
@@ -79,8 +80,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 1. **Define artifact/state event-history ownership**
    - settle what belongs in repo-visible artifacts versus internal state.
-2. **Add backend-native runtime approval broker callbacks**
-   - make approval requests/resolutions first-class outside ACP/adapter synthesis.
+2. **Wire runtime approval decisions into active executors**
+   - continue from the new core/API resolution path into backend-specific callbacks.
 3. **Add execution worktree orchestration**
    - isolate agent runs and track branch/worktree lifecycle.
 4. **Add project management APIs**
