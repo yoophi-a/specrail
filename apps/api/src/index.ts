@@ -742,6 +742,8 @@ async function streamRunEvents(
   let closed = false;
   let offset = 0;
   let pendingLine = "";
+  let flushInFlight: Promise<void> | null = null;
+  const sentEventIds = new Set<string>();
   const eventLogPath = path.join(eventLogDir, `${runId}.jsonl`);
 
   const flushAppendedEvents = async (): Promise<void> => {
@@ -774,30 +776,51 @@ async function streamRunEvents(
           continue;
         }
 
-        writeSseEvent(response, JSON.parse(line) as ExecutionEvent);
+        const event = JSON.parse(line) as ExecutionEvent;
+        if (sentEventIds.has(event.id)) {
+          continue;
+        }
+
+        sentEventIds.add(event.id);
+        writeSseEvent(response, event);
       }
     } finally {
       await handle.close();
     }
   };
 
+  const scheduleFlush = (): void => {
+    if (closed || flushInFlight) {
+      return;
+    }
+
+    flushInFlight = flushAppendedEvents()
+      .catch(() => {
+        close();
+      })
+      .finally(() => {
+        flushInFlight = null;
+      });
+  };
+
   const initialEvents = await service.listRunEvents(runId);
   for (const event of initialEvents) {
+    sentEventIds.add(event.id);
     writeSseEvent(response, event);
   }
 
-  offset = (await stat(eventLogPath).catch(() => null))?.size ?? 0;
   response.write(`: connected\n\n`);
+  scheduleFlush();
 
   const watcher = watch(eventLogDir, (_eventType, filename) => {
     if (closed || filename !== `${runId}.jsonl`) {
       return;
     }
 
-    void flushAppendedEvents().catch(() => {
-      close();
-    });
+    scheduleFlush();
   });
+
+  const poller = setInterval(scheduleFlush, 250);
 
   const heartbeat = setInterval(() => {
     response.write(`: keep-alive\n\n`);
@@ -810,6 +833,7 @@ async function streamRunEvents(
 
     closed = true;
     clearInterval(heartbeat);
+    clearInterval(poller);
     watcher.close();
     response.end();
   };

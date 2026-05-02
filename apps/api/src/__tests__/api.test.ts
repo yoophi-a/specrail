@@ -89,6 +89,9 @@ async function openSseStream(url: string): Promise<{
       (response) => {
         response.setEncoding("utf8");
         let buffer = "";
+        response.on("data", (chunk: string) => {
+          buffer += chunk;
+        });
 
         resolve({
           statusCode: response.statusCode ?? 0,
@@ -104,8 +107,7 @@ async function openSseStream(url: string): Promise<{
                 innerReject(new Error(`timed out waiting for ${expectedCount} SSE events`));
               }, 5000);
 
-              const onData = (chunk: string): void => {
-                buffer += chunk;
+              const onData = (): void => {
                 const events = parseSseEvents(buffer);
 
                 if (events.length >= expectedCount) {
@@ -140,8 +142,7 @@ async function openSseStream(url: string): Promise<{
                 innerReject(new Error("timed out waiting for matching SSE event"));
               }, 10000);
 
-              const onData = (chunk: string): void => {
-                buffer += chunk;
+              const onData = (): void => {
                 const events = parseSseEvents(buffer);
 
                 if (events.some(matches)) {
@@ -374,6 +375,23 @@ test("API supports streaming run events over SSE", async () => {
     assert.equal(initialEvents[0]?.summary, "Run started");
     assert.match(initialEvents[1]?.summary ?? "", /Spawned Codex session/);
 
+    const resumeResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "Continue with verification" }),
+    });
+    assert.equal(resumeResponse.status, 200);
+
+    const resumedEvents = await stream.waitForEvent((event) => /Resumed Codex session/.test(event.summary));
+    assert.ok(resumedEvents.some((event) => /Resumed Codex session/.test(event.summary)));
+
+    const cancelResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/cancel`, {
+      method: "POST",
+    });
+    assert.equal(cancelResponse.status, 200);
+
+    const cancelledEvents = await stream.waitForEvent((event) => /Cancelled Codex session/.test(event.summary));
+    assert.ok(cancelledEvents.some((event) => /Cancelled Codex session/.test(event.summary)));
     stream.close();
   });
 });
