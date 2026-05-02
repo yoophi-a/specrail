@@ -67,7 +67,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - workspace manager abstraction supports default directory allocation and explicit git worktree command planning/execution
 - config/env wiring exposes workspace mode selection to API and ACP server entrypoints
 - record branch/worktree metadata consistently
-- define explicit cleanup and recovery behavior for interrupted runs
+- cleanup safety contract defines dry-run, ownership checks, event recording, and partial-failure behavior
 
 ### Milestone D — Project management APIs
 - expose project create/list/get/update endpoints
@@ -81,8 +81,10 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Add execution workspace cleanup operations**
-   - explicitly clean up owned `specrail/<runId>` worktrees/branches after review.
+1. **Add execution workspace cleanup planner**
+   - implement non-destructive cleanup previews for owned `specrail/<runId>` worktrees/branches.
+2. **Add execution workspace cleanup apply path**
+   - explicitly clean up owned workspaces/branches after review using the previewed operations.
 3. **Add project management APIs**
    - move beyond the default bootstrap project.
 5. **Plan the first hosted operator UI slice**
