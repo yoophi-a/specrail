@@ -501,6 +501,19 @@ test("API supports resuming and cancelling a run", async () => {
       "Workspace cleanup apply requires explicit confirmation",
     ]);
 
+    const refusedEventsResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
+    const refusedEventsPayload = (await refusedEventsResponse.json()) as {
+      events: Array<{ summary: string; payload?: { status?: string; refusalReasons?: string[] } }>;
+    };
+    assert.ok(
+      refusedEventsPayload.events.some(
+        (event) =>
+          event.summary === `Workspace cleanup refused for execution ${runPayload.run.id}` &&
+          event.payload?.status === "refused" &&
+          event.payload.refusalReasons?.includes("Workspace cleanup apply requires explicit confirmation"),
+      ),
+    );
+
     const appliedCleanupResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/apply`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -514,6 +527,19 @@ test("API supports resuming and cancelling a run", async () => {
     assert.equal(appliedCleanupPayload.cleanupResult.applied, true);
     assert.deepEqual(appliedCleanupPayload.cleanupResult.operations.map((operation) => operation.status), ["applied"]);
     await assert.rejects(() => access(cleanupPreviewPayload.cleanupPlan.operations[0]?.path ?? ""));
+
+    const appliedEventsResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
+    const appliedEventsPayload = (await appliedEventsResponse.json()) as {
+      events: Array<{ summary: string; payload?: { status?: string; operationCount?: number } }>;
+    };
+    assert.ok(
+      appliedEventsPayload.events.some(
+        (event) =>
+          event.summary === `Workspace cleanup applied for execution ${runPayload.run.id}` &&
+          event.payload?.status === "applied" &&
+          event.payload.operationCount === 1,
+      ),
+    );
   });
 });
 
