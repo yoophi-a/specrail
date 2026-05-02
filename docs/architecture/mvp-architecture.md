@@ -366,6 +366,39 @@ workspaces/
   <runId>/
 ```
 
+### Execution workspace and branch contract
+
+The current MVP always allocates a per-run workspace path before starting an executor:
+
+```text
+workspacePath = workspaces/<runId>/
+branchName = specrail/<runId>
+```
+
+The workspace path is persisted on the execution record and passed to the selected executor as its working directory. The branch name is currently metadata only; future git orchestration should make it real without changing the execution record shape.
+
+Workspace modes:
+
+- `directory`: create `workspaces/<runId>/` as an empty/plain directory. This is the current behavior and remains the safe fallback.
+- `git_worktree`: create a git worktree rooted at `workspaces/<runId>/` with branch `specrail/<runId>` when the project has a local git repository and worktree creation is enabled.
+
+Branch and worktree ownership rules:
+
+- SpecRail owns branches matching `specrail/<runId>` that it creates.
+- SpecRail must not delete or mutate unrelated branches/worktrees.
+- If `specrail/<runId>` already exists, startup should fail with a validation error rather than silently reusing it.
+- If worktree creation fails, the run should not start unless the caller/config explicitly allows falling back to `directory` mode.
+- `workspacePath`, `branchName`, backend, profile, and session refs are the durable recovery handles.
+
+Cleanup expectations:
+
+- `completed`: keep the workspace by default until review/merge tooling decides what to do.
+- `failed`: keep the workspace for debugging.
+- `cancelled`: keep the workspace for inspection unless explicit cleanup is requested.
+- interrupted process: recover from persisted execution metadata and event history; do not assume the worktree can be deleted automatically.
+
+First implementation slice should add a workspace manager abstraction and tests for `directory` mode plus git command planning. Actual branch deletion/cleanup should be a separate explicit operation.
+
 ## Request flow
 
 ### Create track
