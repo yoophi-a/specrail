@@ -1,5 +1,3 @@
-import { mkdir } from "node:fs/promises";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -42,6 +40,10 @@ import type {
   ProjectRepository,
   TrackRepository,
 } from "./ports.js";
+import {
+  DirectoryExecutionWorkspaceManager,
+  type ExecutionWorkspaceManager,
+} from "./execution-workspace-manager.js";
 
 export interface TrackArtifactWriterInput {
   track: Track;
@@ -121,6 +123,7 @@ export interface SpecRailServiceDependencies {
     defaultWorkflowPolicy?: string;
   };
   workspaceRoot: string;
+  workspaceManager?: ExecutionWorkspaceManager;
   now?: () => string;
   idGenerator?: () => string;
 }
@@ -379,6 +382,7 @@ function normalizeProfile(value: string | undefined): string {
 export class SpecRailService {
   private readonly now: () => string;
   private readonly idGenerator: () => string;
+  private readonly workspaceManager: ExecutionWorkspaceManager;
 
   private listExecutors(): Record<string, ExecutionBackend> {
     if (this.dependencies.executors && Object.keys(this.dependencies.executors).length > 0) {
@@ -415,6 +419,7 @@ export class SpecRailService {
   constructor(private readonly dependencies: SpecRailServiceDependencies) {
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.idGenerator = dependencies.idGenerator ?? randomUUID;
+    this.workspaceManager = dependencies.workspaceManager ?? new DirectoryExecutionWorkspaceManager();
   }
 
   async createTrack(input: CreateTrackInput): Promise<Track> {
@@ -766,15 +771,17 @@ export class SpecRailService {
     const planningContext = await this.resolvePlanningContextForStart(track, input.planningSessionId);
     const executionId = `run-${this.idGenerator()}`;
     const createdAt = this.now();
-    const workspacePath = path.join(this.dependencies.workspaceRoot, executionId);
+    const workspace = await this.workspaceManager.allocate({
+      executionId,
+      workspaceRoot: this.dependencies.workspaceRoot,
+    });
     const prompt = normalizeRequiredString(input.prompt);
     const profile = normalizeProfile(this.resolveExecutionProfile(input.profile));
-    await mkdir(workspacePath, { recursive: true });
 
     const launch = await executor.spawn({
       executionId,
       prompt,
-      workspacePath,
+      workspacePath: workspace.workspacePath,
       profile,
     });
 
@@ -783,8 +790,8 @@ export class SpecRailService {
       trackId: track.id,
       backend: executor.name,
       profile,
-      workspacePath,
-      branchName: `specrail/${executionId}`,
+      workspacePath: workspace.workspacePath,
+      branchName: workspace.branchName,
       sessionRef: launch.sessionRef,
       command: launch.command,
       planningSessionId: planningContext.planningSessionId,
