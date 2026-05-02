@@ -67,6 +67,12 @@ export interface ExecutorLaunchResult {
   events: ExecutionEvent[];
 }
 
+export interface RuntimeApprovalDecisionInput {
+  execution: Execution;
+  approvalRequestedEvent: ExecutionEvent;
+  approvalResolvedEvent: ExecutionEvent;
+}
+
 export interface ExecutionBackend {
   readonly name: string;
   spawn(input: {
@@ -88,6 +94,7 @@ export interface ExecutionBackend {
     workspacePath: string;
     profile: string;
   }): Promise<ExecutionEvent>;
+  resolveRuntimeApproval?(input: RuntimeApprovalDecisionInput): Promise<ExecutionEvent[]>;
 }
 
 export interface SpecRailServiceDependencies {
@@ -971,8 +978,70 @@ export class SpecRailService {
 
     await this.dependencies.eventStore.append(event);
     await this.reconcileExecutionFromEvents(execution.id);
+    await this.deliverRuntimeApprovalDecision(execution.id, requestedEvent, event);
 
     return event;
+  }
+
+  private async deliverRuntimeApprovalDecision(
+    executionId: string,
+    approvalRequestedEvent: ExecutionEvent,
+    approvalResolvedEvent: ExecutionEvent,
+  ): Promise<void> {
+    const execution = await this.dependencies.executionRepository.getById(executionId);
+    if (!execution) {
+      return;
+    }
+
+    const executor = this.resolveExecutor(execution.backend);
+    if (!executor.resolveRuntimeApproval) {
+      await this.dependencies.eventStore.append({
+        id: `${execution.id}:approval-callback-unsupported:${this.idGenerator()}`,
+        executionId: execution.id,
+        type: "summary",
+        timestamp: this.now(),
+        source: "specrail",
+        summary: `Runtime approval callback is not supported by executor ${executor.name}`,
+        payload: {
+          requestId: approvalResolvedEvent.payload?.requestId,
+          outcome: approvalResolvedEvent.payload?.outcome,
+          executor: executor.name,
+        },
+      });
+      await this.reconcileExecutionFromEvents(execution.id);
+      return;
+    }
+
+    try {
+      const callbackEvents = await executor.resolveRuntimeApproval({
+        execution,
+        approvalRequestedEvent,
+        approvalResolvedEvent,
+      });
+
+      for (const callbackEvent of callbackEvents) {
+        await this.dependencies.eventStore.append(callbackEvent);
+      }
+      if (callbackEvents.length > 0) {
+        await this.reconcileExecutionFromEvents(execution.id);
+      }
+    } catch (error) {
+      await this.dependencies.eventStore.append({
+        id: `${execution.id}:approval-callback-failed:${this.idGenerator()}`,
+        executionId: execution.id,
+        type: "summary",
+        timestamp: this.now(),
+        source: "specrail",
+        summary: "Runtime approval callback delivery failed",
+        payload: {
+          requestId: approvalResolvedEvent.payload?.requestId,
+          outcome: approvalResolvedEvent.payload?.outcome,
+          executor: executor.name,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      await this.reconcileExecutionFromEvents(execution.id);
+    }
   }
 
   private async reconcileExecutionFromEvents(executionId: string): Promise<void> {
