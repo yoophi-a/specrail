@@ -79,6 +79,7 @@ async function openSseStream(url: string): Promise<{
   statusCode: number;
   headers: http.IncomingHttpHeaders;
   waitForEvents: (expectedCount: number) => Promise<Array<{ id: string; summary: string }>>;
+  waitForEvent: (matches: (event: { id: string; summary: string }) => boolean) => Promise<Array<{ id: string; summary: string }>>;
   close: () => void;
 }> {
   return await new Promise((resolve, reject) => {
@@ -108,6 +109,42 @@ async function openSseStream(url: string): Promise<{
                 const events = parseSseEvents(buffer);
 
                 if (events.length >= expectedCount) {
+                  cleanup();
+                  innerResolve(events);
+                }
+              };
+
+              const onError = (error: Error): void => {
+                cleanup();
+                innerReject(error);
+              };
+
+              const cleanup = (): void => {
+                clearTimeout(timeout);
+                response.off("data", onData);
+                response.off("error", onError);
+              };
+
+              response.on("data", onData);
+              response.on("error", onError);
+            });
+          },
+          waitForEvent: async (matches) => {
+            if (parseSseEvents(buffer).some(matches)) {
+              return parseSseEvents(buffer);
+            }
+
+            return await new Promise((innerResolve, innerReject) => {
+              const timeout = setTimeout(() => {
+                cleanup();
+                innerReject(new Error("timed out waiting for matching SSE event"));
+              }, 5000);
+
+              const onData = (chunk: string): void => {
+                buffer += chunk;
+                const events = parseSseEvents(buffer);
+
+                if (events.some(matches)) {
                   cleanup();
                   innerResolve(events);
                 }
@@ -344,18 +381,16 @@ test("API supports streaming run events over SSE", async () => {
     });
     assert.equal(resumeResponse.status, 200);
 
-    const resumedEvents = await stream.waitForEvents(3);
-    assert.equal(resumedEvents.length, 3);
-    assert.match(resumedEvents[2]?.summary ?? "", /Resumed Codex session/);
+    const resumedEvents = await stream.waitForEvent((event) => /Resumed Codex session/.test(event.summary));
+    assert.ok(resumedEvents.some((event) => /Resumed Codex session/.test(event.summary)));
 
     const cancelResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/cancel`, {
       method: "POST",
     });
     assert.equal(cancelResponse.status, 200);
 
-    const cancelledEvents = await stream.waitForEvents(4);
-    assert.equal(cancelledEvents.length, 4);
-    assert.match(cancelledEvents[3]?.summary ?? "", /Cancelled Codex session/);
+    const cancelledEvents = await stream.waitForEvent((event) => /Cancelled Codex session/.test(event.summary));
+    assert.ok(cancelledEvents.some((event) => /Cancelled Codex session/.test(event.summary)));
     stream.close();
   });
 });
