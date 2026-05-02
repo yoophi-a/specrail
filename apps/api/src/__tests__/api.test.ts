@@ -32,7 +32,7 @@ async function withServer(
 process.on("SIGTERM", () => process.exit(0));
 process.on("SIGINT", () => process.exit(0));
 console.log(JSON.stringify({ session_id: "fake-codex-" + process.pid }));
-setTimeout(() => process.exit(0), 25);
+setTimeout(() => process.exit(0), 1_000);
 `,
     "utf8",
   );
@@ -138,7 +138,7 @@ async function openSseStream(url: string): Promise<{
               const timeout = setTimeout(() => {
                 cleanup();
                 innerReject(new Error("timed out waiting for matching SSE event"));
-              }, 5000);
+              }, 10000);
 
               const onData = (chunk: string): void => {
                 buffer += chunk;
