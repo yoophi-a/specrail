@@ -70,6 +70,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - cleanup safety contract defines dry-run, ownership checks, event recording, and partial-failure behavior
 - non-destructive cleanup planner previews directory and git worktree operations with guardrail refusal reasons
 - API cleanup preview endpoint exposes dry-run plans without filesystem or git side effects
+- core cleanup applier requires explicit confirmation and injectable filesystem/git runners before applying previewed operations
 
 ### Milestone D — Project management APIs
 - expose project create/list/get/update endpoints
@@ -83,8 +84,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Add execution workspace cleanup apply path**
-   - explicitly clean up owned workspaces/branches after review using the previewed operations.
+1. **Expose execution workspace cleanup apply API**
+   - require a fresh preview/confirmation token before applying owned workspace/branch cleanup through HTTP.
 3. **Add project management APIs**
    - move beyond the default bootstrap project.
 5. **Plan the first hosted operator UI slice**

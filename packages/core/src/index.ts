@@ -1,6 +1,7 @@
 export * from "./domain/artifacts.js";
 export * from "./domain/types.js";
 export * from "./errors.js";
+export * from "./services/execution-workspace-cleanup-applier.js";
 export * from "./services/execution-workspace-cleanup-planner.js";
 export * from "./services/execution-workspace-manager.js";
 export * from "./services/file-repositories.js";
