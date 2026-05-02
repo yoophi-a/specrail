@@ -1,73 +1,89 @@
 # MVP Roadmap
 
-This roadmap now reflects the implemented MVP baseline rather than the original scaffold plan.
+This roadmap reflects the implemented MVP baseline and the next practical gaps to turn into issues.
 
-## Baseline status as of 2026-04-09
+## Baseline status as of 2026-05-02
 
 ### Done
 - workspace bootstrap
-- artifact document rendering for spec/plan/tasks
+- artifact document rendering for `spec.md`, `plan.md`, and `tasks.md`
 - artifact materialization and path helpers
-- file-backed repositories for projects, tracks, executions, and events
+- file-backed repositories for projects, tracks, planning sessions/messages, artifact revisions, approval requests, channel bindings, attachment references, executions, and events
 - Codex executor MVP with spawn/resume/cancel
-- HTTP API for tracks and runs
-- SSE event streaming
+- Claude Code executor MVP with spawn/resume/cancel and structured stream normalization
+- HTTP API for tracks, planning sessions/messages, artifact revisions, approval requests, channel bindings, attachments, runs, and run events
+- track and run listing with filtering, pagination, and explicit sorting
+- approval request proposal, approve, and reject APIs for artifact revisions
+- planning-context capture for runs, including stale-context rejection while newer planning revisions are pending approval
+- execution state reconciliation from terminal adapter events into run and track records
+- SSE event streaming for run history and appended events, with deterministic integration coverage
 - API validation/error contract tests
+- baseline validation workflow with typecheck, Markdown link check, tests, and build
+- terminal client planning workspace, run monitor, and SSE follow support
+- Telegram update handling for track binding, attachments, and run-event relay
+- ACP edge adapter for session/run mapping and permission-resolution projection
 
 ### In progress / partial
-- approval workflow modeling
-  - track-level `specStatus` and `planStatus` fields exist
-  - dedicated approval events and approval action APIs do not
 - event schema breadth
   - shared event types are defined
-  - current adapter only emits a subset needed for lifecycle visibility
+  - adapters still emit different fidelity depending on provider capabilities
+  - some provider-specific fields remain in `payload` / `_meta`
+- approval workflow depth
+  - artifact revision approval is implemented
+  - runtime permission approval is still adapter-mediated rather than a backend-native broker callback
 - artifact contract convergence
-  - artifact-local `events.jsonl` exists in the generated layout
-  - current API reads authoritative run events from `state/events/<runId>.jsonl`
+  - generated track artifacts exist in the repo-visible layout
+  - authoritative run events still live under `state/events/<runId>.jsonl`
+  - artifact-local event surfaces need a clear long-term contract
+- interface expansion
+  - terminal, Telegram, ACP, and HTTP surfaces exist
+  - hosted web UI and GitHub app/webhook entrypoints are still deferred
 
 ### Not started
 - project management APIs beyond the default bootstrap project
 - database-backed persistence
-- non-Codex adapters
+- production auth system
+- production deployment manifests
 - worktree/git branch orchestration beyond metadata
-- UI, GitHub hooks, and chat integrations
-- track/run listing and search endpoints
+- hosted GitHub app/webhook automation
+- web UI
 
 ## Next milestone candidates
 
-### Milestone A — Approval workflow completion
-- add explicit approval action endpoints or commands
-- persist approval events in run logs
-- reconcile track readiness rules with approval state
+### Milestone A — Artifact/state convergence
+- decide whether repo-visible artifacts should include canonical run history, summaries, or only generated planning documents
+- remove or document duplicated event persistence surfaces
+- connect completed run summaries back into track artifacts if desired
 
-### Milestone B — Artifact/state convergence
-- decide whether per-track `events.jsonl` or `state/events/<runId>.jsonl` is the long-term source of truth
-- document or remove duplicated event persistence surfaces
-- connect run summaries back into track artifacts if desired
+### Milestone B — Runtime approval broker
+- model backend-native permission requests independent of adapter-specific payloads
+- persist approval requested/resolved events with a consistent domain contract
+- route approval decisions back to active executors without relying on edge-adapter synthesis
 
-### Milestone C — Run lifecycle completeness
-- update execution state to `completed` or `failed` from adapter lifecycle consistently at service level
-- expose clearer status transitions to callers
-- consider run listing endpoints for observability
+### Milestone C — Worktree and branch orchestration
+- create isolated workspaces per execution when requested
+- record branch/worktree metadata consistently
+- define cleanup and recovery behavior for interrupted runs
 
-### Milestone D — Second executor backend
-- add another adapter behind the existing executor contract
-- verify normalization remains stable across providers
+### Milestone D — Project management APIs
+- expose project create/list/get/update endpoints
+- define how tracks are scoped and filtered by project
+- add API and service tests for multi-project behavior
 
-### Milestone E — Interface expansion
-- project CRUD
-- artifact editing endpoints
-- web UI and GitHub-facing entrypoints
+### Milestone E — Hosted operator UI / GitHub entrypoints
+- introduce a web UI or GitHub-facing entrypoint after the core state contracts stabilize
+- keep HTTP/SSE as the system of record for new clients
+- reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
 ## Suggested issue framing from the current baseline
 
-1. **Approval workflow endpoints and event persistence**
-   - finish the currently partial approval model
-2. **Unify artifact-local and state-local event logs**
-   - remove ambiguity in where callers should inspect history
-3. **Propagate adapter completion/failure into execution records**
-   - close the loop on run lifecycle state
-4. **Add run/track listing endpoints**
-   - improve basic API observability
-5. **Add second executor adapter**
-   - validate abstraction boundaries before UI work
+1. **Define artifact/state event-history ownership**
+   - settle what belongs in repo-visible artifacts versus internal state.
+2. **Add backend-native runtime approval broker callbacks**
+   - make approval requests/resolutions first-class outside ACP/adapter synthesis.
+3. **Add execution worktree orchestration**
+   - isolate agent runs and track branch/worktree lifecycle.
+4. **Add project management APIs**
+   - move beyond the default bootstrap project.
+5. **Plan the first hosted operator UI slice**
+   - build on the stabilized HTTP/SSE API rather than adding new core behavior.
