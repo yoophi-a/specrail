@@ -990,9 +990,9 @@ test("SpecRailService derives waiting approval and resumed running state from ap
   assert.equal(resumedRun?.startedAt, run.startedAt);
   assert.equal(resumedRun?.finishedAt, undefined);
   assert.deepEqual(resumedRun?.summary, {
-    eventCount: 3,
-    lastEventSummary: `Approved runtime approval request ${run.id}:approval-requested`,
-    lastEventAt: "2026-04-09T06:00:03.000Z",
+    eventCount: 4,
+    lastEventSummary: "Runtime approval callback is not supported by executor codex",
+    lastEventAt: "2026-04-09T06:00:04.000Z",
   });
 
   const rejectedTrack = await service.createTrack({
@@ -1034,6 +1034,165 @@ test("SpecRailService derives waiting approval and resumed running state from ap
 
   const blockedTrack = await service.getTrack(rejectedTrack.id);
   assert.equal(blockedTrack?.status, "blocked");
+});
+
+test("SpecRailService delivers runtime approval decisions to executor callbacks", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-approval-callback-"));
+  const callbackCalls: Array<{ outcome: unknown; requestId: unknown; status: string }> = [];
+
+  const makeExecutor = (name: string, fail = false) => ({
+    name,
+    async spawn(input: { executionId: string; prompt: string; workspacePath: string }) {
+      return {
+        sessionRef: `session:${input.executionId}`,
+        command: {
+          command: name,
+          args: ["exec", input.prompt],
+          cwd: input.workspacePath,
+          prompt: input.prompt,
+        },
+        events: [
+          {
+            id: `${input.executionId}:started`,
+            executionId: input.executionId,
+            type: "task_status_changed" as const,
+            timestamp: "2026-04-09T07:00:00.000Z",
+            source: name,
+            summary: "Run started",
+            payload: { status: "running" },
+          },
+        ],
+      };
+    },
+    async resume() {
+      throw new Error("should not be called");
+    },
+    async cancel() {
+      throw new Error("should not be called");
+    },
+    async resolveRuntimeApproval(input: {
+      execution: { id: string; status: string };
+      approvalResolvedEvent: ExecutionEvent;
+    }) {
+      callbackCalls.push({
+        outcome: input.approvalResolvedEvent.payload?.outcome,
+        requestId: input.approvalResolvedEvent.payload?.requestId,
+        status: input.execution.status,
+      });
+
+      if (fail) {
+        throw new Error("callback transport unavailable");
+      }
+
+      return [
+        {
+          id: `${input.execution.id}:approval-callback-delivered`,
+          executionId: input.execution.id,
+          type: "summary" as const,
+          timestamp: "2026-04-09T07:00:05.000Z",
+          source: "specrail",
+          summary: "Runtime approval callback delivered to executor",
+          payload: { outcome: input.approvalResolvedEvent.payload?.outcome },
+        },
+      ];
+    },
+  });
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(path.join(rootDir, "state")),
+    trackRepository: new FileTrackRepository(path.join(rootDir, "state")),
+    planningSessionRepository: new FilePlanningSessionRepository(path.join(rootDir, "state")),
+    planningMessageStore: new JsonlPlanningMessageStore(path.join(rootDir, "state")),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(path.join(rootDir, "state")),
+    approvalRequestRepository: new FileApprovalRequestRepository(path.join(rootDir, "state")),
+    channelBindingRepository: new FileChannelBindingRepository(path.join(rootDir, "state")),
+    attachmentReferenceRepository: new FileAttachmentReferenceRepository(path.join(rootDir, "state")),
+    executionRepository: new FileExecutionRepository(path.join(rootDir, "state")),
+    eventStore: new JsonlEventStore(path.join(rootDir, "state")),
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
+    executor: makeExecutor("callback_executor"),
+    executors: {
+      callback_executor: makeExecutor("callback_executor"),
+      failing_executor: makeExecutor("failing_executor", true),
+    },
+    defaultExecutionBackend: "callback_executor",
+    defaultProject: {
+      id: "project-default",
+      name: "SpecRail",
+    },
+    workspaceRoot: path.join(rootDir, "workspaces"),
+    now: (() => {
+      const values = [
+        "2026-04-09T07:00:00.000Z",
+        "2026-04-09T07:00:01.000Z",
+        "2026-04-09T07:00:02.000Z",
+        "2026-04-09T07:00:03.000Z",
+        "2026-04-09T07:00:04.000Z",
+        "2026-04-09T07:00:05.000Z",
+        "2026-04-09T07:00:06.000Z",
+        "2026-04-09T07:00:07.000Z",
+      ];
+      return () => values.shift() ?? "2026-04-09T07:00:08.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-callback", "run-callback", "approval-callback", "track-failing", "run-failing", "approval-failing"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({ title: "Callback run", description: "approval callback" });
+  const run = await service.startRun({ trackId: track.id, prompt: "Start callback run", backend: "callback_executor" });
+  await service.recordExecutionEvent({
+    id: `${run.id}:approval-requested`,
+    executionId: run.id,
+    type: "approval_requested",
+    timestamp: "2026-04-09T07:00:02.000Z",
+    source: "callback_executor",
+    summary: "Approval requested",
+    payload: { toolName: "Bash", toolUseId: "toolu-callback" },
+  });
+
+  await service.resolveRuntimeApprovalRequest({
+    runId: run.id,
+    requestId: `${run.id}:approval-requested`,
+    outcome: "approved",
+    decidedBy: "user",
+  });
+
+  const callbackEvents = await service.listRunEvents(run.id);
+  assert.ok(callbackEvents.some((event) => event.summary === "Runtime approval callback delivered to executor"));
+  assert.deepEqual(callbackCalls[0], {
+    outcome: "approved",
+    requestId: `${run.id}:approval-requested`,
+    status: "running",
+  });
+
+  const failingTrack = await service.createTrack({ title: "Failing callback run", description: "approval callback failure" });
+  const failingRun = await service.startRun({
+    trackId: failingTrack.id,
+    prompt: "Start failing callback run",
+    backend: "failing_executor",
+  });
+  await service.recordExecutionEvent({
+    id: `${failingRun.id}:approval-requested`,
+    executionId: failingRun.id,
+    type: "approval_requested",
+    timestamp: "2026-04-09T07:00:06.000Z",
+    source: "failing_executor",
+    summary: "Approval requested",
+    payload: { toolName: "Bash", toolUseId: "toolu-failing" },
+  });
+
+  await service.resolveRuntimeApprovalRequest({
+    runId: failingRun.id,
+    requestId: `${failingRun.id}:approval-requested`,
+    outcome: "approved",
+    decidedBy: "system",
+  });
+
+  const failingEvents = await service.listRunEvents(failingRun.id);
+  assert.ok(failingEvents.some((event) => event.summary === "Runtime approval callback delivery failed"));
+  assert.equal((await service.getRun(failingRun.id))?.status, "running");
 });
 
 test("SpecRailService lists tracks and runs with basic filters", async () => {

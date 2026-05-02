@@ -63,7 +63,7 @@ Currently implemented:
 
 Currently not implemented:
 - worktree/git orchestration beyond metadata/workspace path allocation
-- executor callback delivery for already-recorded runtime approval decisions
+- executor callback delivery for already-recorded runtime approval decisions when a backend implements `resolveRuntimeApproval(...)`
 - scheduler/queue management
 
 ### 3. Interface plane
@@ -458,7 +458,7 @@ Current ACP edge coverage:
 Runtime approval resolution has two separate responsibilities:
 
 1. persist the domain decision in SpecRail
-2. deliver that decision to the active executor when the backend supports continuation callbacks
+2. deliver that decision to the active executor when the backend implements `resolveRuntimeApproval(...)`
 
 The implemented domain decision path is canonical:
 
@@ -469,7 +469,7 @@ POST /runs/:runId/approval-requests/:requestId/approve|reject
   -> reconcile the run snapshot from persisted execution events
 ```
 
-Executors should treat the persisted `approval_resolved` event as the durable source of truth. A future executor callback receives the resolved event plus the current execution snapshot, not a provider-specific API shape. The stable fields are:
+Executors treat the persisted `approval_resolved` event as the durable source of truth. The optional executor callback receives the resolved event plus the current execution snapshot, not a provider-specific API shape. The stable fields are:
 
 - `executionId`
 - `payload.requestId`
@@ -484,7 +484,8 @@ Expected callback behavior:
 
 - `approved`: continue the blocked operation when the provider exposes a permission-continuation primitive; otherwise resume the run with a clear event explaining the fallback path.
 - `rejected`: do not retry the blocked operation; mark or keep the run cancelled unless a backend can represent a narrower blocked-step state.
-- callback failure after the domain event is recorded must append an additional `task_status_changed` or `summary` event rather than mutating the approval decision.
+- unsupported callbacks append a `summary` event so the gap is visible in run history.
+- callback failure after the domain event is recorded appends an additional `summary` event rather than mutating the approval decision.
 
 Provider-specific metadata can remain under event `payload` / `_meta`, but the callback boundary should not require callers to know Codex, Claude Code, or ACP transport details. That keeps the core event contract stable while adapter fidelity improves incrementally.
 
@@ -493,7 +494,7 @@ Provider-specific metadata can remain under event `payload` / `_meta`, but the c
 - database layer
 - production auth system
 - production deployment manifests
-- executor callback delivery for runtime approval decisions
+- provider-specific executor continuation implementations for runtime approval decisions
 - rich artifact editing/versioning API outside the current proposal/approval flow
 - multi-project tenant management beyond default project bootstrap
 - hosted GitHub app/webhook automation
