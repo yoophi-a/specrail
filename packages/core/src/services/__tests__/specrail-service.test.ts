@@ -1274,7 +1274,7 @@ test("SpecRailService lists tracks and runs with basic filters", async () => {
       return () => values.shift() ?? "2026-04-09T05:15:00.000Z";
     })(),
     idGenerator: (() => {
-      const values = ["track-one", "track-two", "run-one", "run-two"];
+      const values = ["track-one", "track-two", "project-extra", "track-extra", "run-one", "run-two"];
       return () => values.shift() ?? "extra";
     })(),
   });
@@ -1289,6 +1289,15 @@ test("SpecRailService lists tracks and runs with basic filters", async () => {
     description: "Track two",
     priority: "low",
   });
+  const extraProject = await service.createProject({ name: "Extra project", defaultPlanningSystem: "openspec" });
+  const projectTrack = await service.createTrack({
+    projectId: extraProject.id,
+    title: "Project-specific track",
+    description: "Track scoped to an explicit project",
+  });
+
+  assert.equal(projectTrack.projectId, extraProject.id);
+  assert.equal(projectTrack.planningSystem, "openspec");
 
   await service.updateTrack({ trackId: trackOne.id, status: "review" });
 
@@ -1308,11 +1317,15 @@ test("SpecRailService lists tracks and runs with basic filters", async () => {
   const tracks = await service.listTracks();
   assert.deepEqual(
     tracks.map((track) => track.id),
-    [trackTwo.id, trackOne.id],
+    [trackTwo.id, trackOne.id, projectTrack.id],
   );
   assert.deepEqual(
     (await service.listTracks({ priority: "low" })).map((track) => track.id),
     [trackTwo.id],
+  );
+  assert.deepEqual(
+    (await service.listTracks({ projectId: extraProject.id })).map((track) => track.id),
+    [projectTrack.id],
   );
   assert.deepEqual(
     (await service.listTracks({ status: "review" })).map((track) => track.id),

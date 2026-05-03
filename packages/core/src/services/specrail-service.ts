@@ -147,6 +147,7 @@ export interface UpdateProjectInput {
 }
 
 export interface CreateTrackInput {
+  projectId?: string;
   title: string;
   description: string;
   priority?: Track["priority"];
@@ -247,6 +248,7 @@ export interface RegisterAttachmentReferenceInput {
 export type SortOrder = "asc" | "desc";
 
 export interface ListTracksInput {
+  projectId?: string;
   status?: TrackStatus;
   priority?: Track["priority"];
   page?: number;
@@ -519,7 +521,11 @@ export class SpecRailService {
   }
 
   async createTrack(input: CreateTrackInput): Promise<Track> {
-    const project = await this.ensureDefaultProject();
+    const project = input.projectId === undefined ? await this.ensureDefaultProject() : await this.dependencies.projectRepository.getById(input.projectId);
+    if (!project) {
+      throw new NotFoundError(`Project not found: ${input.projectId}`);
+    }
+
     const timestamp = this.now();
     const track: Track = {
       id: `track-${this.idGenerator()}`,
@@ -564,6 +570,7 @@ export class SpecRailService {
     const sortOrder = input.sortOrder ?? "desc";
 
     const sorted = tracks
+      .filter((track) => (input.projectId ? track.projectId === input.projectId : true))
       .filter((track) => (input.status ? track.status === input.status : true))
       .filter((track) => (input.priority ? track.priority === input.priority : true))
       .sort((left, right) => {

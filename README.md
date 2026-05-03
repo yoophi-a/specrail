@@ -91,11 +91,12 @@ Current endpoints in `apps/api/src/index.ts`:
 ### Tracks
 - `POST /tracks`
   - create a track
-  - body: `{ title, description, priority? }`
+  - body: `{ projectId?, title, description, priority? }`
+  - `projectId` defaults to the bootstrap project when omitted
 - `GET /tracks`
   - list tracks with pagination and explicit sorting
   - default sort: `sortBy=updatedAt&sortOrder=desc`
-  - query: `status?`, `priority?`, `page?=1`, `pageSize?=20`, `sortBy?=updatedAt|createdAt|title|priority|status`, `sortOrder?=asc|desc`
+  - query: `projectId?`, `status?`, `priority?`, `page?=1`, `pageSize?=20`, `sortBy?=updatedAt|createdAt|title|priority|status`, `sortOrder?=asc|desc`
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
