@@ -24,6 +24,12 @@ import {
   renderOperatorUiStyleCss,
 } from "../operator-ui.js";
 
+function assertContainsAll(body: string, patterns: RegExp[]): void {
+  for (const pattern of patterns) {
+    assert.match(body, pattern);
+  }
+}
+
 test("operator UI helpers escape metadata and previews", () => {
   assert.equal(operatorUiEscapeHtml(`<script>alert("x")</script>`), "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
   assert.equal(operatorUiMetadataHtml([["Run", "run-1"], ["Missing", undefined]]), "<dl><dt>Run</dt><dd>run-1</dd><dt>Missing</dt><dd>unknown</dd></dl>");
@@ -83,50 +89,18 @@ test("operator UI client script stays on in-page controls instead of native dial
 test("operator UI shell keeps hosted action and stream wiring", () => {
   const body = renderOperatorUiHtml();
 
-  assert.match(body, /SpecRail Operator/);
-  assert.match(body, /<style>\n/);
-  assert.match(body, /<script type="module">\n/);
-  assert.match(body, /id="project-create"/);
-  assert.match(body, /id="project-update"/);
-  assert.match(body, /id="track-create"/);
-  assert.match(body, /id="project-name"/);
-  assert.match(body, /id="project-repo-url"/);
-  assert.match(body, /id="track-title"/);
-  assert.match(body, /id="track-priority"/);
-  assert.match(body, /data-track-update/);
-  assert.match(body, /id="track-workflow-status"/);
-  assert.match(body, /id="track-workflow-spec-status"/);
-  assert.match(body, /data-planning-session-create/);
-  assert.match(body, /id="planning-session-status"/);
-  assert.match(body, /data-planning-message-append/);
-  assert.match(body, /id="planning-message-body"/);
-  assert.match(body, /id="planning-message-author"/);
-  assert.match(body, /method: 'PATCH'/);
-  assert.match(body, /defaultWorkflowPolicy/);
-  assert.match(body, /defaultPlanningSystem/);
-  assert.match(body, /optionalNullableInputValue/);
-  assert.match(body, /data-approval-id/);
-  assert.match(body, /data-artifact-proposal/);
-  assert.match(body, /id="artifact-proposal-kind"/);
-  assert.match(body, /id="artifact-proposal-content"/);
-  assert.match(body, /Propose artifact/);
-  assert.match(body, /createdBy: 'user'/);
-  assert.match(body, /data-run-start/);
-  assert.match(body, /id="run-start-prompt"/);
-  assert.match(body, /data-run-resume/);
-  assert.match(body, /id="run-resume-prompt"/);
-  assert.match(body, /id="run-cancel-confirmation"/);
-  assert.match(body, /data-run-cancel/);
-  assert.match(body, /workspace-cleanup\/preview/);
-  assert.match(body, /data-cleanup-request/);
-  assert.match(body, /id="cleanup-confirmation"/);
-  assert.match(body, /workspace-cleanup\/apply/);
-  assert.match(body, /new EventSource/);
-  assert.match(body, /\.artifact-preview/);
-  assert.match(body, /events\/stream/);
-  assert.match(body, /async function withAction/);
-  assert.match(body, /function errorMessage/);
-  assert.match(body, /button.disabled = true/);
-  assert.match(body, /button.isConnected/);
-  assert.match(body, /Refresh failed:/);
+  const controlGroups = {
+    shell: [/SpecRail Operator/, /<style>\n/, /<script type="module">\n/, /\.artifact-preview/],
+    project: [/id="project-create"/, /id="project-update"/, /id="project-name"/, /id="project-repo-url"/, /method: 'PATCH'/, /defaultWorkflowPolicy/, /defaultPlanningSystem/, /optionalNullableInputValue/],
+    track: [/id="track-create"/, /id="track-title"/, /id="track-priority"/, /data-track-update/, /id="track-workflow-status"/, /id="track-workflow-spec-status"/],
+    planning: [/data-planning-session-create/, /id="planning-session-status"/, /data-planning-message-append/, /id="planning-message-body"/, /id="planning-message-author"/],
+    artifacts: [/data-approval-id/, /data-artifact-proposal/, /id="artifact-proposal-kind"/, /id="artifact-proposal-content"/, /Propose artifact/, /createdBy: 'user'/],
+    runs: [/data-run-start/, /id="run-start-prompt"/, /data-run-resume/, /id="run-resume-prompt"/, /id="run-cancel-confirmation"/, /data-run-cancel/],
+    cleanup: [/workspace-cleanup\/preview/, /data-cleanup-request/, /id="cleanup-confirmation"/, /workspace-cleanup\/apply/, /Refresh failed:/],
+    streamsAndActions: [/new EventSource/, /events\/stream/, /async function withAction/, /function errorMessage/, /button.disabled = true/, /button.isConnected/],
+  };
+
+  for (const patterns of Object.values(controlGroups)) {
+    assertContainsAll(body, patterns);
+  }
 });
