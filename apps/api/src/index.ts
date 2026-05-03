@@ -436,10 +436,14 @@ function renderOperatorUiHtml(): string {
     const detail = document.querySelector('#detail');
     const refresh = document.querySelector('#refresh');
 
-    async function api(path) {
-      const response = await fetch(path, { headers: { accept: 'application/json' } });
+    async function api(path, init) {
+      const response = await fetch(path, { headers: { accept: 'application/json', 'content-type': 'application/json' }, ...init });
       if (!response.ok) throw new Error(await response.text());
       return response.json();
+    }
+
+    function postJson(path, body) {
+      return api(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
     }
 
     function item(label, meta, onClick) {
@@ -473,7 +477,17 @@ function renderOperatorUiHtml(): string {
       return '<h3>' + escapeHtml(label) + '</h3><div class="artifact-preview">' + escapeHtml(String(value).slice(0, 2000)) + '</div>';
     }
 
-    function renderTrackDetail(payload) {
+    function artifactApprovalActions(artifactPayloads) {
+      const pending = artifactPayloads.flatMap(([artifact, payload]) => (payload.approvalRequests ?? [])
+        .filter((request) => request.status === 'pending')
+        .map((request) => ({ ...request, artifact })));
+      if (pending.length === 0) {
+        return '<h3>Approval actions</h3><p class="muted">No pending artifact approvals.</p>';
+      }
+      return '<h3>Approval actions</h3><ul>' + pending.map((request) => '<li><strong>' + escapeHtml(request.artifact) + ' approval</strong><br><span class="muted">' + escapeHtml(request.id) + '</span><br><button data-approval-id="' + escapeHtml(request.id) + '" data-decision="approve">Approve</button> <button data-approval-id="' + escapeHtml(request.id) + '" data-decision="reject">Reject</button></li>').join('') + '</ul>';
+    }
+
+    function renderTrackDetail(payload, artifactPayloads) {
       const track = payload.track;
       const planning = payload.planningContext ?? {};
       detail.className = 'detail-grid';
@@ -489,14 +503,33 @@ function renderOperatorUiHtml(): string {
           ['Pending planning changes', planning.hasPendingChanges ? 'yes' : 'no'],
           ['Updated', track.updatedAt],
         ])
+        + artifactApprovalActions(artifactPayloads)
         + preview('Spec preview', payload.artifacts?.spec)
         + preview('Plan preview', payload.artifacts?.plan)
         + preview('Tasks preview', payload.artifacts?.tasks);
+      detail.querySelectorAll('[data-approval-id]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const approvalId = button.getAttribute('data-approval-id');
+          const decision = button.getAttribute('data-decision');
+          status.textContent = (decision === 'approve' ? 'Approving ' : 'Rejecting ') + approvalId + '…';
+          await postJson('/approval-requests/' + encodeURIComponent(approvalId) + '/' + decision, { decidedBy: 'user', comment: 'decided from hosted operator UI' });
+          await loadTrackDetail(track.id);
+          status.textContent = 'Artifact approval ' + decision + ' completed for ' + approvalId + '.';
+        });
+      });
     }
 
-    function renderRunDetail(runPayload, eventsPayload) {
+    function renderRunDetail(runPayload, eventsPayload, cleanupPayload) {
       const run = runPayload.run;
       const events = eventsPayload.events ?? [];
+      const cleanupPlan = cleanupPayload?.cleanupPlan;
+      const cleanupSection = cleanupPlan
+        ? '<h3>Workspace cleanup</h3>' + metadata([
+          ['Eligible', cleanupPlan.eligible ? 'yes' : 'no'],
+          ['Operations', (cleanupPlan.operations ?? []).length],
+          ['Refusal reasons', (cleanupPlan.refusalReasons ?? []).join('; ') || 'none'],
+        ]) + '<button data-cleanup-preview="' + escapeHtml(run.id) + '">Refresh cleanup preview</button> <button data-cleanup-apply="' + escapeHtml(run.id) + '"' + (cleanupPlan.eligible ? '' : ' disabled') + '>Apply with server confirmation</button>'
+        : '<h3>Workspace cleanup</h3><button data-cleanup-preview="' + escapeHtml(run.id) + '">Load cleanup preview</button>';
       detail.className = 'detail-grid';
       detail.innerHTML = '<h3>Run ' + escapeHtml(run.id) + '</h3>'
         + metadata([
@@ -511,23 +544,49 @@ function renderOperatorUiHtml(): string {
           ['Started', run.startedAt],
           ['Finished', run.finishedAt],
         ])
+        + cleanupSection
         + '<h3>Recent events</h3><ul>' + events.slice(-10).map((event) => '<li><span class="pill">' + escapeHtml(event.type) + '</span> ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>').join('') + '</ul>';
+      detail.querySelector('[data-cleanup-preview]')?.addEventListener('click', async () => {
+        status.textContent = 'Loading cleanup preview for ' + run.id + '…';
+        await loadRunDetail(run.id, true);
+        status.textContent = 'Cleanup preview refreshed for ' + run.id + '.';
+      });
+      detail.querySelector('[data-cleanup-apply]')?.addEventListener('click', async () => {
+        status.textContent = 'Requesting cleanup confirmation for ' + run.id + '…';
+        const confirmationPayload = await postJson('/runs/' + encodeURIComponent(run.id) + '/workspace-cleanup/apply', { confirm: '' });
+        const expectedConfirmation = confirmationPayload.expectedConfirmation;
+        const accepted = window.confirm('Apply workspace cleanup for ' + run.id + '?\n\nServer confirmation phrase:\n' + expectedConfirmation);
+        if (!accepted) {
+          status.textContent = 'Workspace cleanup apply cancelled for ' + run.id + '.';
+          return;
+        }
+        const applyPayload = await postJson('/runs/' + encodeURIComponent(run.id) + '/workspace-cleanup/apply', { confirm: expectedConfirmation });
+        await loadRunDetail(run.id, true);
+        status.textContent = 'Workspace cleanup ' + applyPayload.cleanupResult.status + ' for ' + run.id + '.';
+      });
     }
 
     async function loadTrackDetail(trackId) {
       detail.className = 'muted';
       detail.textContent = 'Loading track ' + trackId + '…';
-      renderTrackDetail(await api('/tracks/' + encodeURIComponent(trackId)));
+      const [trackPayload, specPayload, planPayload, tasksPayload] = await Promise.all([
+        api('/tracks/' + encodeURIComponent(trackId)),
+        api('/tracks/' + encodeURIComponent(trackId) + '/artifacts/spec'),
+        api('/tracks/' + encodeURIComponent(trackId) + '/artifacts/plan'),
+        api('/tracks/' + encodeURIComponent(trackId) + '/artifacts/tasks'),
+      ]);
+      renderTrackDetail(trackPayload, [['spec', specPayload], ['plan', planPayload], ['tasks', tasksPayload]]);
     }
 
-    async function loadRunDetail(runId) {
+    async function loadRunDetail(runId, includeCleanupPreview) {
       detail.className = 'muted';
       detail.textContent = 'Loading run ' + runId + '…';
-      const [runPayload, eventsPayload] = await Promise.all([
+      const [runPayload, eventsPayload, cleanupPayload] = await Promise.all([
         api('/runs/' + encodeURIComponent(runId)),
         api('/runs/' + encodeURIComponent(runId) + '/events'),
+        includeCleanupPreview ? api('/runs/' + encodeURIComponent(runId) + '/workspace-cleanup/preview').catch((error) => ({ cleanupPlan: { eligible: false, operations: [], refusalReasons: [error instanceof Error ? error.message : String(error)] } })) : Promise.resolve(null),
       ]);
-      renderRunDetail(runPayload, eventsPayload);
+      renderRunDetail(runPayload, eventsPayload, cleanupPayload);
     }
 
     async function load() {

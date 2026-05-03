@@ -188,11 +188,18 @@ test("API serves the hosted operator UI shell", async () => {
     assert.match(body, /SpecRail Operator/);
     assert.match(body, /Project scope/);
     assert.match(body, /Spec preview/);
+    assert.match(body, /Approval actions/);
+    assert.match(body, /data-approval-id/);
     assert.match(body, /Recent events/);
+    assert.match(body, /Workspace cleanup/);
+    assert.match(body, /data-cleanup-apply/);
     assert.match(body, /loadTrackDetail/);
     assert.match(body, /loadRunDetail/);
     assert.match(body, /\/tracks\?page=1&pageSize=20/);
     assert.match(body, /\/runs\/.*\/events/);
+    assert.match(body, /\/workspace-cleanup\/preview/);
+    assert.match(body, /\/workspace-cleanup\/apply/);
+    assert.match(body, /\/approval-requests\//);
     assert.match(body, /projectId=/);
   });
 });
