@@ -77,6 +77,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - terminal UI exposes guarded cleanup preview/apply controls for selected terminal runs
 - GitHub Actions workflows opt JavaScript actions into the Node.js 24 runtime ahead of runner defaults
 - terminal cleanup apply refreshes selected run detail/events immediately after apply attempts when possible
+- terminal cleanup controls have an integration-style keypress flow test for preview, confirmation, apply, and refresh
 
 ### Milestone D — Project management APIs
 - expose project create/list/get/update endpoints
@@ -90,8 +91,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Add terminal cleanup control integration tests**
-   - exercise the keypress-driven preview/confirmation/apply flow with a fake terminal IO harness.
+1. **Add project management APIs**
+   - move beyond the default bootstrap project.
 3. **Add project management APIs**
    - move beyond the default bootstrap project.
 5. **Plan the first hosted operator UI slice**

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import type { AddressInfo } from "node:net";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import test from "node:test";
 
 import {
@@ -7,6 +10,7 @@ import {
   createEmptyRunEventFeedState,
   renderAppShell,
   refreshTerminalState,
+  runTerminalApp,
   SpecRailTerminalApiClient,
   setRunFilter,
   selectNextItem,
@@ -751,3 +755,195 @@ test("appendRunEvents deduplicates by event id and syncRunEventSelection resets 
   assert.equal(filtered.runEvents.runId, "run-3");
   assert.equal(filtered.runEvents.paused, true);
 });
+
+test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh through keypresses", async () => {
+  const applyBodies: unknown[] = [];
+  const requests: string[] = [];
+
+  const server = createServer(async (request, response) => {
+    requests.push(`${request.method ?? "GET"} ${request.url ?? "/"}`);
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (request.method === "GET" && url.pathname === "/tracks") {
+      sendJson(response, { tracks: [{ id: "track-cleanup-a", title: "Cleanup track", status: "ready" }] });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/runs") {
+      sendJson(response, {
+        runs: [
+          {
+            id: "run-cleanup-a",
+            trackId: "track-cleanup-a",
+            status: "completed",
+            backend: "codex",
+            profile: "default",
+            workspacePath: "/tmp/specrail-workspaces/run-cleanup-a",
+          },
+        ],
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/runs/run-cleanup-a") {
+      sendJson(response, {
+        run: {
+          id: "run-cleanup-a",
+          trackId: "track-cleanup-a",
+          status: "completed",
+          backend: "codex",
+          profile: "default",
+          workspacePath: "/tmp/specrail-workspaces/run-cleanup-a",
+          summary: { eventCount: applyBodies.length >= 2 ? 1 : 0 },
+        },
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/runs/run-cleanup-a/workspace-cleanup/preview") {
+      sendJson(response, {
+        cleanupPlan: {
+          dryRun: true,
+          eligible: true,
+          operations: [{ kind: "remove_directory", path: "/tmp/specrail-workspaces/run-cleanup-a" }],
+          refusalReasons: [],
+        },
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/runs/run-cleanup-a/workspace-cleanup/apply") {
+      const body = await readRequestJson(request);
+      applyBodies.push(body);
+      const confirm = typeof body === "object" && body !== null && "confirm" in body ? String(body.confirm) : "";
+      const expectedConfirmation = "apply workspace cleanup for run-cleanup-a";
+      sendJson(response, {
+        cleanupResult: confirm === expectedConfirmation
+          ? {
+              applied: true,
+              status: "applied",
+              operations: [{ kind: "remove_directory", path: "/tmp/specrail-workspaces/run-cleanup-a", status: "applied" }],
+              refusalReasons: [],
+            }
+          : {
+              applied: false,
+              status: "refused",
+              operations: [],
+              refusalReasons: ["Workspace cleanup apply requires explicit confirmation"],
+            },
+        expectedConfirmation,
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/runs/run-cleanup-a/events") {
+      sendJson(response, {
+        events: [
+          {
+            id: "run-cleanup-a:workspace-cleanup:2026-05-03T00:00:00.000Z",
+            executionId: "run-cleanup-a",
+            type: "summary",
+            timestamp: "2026-05-03T00:00:00.000Z",
+            source: "specrail",
+            summary: "Workspace cleanup applied for execution run-cleanup-a",
+            payload: { status: "applied" },
+          },
+        ],
+      });
+      return;
+    }
+
+    sendJson(response, { error: { message: `Unexpected request: ${request.method} ${url.pathname}` } }, 404);
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  assert(address);
+  const { port } = address as AddressInfo;
+
+  const stdin = new FakeTerminalStdin();
+  const stdout = new FakeTerminalStdout();
+  const app = runTerminalApp(
+    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "runs" },
+    { stdin, stdout } as never,
+  );
+
+  try {
+    await waitFor(() => stdout.output.includes("run-cleanup-a"));
+
+    stdin.key("w");
+    await waitFor(() => stdout.output.includes("Cleanup preview ready for run-cleanup-a."));
+    assert.equal(applyBodies.length, 0);
+
+    stdin.key("\r", "return");
+    await waitFor(() => stdout.output.includes("Workspace cleanup confirmation ready for run-cleanup-a."));
+    assert.deepEqual(applyBodies, [{ confirm: "" }]);
+
+    stdin.key("\r", "return");
+    await waitFor(() => stdout.output.includes("Workspace cleanup applied for run-cleanup-a; detail and events refreshed."));
+    assert.deepEqual(applyBodies[1], { confirm: "apply workspace cleanup for run-cleanup-a" });
+    assert(stdout.output.includes("Workspace cleanup applied for execution run-cleanup-a"));
+    assert(requests.includes("GET /runs/run-cleanup-a/events"));
+  } finally {
+    stdin.key("q");
+    await app;
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+class FakeTerminalStdin extends EventEmitter {
+  isTTY = true;
+
+  setRawMode(_enabled: boolean): this {
+    return this;
+  }
+
+  resume(): this {
+    return this;
+  }
+
+  pause(): this {
+    return this;
+  }
+
+  key(input: string, name = input): void {
+    this.emit("keypress", input, { name });
+  }
+}
+
+class FakeTerminalStdout {
+  output = "";
+
+  write(chunk: string): boolean {
+    this.output += chunk;
+    return true;
+  }
+}
+
+function sendJson(response: ServerResponse, payload: unknown, status = 200): void {
+  response.writeHead(status, { "content-type": "application/json" });
+  response.end(JSON.stringify(payload));
+}
+
+async function readRequestJson(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  const body = Buffer.concat(chunks).toString("utf8");
+  return body ? JSON.parse(body) : null;
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.equal(predicate(), true);
+}
