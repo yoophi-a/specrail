@@ -75,6 +75,12 @@ Current limitation: runtime approval resolution is still adapter-mediated, not a
 
 Current endpoints in `apps/api/src/index.ts`:
 
+### Hosted operator UI
+- `GET /operator`
+  - serves the first thin hosted operator UI slice
+  - loads projects, tracks, and runs from the same HTTP API
+  - project selection filters tracks via `GET /tracks?projectId=...`
+
 ### Projects
 - `GET /projects`
   - list projects, bootstrapping the default project if needed
@@ -282,6 +288,7 @@ pnpm dev:api
 pnpm dev:acp
 pnpm dev:terminal
 pnpm dev:telegram
+# then open http://127.0.0.1:3000/operator for the hosted operator UI
 ```
 
 ## Terminal client skeleton

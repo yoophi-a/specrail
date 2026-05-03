@@ -178,6 +178,20 @@ async function openSseStream(url: string): Promise<{
   });
 }
 
+test("API serves the hosted operator UI shell", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/operator`);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /text\/html/);
+    assert.match(body, /SpecRail Operator/);
+    assert.match(body, /Project scope/);
+    assert.match(body, /\/tracks\?page=1&pageSize=20/);
+    assert.match(body, /projectId=/);
+  });
+});
+
 test("API supports project create, list, get, and update", async () => {
   await withServer(async (baseUrl) => {
     const initialListResponse = await fetch(`${baseUrl}/projects`);
