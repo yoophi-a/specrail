@@ -99,7 +99,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - destructive run cancel and workspace cleanup apply flows use in-page confirmation controls
   - hosted UI tests guard against reintroducing browser-native prompt/confirm dialogs and group shell coverage by action area
   - hosted UI markup exposes stable `data-control-group` selectors for major action areas
-  - hosted UI client action harness exercises top-level project/track, project-scope filtering, selected-detail failure states, selected-track, artifact approval, selected-run click handlers, and live event stream lifecycle without a browser dependency
+  - hosted UI client action harness exercises top-level project/track, project-scope filtering, form validation guardrails, selected-detail failure states, selected-track, artifact approval, selected-run click handlers, and live event stream lifecycle without a browser dependency
   - hosted UI fake DOM/fetch harness is isolated in a focused API test helper with named setup-flow methods
 
 ### Projects
