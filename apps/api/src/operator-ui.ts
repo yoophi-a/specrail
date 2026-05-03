@@ -380,7 +380,7 @@ export function renderOperatorUiClientScript(): string {
           ['Eligible', cleanupPlan.eligible ? 'yes' : 'no'],
           ['Operations', (cleanupPlan.operations ?? []).length],
           ['Refusal reasons', (cleanupPlan.refusalReasons ?? []).join('; ') || 'none'],
-        ]) + '<button data-cleanup-preview="' + escapeHtml(run.id) + '">Refresh cleanup preview</button> <button data-cleanup-apply="' + escapeHtml(run.id) + '"' + (cleanupPlan.eligible ? '' : ' disabled') + '>Apply with server confirmation</button>'
+        ]) + '<button data-cleanup-preview="' + escapeHtml(run.id) + '">Refresh cleanup preview</button> <button data-cleanup-request="' + escapeHtml(run.id) + '"' + (cleanupPlan.eligible ? '' : ' disabled') + '>Request cleanup confirmation</button><div id="cleanup-confirm-panel" hidden><p class="muted">Server confirmation phrase: <code id="cleanup-expected-confirmation"></code></p><label>Confirmation <input id="cleanup-confirmation" autocomplete="off" placeholder="Paste server confirmation phrase" /></label><p><button data-cleanup-apply="' + escapeHtml(run.id) + '">Apply cleanup</button></p></div>'
         : '<h3>Workspace cleanup</h3><button data-cleanup-preview="' + escapeHtml(run.id) + '">Load cleanup preview</button>';
       detail.className = 'detail-grid';
       detail.innerHTML = '<h3>Run ' + escapeHtml(run.id) + '</h3>'
@@ -396,7 +396,7 @@ export function renderOperatorUiClientScript(): string {
           ['Started', run.startedAt],
           ['Finished', run.finishedAt],
         ])
-        + '<h3>Run lifecycle</h3><div class="form-grid"><label>Resume prompt <textarea id="run-resume-prompt">Continue with verification.</textarea></label><p><button data-run-resume="' + escapeHtml(run.id) + '">Resume run</button> <button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button></p></div>'
+        + '<h3>Run lifecycle</h3><div class="form-grid"><label>Resume prompt <textarea id="run-resume-prompt">Continue with verification.</textarea></label><label>Cancel confirmation <input id="run-cancel-confirmation" autocomplete="off" placeholder="Type cancel to confirm" /></label><p><button data-run-resume="' + escapeHtml(run.id) + '">Resume run</button> <button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button></p></div>'
         + cleanupSection
         + '<h3>Recent events</h3><p class="muted">Live updates use <code>GET /runs/:runId/events/stream</code> while this run is selected.</p><ul id="run-events">' + events.slice(-10).map((event) => '<li><span class="pill">' + escapeHtml(event.type) + '</span> ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>').join('') + '</ul>';
       detail.querySelector('[data-run-resume]')?.addEventListener('click', async (event) => {
@@ -414,9 +414,9 @@ export function renderOperatorUiClientScript(): string {
       });
       detail.querySelector('[data-run-cancel]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
-        const accepted = window.confirm('Cancel run ' + run.id + '?');
-        if (!accepted) {
-          status.textContent = 'Run cancel skipped for ' + run.id + '.';
+        const confirmation = detail.querySelector('#run-cancel-confirmation')?.value.trim().toLowerCase();
+        if (confirmation !== 'cancel') {
+          status.textContent = 'Type cancel before cancelling run ' + run.id + '.';
           return;
         }
         await withAction(button, 'Cancelling run ' + run.id + '…', async () => {
@@ -432,17 +432,25 @@ export function renderOperatorUiClientScript(): string {
         }, 'Cleanup preview refreshed for ' + run.id + '.');
       });
       startRunEventStream(run.id);
-      detail.querySelector('[data-cleanup-apply]')?.addEventListener('click', async (event) => {
+      detail.querySelector('[data-cleanup-request]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
         await withAction(button, 'Requesting cleanup confirmation for ' + run.id + '…', async () => {
           const confirmationPayload = await postJson('/runs/' + encodeURIComponent(run.id) + '/workspace-cleanup/apply', { confirm: '' });
           const expectedConfirmation = confirmationPayload.expectedConfirmation;
-          const accepted = window.confirm('Apply workspace cleanup for ' + run.id + '?\n\nServer confirmation phrase:\n' + expectedConfirmation);
-          if (!accepted) {
-            status.textContent = 'Workspace cleanup apply cancelled for ' + run.id + '.';
-            return;
-          }
-          const applyPayload = await postJson('/runs/' + encodeURIComponent(run.id) + '/workspace-cleanup/apply', { confirm: expectedConfirmation });
+          detail.querySelector('#cleanup-expected-confirmation').textContent = expectedConfirmation;
+          detail.querySelector('#cleanup-confirmation').value = '';
+          detail.querySelector('#cleanup-confirm-panel').hidden = false;
+        }, 'Cleanup confirmation phrase loaded for ' + run.id + '.');
+      });
+      detail.querySelector('[data-cleanup-apply]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const confirmation = detail.querySelector('#cleanup-confirmation')?.value.trim();
+        if (!confirmation) {
+          status.textContent = 'Cleanup confirmation phrase is required for ' + run.id + '.';
+          return;
+        }
+        await withAction(button, 'Applying cleanup for ' + run.id + '…', async () => {
+          const applyPayload = await postJson('/runs/' + encodeURIComponent(run.id) + '/workspace-cleanup/apply', { confirm: confirmation });
           const resultText = 'Workspace cleanup ' + applyPayload.cleanupResult.status + ' for ' + run.id + '.';
           status.textContent = resultText;
           try {
