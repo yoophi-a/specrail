@@ -54,7 +54,9 @@ test("operator UI renderer exposes style and client script helpers", () => {
 
   assert.match(style, /\.detail-grid/);
   assert.match(style, /\.artifact-preview/);
+  assert.match(style, /\.form-grid/);
   assert.match(script, /async function withAction/);
+  assert.match(script, /populateProjectForm/);
   assert.match(script, /new EventSource/);
   assert.match(script, /workspace-cleanup\/apply/);
 });
@@ -68,12 +70,17 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
   assert.match(body, /id="project-create"/);
   assert.match(body, /id="project-update"/);
   assert.match(body, /id="track-create"/);
+  assert.match(body, /id="project-name"/);
+  assert.match(body, /id="project-repo-url"/);
+  assert.match(body, /id="track-title"/);
+  assert.match(body, /id="track-priority"/);
   assert.match(body, /data-track-update/);
   assert.match(body, /data-planning-session-create/);
   assert.match(body, /data-planning-message-append/);
   assert.match(body, /method: 'PATCH'/);
   assert.match(body, /defaultWorkflowPolicy/);
   assert.match(body, /defaultPlanningSystem/);
+  assert.match(body, /optionalNullableInputValue/);
   assert.match(body, /data-approval-id/);
   assert.match(body, /data-artifact-proposal/);
   assert.match(body, /Propose spec/);

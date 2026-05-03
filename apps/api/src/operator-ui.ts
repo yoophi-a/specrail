@@ -90,7 +90,9 @@ export function renderOperatorUiStyleCss(): string {
     section { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 0.75rem; padding: 1rem; background: color-mix(in srgb, Canvas 94%, CanvasText 6%); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
     label { display: grid; gap: 0.35rem; font-weight: 600; }
-    select, button { font: inherit; padding: 0.5rem 0.65rem; border-radius: 0.5rem; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; align-items: end; }
+    select, input, button { font: inherit; padding: 0.5rem 0.65rem; border-radius: 0.5rem; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
+    input { background: Canvas; color: CanvasText; }
     button { cursor: pointer; }
     ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
     li { padding: 0.65rem; border-radius: 0.5rem; background: color-mix(in srgb, Canvas 90%, CanvasText 10%); }
@@ -114,6 +116,14 @@ export function renderOperatorUiClientScript(): string {
     const projectCreate = document.querySelector('#project-create');
     const projectUpdate = document.querySelector('#project-update');
     const trackCreate = document.querySelector('#track-create');
+    const projectName = document.querySelector('#project-name');
+    const projectRepoUrl = document.querySelector('#project-repo-url');
+    const projectLocalRepoPath = document.querySelector('#project-local-repo-path');
+    const projectWorkflowPolicy = document.querySelector('#project-workflow-policy');
+    const projectPlanningSystem = document.querySelector('#project-planning-system');
+    const trackTitle = document.querySelector('#track-title');
+    const trackDescription = document.querySelector('#track-description');
+    const trackPriority = document.querySelector('#track-priority');
     let activeEventStream = null;
     let projectsById = new Map();
 
@@ -185,6 +195,23 @@ export function renderOperatorUiClientScript(): string {
     function preview(label, value) {
       if (!value) return '';
       return '<h3>' + escapeHtml(label) + '</h3><div class="artifact-preview">' + escapeHtml(String(value).slice(0, 2000)) + '</div>';
+    }
+
+    function optionalInputValue(input) {
+      return input.value.trim() === '' ? undefined : input.value.trim();
+    }
+
+    function optionalNullableInputValue(input) {
+      return input.value.trim() === '' ? null : input.value.trim();
+    }
+
+    function populateProjectForm(projectId) {
+      const project = projectsById.get(projectId) ?? {};
+      projectName.value = project.name ?? '';
+      projectRepoUrl.value = project.repoUrl ?? '';
+      projectLocalRepoPath.value = project.localRepoPath ?? '';
+      projectWorkflowPolicy.value = project.defaultWorkflowPolicy ?? '';
+      projectPlanningSystem.value = project.defaultPlanningSystem ?? '';
     }
 
     function artifactApprovalActions(artifactPayloads) {
@@ -465,6 +492,7 @@ export function renderOperatorUiClientScript(): string {
       projectsById = new Map(projectPayload.projects.map((project) => [project.id, project]));
       scope.replaceChildren(new Option('All projects', ''), ...projectPayload.projects.map((project) => new Option(project.name + ' (' + project.id + ')', project.id)));
       scope.value = selectedProject;
+      populateProjectForm(selectedProject);
 
       tracks.replaceChildren(...trackPayload.tracks.map((track) => item(
         track.title ?? track.id,
@@ -480,13 +508,19 @@ export function renderOperatorUiClientScript(): string {
     }
 
     projectCreate.addEventListener('click', async () => {
-      const name = window.prompt('New project name');
+      const name = projectName.value.trim();
       if (!name) {
-        status.textContent = 'Project creation cancelled.';
+        status.textContent = 'Project name is required.';
         return;
       }
       await withAction(projectCreate, 'Creating project ' + name + '…', async () => {
-        const payload = await postJson('/projects', { name });
+        const payload = await postJson('/projects', {
+          name,
+          repoUrl: optionalInputValue(projectRepoUrl),
+          localRepoPath: optionalInputValue(projectLocalRepoPath),
+          defaultWorkflowPolicy: optionalInputValue(projectWorkflowPolicy),
+          defaultPlanningSystem: optionalInputValue(projectPlanningSystem),
+        });
         scope.value = payload.project.id;
         await load();
         return payload;
@@ -494,18 +528,21 @@ export function renderOperatorUiClientScript(): string {
     });
 
     trackCreate.addEventListener('click', async () => {
-      const title = window.prompt('New track title');
+      const title = trackTitle.value.trim();
       if (!title) {
-        status.textContent = 'Track creation cancelled.';
+        status.textContent = 'Track title is required.';
         return;
       }
-      const description = window.prompt('New track description', '') ?? '';
-      const priority = window.prompt('Track priority (low, medium, high)', 'medium') ?? 'medium';
+      const description = trackDescription.value.trim();
+      const priority = trackPriority.value || 'medium';
       const projectId = scope.value || undefined;
       await withAction(trackCreate, 'Creating track ' + title + '…', async () => {
         const payload = await postJson('/tracks', { projectId, title, description, priority });
         await load();
         await loadTrackDetail(payload.track.id);
+        trackTitle.value = '';
+        trackDescription.value = '';
+        trackPriority.value = 'medium';
         return payload;
       }, (payload) => 'Created track ' + payload.track.id + '.');
     });
@@ -516,26 +553,18 @@ export function renderOperatorUiClientScript(): string {
         status.textContent = 'Select a project before updating it.';
         return;
       }
-      const currentProject = projectsById.get(projectId) ?? {};
-      const currentLabel = scope.selectedOptions[0]?.textContent ?? projectId;
-      const currentName = currentProject.name ?? currentLabel.replace(/ \([^)]*\)$/, '');
-      const name = window.prompt('Updated project name for ' + projectId, currentName);
+      const name = projectName.value.trim();
       if (!name) {
-        status.textContent = 'Project update cancelled for ' + projectId + '.';
+        status.textContent = 'Project name is required before updating ' + projectId + '.';
         return;
       }
-      const repoUrlInput = window.prompt('Repository URL for ' + projectId + ' (blank clears)', currentProject.repoUrl ?? '');
-      const localRepoPathInput = window.prompt('Local repository path for ' + projectId + ' (blank clears)', currentProject.localRepoPath ?? '');
-      const workflowPolicyInput = window.prompt('Default workflow policy for ' + projectId + ' (blank clears)', currentProject.defaultWorkflowPolicy ?? '');
-      const planningSystemInput = window.prompt('Default planning system for ' + projectId + ' (blank clears)', currentProject.defaultPlanningSystem ?? '');
-      const optionalText = (value) => value === null ? undefined : value.trim() === '' ? null : value.trim();
       await withAction(projectUpdate, 'Updating project ' + projectId + '…', async () => {
         const payload = await patchJson('/projects/' + encodeURIComponent(projectId), {
           name,
-          repoUrl: optionalText(repoUrlInput),
-          localRepoPath: optionalText(localRepoPathInput),
-          defaultWorkflowPolicy: optionalText(workflowPolicyInput),
-          defaultPlanningSystem: optionalText(planningSystemInput),
+          repoUrl: optionalNullableInputValue(projectRepoUrl),
+          localRepoPath: optionalNullableInputValue(projectLocalRepoPath),
+          defaultWorkflowPolicy: optionalNullableInputValue(projectWorkflowPolicy),
+          defaultPlanningSystem: optionalNullableInputValue(projectPlanningSystem),
         });
         scope.value = payload.project.id;
         await load();
@@ -543,7 +572,10 @@ export function renderOperatorUiClientScript(): string {
       }, (payload) => 'Updated project ' + payload.project.id + '.');
     });
 
-    scope.addEventListener('change', load);
+    scope.addEventListener('change', () => {
+      populateProjectForm(scope.value);
+      load().catch((error) => { status.textContent = errorMessage(error); });
+    });
     refresh.addEventListener('click', load);
     load().catch((error) => { status.textContent = error instanceof Error ? error.message : String(error); });
 `;
@@ -573,7 +605,22 @@ ${renderOperatorUiStyleCss()}
       <label>Project scope
         <select id="project-scope"><option value="">All projects</option></select>
       </label>
-      <p><button id="project-create">Create project</button> <button id="project-update">Update selected project</button> <button id="track-create">Create track</button></p>
+      <div class="form-grid">
+        <label>Project name <input id="project-name" autocomplete="off" placeholder="New or selected project" /></label>
+        <label>Repo URL <input id="project-repo-url" autocomplete="off" placeholder="https://github.com/org/repo" /></label>
+        <label>Local repo path <input id="project-local-repo-path" autocomplete="off" placeholder="/path/to/repo" /></label>
+        <label>Workflow policy <input id="project-workflow-policy" autocomplete="off" placeholder="optional" /></label>
+        <label>Planning system <input id="project-planning-system" autocomplete="off" placeholder="native | openspec | speckit" /></label>
+        <p><button id="project-create">Create project</button> <button id="project-update">Update selected project</button></p>
+      </div>
+      <div class="form-grid">
+        <label>Track title <input id="track-title" autocomplete="off" placeholder="New track title" /></label>
+        <label>Track description <input id="track-description" autocomplete="off" placeholder="What should be done?" /></label>
+        <label>Track priority
+          <select id="track-priority"><option value="low">low</option><option value="medium" selected>medium</option><option value="high">high</option></select>
+        </label>
+        <p><button id="track-create">Create track</button></p>
+      </div>
       <p id="status" class="muted">Loading…</p>
     </section>
     <div class="grid">
