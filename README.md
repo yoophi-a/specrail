@@ -77,7 +77,7 @@ Current endpoints in `apps/api/src/index.ts`:
 
 ### Hosted operator UI
 - `GET /operator`
-  - serves the first thin hosted operator UI slice
+  - serves the first thin hosted operator UI slice from `apps/api/src/operator-ui.ts`
   - loads projects, tracks, and runs from the same HTTP API
   - project selection filters tracks via `GET /tracks?projectId=...`
   - selecting a track shows artifact/planning context previews from `GET /tracks/:trackId`

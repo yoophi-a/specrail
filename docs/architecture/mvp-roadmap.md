@@ -86,7 +86,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted operator UI can select project scope for track listings via the same HTTP contract
 
 ### Milestone E — Hosted operator UI / GitHub entrypoints
-- first hosted operator UI slice is served from `GET /operator`
+- first hosted operator UI slice is served from `GET /operator` with HTML/script helpers isolated in `apps/api/src/operator-ui.ts`
 - hosted UI loads project, track, and run summary state from the existing HTTP API
 - hosted UI project selection filters tracks via the same `GET /tracks?projectId=...` contract used by thin clients
 - hosted UI selected-track detail shows artifact/planning context previews from existing track detail APIs
