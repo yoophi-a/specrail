@@ -8,6 +8,8 @@ import {
   operatorUiCleanupPreviewPath,
   operatorUiEscapeHtml,
   operatorUiMetadataHtml,
+  operatorUiPlanningMessageAppendPath,
+  operatorUiPlanningSessionCreatePath,
   operatorUiPreviewHtml,
   operatorUiProjectCreatePath,
   operatorUiProjectUpdatePath,
@@ -32,6 +34,8 @@ test("operator UI helpers build encoded action URLs", () => {
   assert.equal(operatorUiProjectUpdatePath("project/1"), "/projects/project%2F1");
   assert.equal(operatorUiTrackCreatePath(), "/tracks");
   assert.equal(operatorUiTrackUpdatePath("track/1"), "/tracks/track%2F1");
+  assert.equal(operatorUiPlanningSessionCreatePath("track/1"), "/tracks/track%2F1/planning-sessions");
+  assert.equal(operatorUiPlanningMessageAppendPath("planning/1"), "/planning-sessions/planning%2F1/messages");
   assert.equal(operatorUiApprovalDecisionPath("approval/request 1", "approve"), "/approval-requests/approval%2Frequest%201/approve");
   assert.equal(operatorUiArtifactProposalPath("track/1", "spec"), "/tracks/track%2F1/artifacts/spec");
   assert.equal(operatorUiRunCreatePath(), "/runs");
@@ -50,6 +54,8 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
   assert.match(body, /id="project-update"/);
   assert.match(body, /id="track-create"/);
   assert.match(body, /data-track-update/);
+  assert.match(body, /data-planning-session-create/);
+  assert.match(body, /data-planning-message-append/);
   assert.match(body, /method: 'PATCH'/);
   assert.match(body, /defaultWorkflowPolicy/);
   assert.match(body, /defaultPlanningSystem/);

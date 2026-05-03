@@ -82,6 +82,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - can create/update projects through the existing project APIs
   - project selection filters tracks via `GET /tracks?projectId=...`
   - can create tracks and update selected-track workflow/approval state through existing track APIs
+  - can create planning sessions and append planning messages through existing planning APIs
   - selecting a track shows artifact/planning context previews from `GET /tracks/:trackId`
   - selected tracks can propose spec/plan/tasks revisions through the existing `POST /tracks/:trackId/artifacts/:artifact` endpoint
   - selecting a track can approve/reject pending artifact approval requests through the existing `POST /approval-requests/:approvalRequestId/(approve|reject)` endpoints
