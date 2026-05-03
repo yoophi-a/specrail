@@ -115,5 +115,5 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Hosted operator UI artifact proposal validation harness**
-   - add no-dependency client coverage for blank artifact proposal content before proposal requests are submitted.
+1. **API run lifecycle event summary contract cleanup**
+   - document or refine which execution events are guaranteed at resume/cancel response boundaries versus eventually appended by adapters.
