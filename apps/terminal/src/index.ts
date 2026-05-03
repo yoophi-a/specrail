@@ -16,6 +16,7 @@ const EXECUTION_PROFILE_OPTIONS: Record<string, string[]> = {
 
 export interface TrackListItem {
   id: string;
+  projectId?: string;
   title: string;
   description?: string;
   status?: string;
@@ -24,6 +25,13 @@ export interface TrackListItem {
   planStatus?: string;
   updatedAt?: string;
   createdAt?: string;
+}
+
+export interface ProjectListItem {
+  id: string;
+  name: string;
+  defaultPlanningSystem?: string;
+  updatedAt?: string;
 }
 
 export interface RunListItem {
@@ -172,6 +180,7 @@ export interface RunDetailSnapshot {
 }
 
 export interface TerminalSummarySnapshot {
+  projects?: ProjectListItem[];
   tracks: TrackListItem[];
   runs: RunListItem[];
   fetchedAt: string;
@@ -237,6 +246,7 @@ export interface TerminalAppState {
   screen: TerminalScreenId;
   statusLine: string;
   summary: TerminalSummarySnapshot | null;
+  selectedProjectId?: string | null;
   apiBaseUrl: string;
   refreshIntervalMs: number;
   loading: boolean;
@@ -253,6 +263,10 @@ export interface TerminalAppState {
 
 interface TracksResponse {
   tracks: TrackListItem[];
+}
+
+interface ProjectsResponse {
+  projects: ProjectListItem[];
 }
 
 interface RunsResponse {
@@ -352,13 +366,16 @@ export class SpecRailTerminalApiClient {
     return fallback;
   }
 
-  async loadSummary(): Promise<TerminalSummarySnapshot> {
-    const [tracksPayload, runsPayload] = await Promise.all([
-      this.request<TracksResponse>("/tracks?page=1&pageSize=20"),
+  async loadSummary(projectId?: string | null): Promise<TerminalSummarySnapshot> {
+    const projectQuery = projectId ? `&projectId=${encodeURIComponent(projectId)}` : "";
+    const [projectsPayload, tracksPayload, runsPayload] = await Promise.all([
+      this.request<ProjectsResponse>("/projects"),
+      this.request<TracksResponse>(`/tracks?page=1&pageSize=20${projectQuery}`),
       this.request<RunsResponse>("/runs?page=1&pageSize=20"),
     ]);
 
     return {
+      projects: projectsPayload.projects,
       tracks: tracksPayload.tracks,
       runs: runsPayload.runs,
       fetchedAt: new Date().toISOString(),
@@ -569,6 +586,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     screen: config.initialScreen,
     statusLine: "Loading terminal snapshot...",
     summary: null,
+    selectedProjectId: null,
     apiBaseUrl: config.apiBaseUrl,
     refreshIntervalMs: config.refreshIntervalMs,
     loading: true,
@@ -640,7 +658,7 @@ export async function bootstrapTerminalState(
   config: SpecRailTerminalClientConfig,
   client: Pick<SpecRailTerminalApiClient, "loadSummary" | "loadTrackDetail" | "loadRunDetail">,
 ): Promise<TerminalAppState> {
-  const summary = await client.loadSummary();
+  const summary = await client.loadSummary(null);
   const tracks = await populateTrackPanel(createEmptyDetailState<TrackDetailSnapshot>(), summary, client);
   const runs = await populateRunPanel(createEmptyDetailState<RunDetailSnapshot>(), summary, client, "all");
 
@@ -648,6 +666,7 @@ export async function bootstrapTerminalState(
     screen: config.initialScreen,
     statusLine: `Loaded ${summary.tracks.length} tracks and ${summary.runs.length} runs.`,
     summary,
+    selectedProjectId: null,
     apiBaseUrl: config.apiBaseUrl,
     refreshIntervalMs: config.refreshIntervalMs,
     loading: false,
@@ -666,7 +685,7 @@ export async function refreshTerminalState(
   state: TerminalAppState,
   client: Pick<SpecRailTerminalApiClient, "loadSummary" | "loadTrackDetail" | "loadRunDetail">,
 ): Promise<TerminalAppState> {
-  const summary = await client.loadSummary();
+  const summary = await client.loadSummary(state.selectedProjectId);
   const tracks = await populateTrackPanel(state.tracks, summary, client);
   const runs = await populateRunPanel(state.runs, summary, client, state.runFilter);
 
@@ -843,6 +862,23 @@ export function setRunFilter(state: TerminalAppState, filter: RunFilterMode): Te
   });
 }
 
+async function cycleProjectScope(
+  state: TerminalAppState,
+  client: Pick<SpecRailTerminalApiClient, "loadSummary" | "loadTrackDetail" | "loadRunDetail">,
+): Promise<TerminalAppState> {
+  const projects = state.summary?.projects ?? [];
+  const projectIds = [null, ...projects.map((project) => project.id)] as Array<string | null>;
+  const currentIndex = Math.max(0, projectIds.findIndex((projectId) => projectId === state.selectedProjectId));
+  const selectedProjectId = projectIds[(currentIndex + 1) % projectIds.length] ?? null;
+
+  return refreshTerminalState({
+    ...state,
+    selectedProjectId,
+    tracks: createEmptyDetailState<TrackDetailSnapshot>(),
+    statusLine: selectedProjectId ? `Filtering tracks to project ${selectedProjectId}...` : "Showing tracks from all projects...",
+  }, client);
+}
+
 export function renderAppShell(state: TerminalAppState): string {
   const tabs: TerminalScreenId[] = ["home", "tracks", "runs", "settings"];
   const nav = tabs.map((tab) => (tab === state.screen ? `[${tab.toUpperCase()}]` : tab)).join("  ");
@@ -857,7 +893,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, h/l artifact, [/] revision, v propose, f run filter, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, h/l artifact, [/] revision, v propose, f run filter, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
     ...renderWorkspaceCleanupComposer(state.pendingWorkspaceCleanupAction ?? null),
@@ -966,6 +1002,7 @@ function renderScreenBody(state: TerminalAppState): string[] {
         `- API base URL: ${state.apiBaseUrl}`,
         `- Refresh interval: ${state.refreshIntervalMs}ms`,
         "- Navigation: use j/k or arrow keys to move through track/run selections.",
+        "- Press P to cycle project scope for track listings.",
         "- Tracks view surfaces planning sessions, revision history, and pending approvals.",
         "- Press a/x on the tracks screen to approve or reject the next pending request.",
         "- Press s on tracks to start a run, e on runs to resume, c on runs to cancel.",
@@ -977,6 +1014,8 @@ function renderScreenBody(state: TerminalAppState): string[] {
     default:
       return [
         "Overview",
+        `- Project scope: ${formatProjectScope(state)}`,
+        `- Projects loaded: ${state.summary.projects?.length ?? 0}`,
         `- Tracks loaded: ${state.summary.tracks.length}`,
         `- Runs loaded: ${state.summary.runs.length}`,
         `- Last fetch: ${state.summary.fetchedAt}`,
@@ -993,9 +1032,9 @@ function renderScreenBody(state: TerminalAppState): string[] {
 function renderTracksScreen(state: TerminalAppState): string[] {
   const selectedTrack = state.summary?.tracks[state.tracks.selectedIndex] ?? null;
   return [
-    `Tracks (${state.summary?.tracks.length ?? 0})`,
+    `Tracks (${state.summary?.tracks.length ?? 0}, project=${formatProjectScope(state)})`,
     ...renderSelectableList(
-      state.summary?.tracks.map((track) => `${track.id} | ${track.status ?? "unknown"} | ${track.priority ?? "medium"} | ${track.title}`) ?? [],
+      state.summary?.tracks.map((track) => `${track.id} | ${track.projectId ?? "project?"} | ${track.status ?? "unknown"} | ${track.priority ?? "medium"} | ${track.title}`) ?? [],
       state.tracks.selectedIndex,
       "No tracks yet.",
     ),
@@ -1003,6 +1042,15 @@ function renderTracksScreen(state: TerminalAppState): string[] {
     "Track detail",
     ...renderTrackDetail(selectedTrack?.id === state.tracks.data?.track.id ? state.tracks.data : null, state.tracks, selectedTrack?.id ?? null),
   ];
+}
+
+function formatProjectScope(state: TerminalAppState): string {
+  if (!state.selectedProjectId) {
+    return "all projects";
+  }
+
+  const project = state.summary?.projects?.find((item) => item.id === state.selectedProjectId);
+  return project ? `${project.name} (${project.id})` : state.selectedProjectId;
 }
 
 function renderRunsScreen(state: TerminalAppState): string[] {
@@ -2146,6 +2194,17 @@ export async function runTerminalApp(
 
       if (key.name === "f") {
         updateState(setRunFilter(state, cycleRunFilterMode(state.runFilter)));
+        return;
+      }
+
+      if (input === "P") {
+        void cycleProjectScope(state, client)
+          .then(updateState)
+          .catch((error) => updateState({
+            ...state,
+            error: error instanceof Error ? error.message : "Failed to cycle project scope.",
+            statusLine: error instanceof Error ? error.message : "Failed to cycle project scope.",
+          }));
         return;
       }
 

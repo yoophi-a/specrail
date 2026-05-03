@@ -81,7 +81,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 ### Milestone D — Project management APIs
 - project create/list/get/update endpoints expose basic project metadata beyond the bootstrap default
 - track create/list APIs accept project scope while preserving default-project behavior for existing clients
-- next: propagate project selection into thin clients and hosted UI entrypoints
+- terminal client can load projects and cycle project-scoped track listings while preserving all-project behavior by default
+- next: propagate project selection into Telegram/ACP flows and hosted UI entrypoints
 
 ### Milestone E — Hosted operator UI / GitHub entrypoints
 - introduce a web UI or GitHub-facing entrypoint after the core state contracts stabilize
@@ -90,7 +91,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Add project selection to thin clients**
-   - let Telegram/terminal/ACP flows opt into non-default project contexts.
+1. **Propagate project selection into Telegram and ACP flows**
+   - let non-terminal thin clients opt into non-default project contexts.
 2. **Plan the first hosted operator UI slice**
    - build on the stabilized HTTP/SSE API rather than adding new core behavior.
