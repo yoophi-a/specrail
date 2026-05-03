@@ -287,6 +287,10 @@ interface RunDetailResponse {
   run: RunListItem;
 }
 
+interface RunEventsResponse {
+  events: ExecutionEvent[];
+}
+
 interface ApiErrorResponse {
   error?: {
     message?: string;
@@ -433,6 +437,11 @@ export class SpecRailTerminalApiClient {
   async loadRunDetail(runId: string): Promise<RunDetailSnapshot> {
     const payload = await this.request<RunDetailResponse>(`/runs/${runId}`);
     return { run: payload.run };
+  }
+
+  async loadRunEvents(runId: string): Promise<ExecutionEvent[]> {
+    const payload = await this.request<RunEventsResponse>(`/runs/${runId}/events`);
+    return payload.events;
   }
 
   async startRun(input: { trackId: string; prompt: string; backend?: string; profile?: string; planningSessionId?: string }): Promise<RunDetailSnapshot> {
@@ -1854,7 +1863,7 @@ export async function runTerminalApp(
     try {
       const result = await client.applyWorkspaceCleanup(action.runId, confirmation);
       const nextPhase = confirmation && result.cleanupResult.applied ? "done" : "confirmation_ready";
-      updateWorkspaceCleanupComposer({
+      const nextCleanupAction: PendingWorkspaceCleanupActionState = {
         ...action,
         result,
         phase: nextPhase,
@@ -1862,7 +1871,40 @@ export async function runTerminalApp(
         message: confirmation
           ? `Cleanup ${result.cleanupResult.status}; ${result.cleanupResult.operations.length} operation(s) returned.`
           : "Server confirmation phrase received. Press Enter again to apply cleanup with that exact phrase.",
-      }, confirmation ? `Workspace cleanup ${result.cleanupResult.status} for ${action.runId}.` : `Workspace cleanup confirmation ready for ${action.runId}.`);
+      };
+
+      if (!confirmation) {
+        updateWorkspaceCleanupComposer(nextCleanupAction, `Workspace cleanup confirmation ready for ${action.runId}.`);
+        return;
+      }
+
+      try {
+        const [runDetail, events] = await Promise.all([
+          client.loadRunDetail(action.runId),
+          client.loadRunEvents(action.runId),
+        ]);
+        updateState(syncRunEventSelection({
+          ...state,
+          pendingWorkspaceCleanupAction: nextCleanupAction,
+          runs: {
+            ...state.runs,
+            data: runDetail,
+            error: null,
+          },
+          runEvents: appendRunEvents(createEmptyRunEventFeedState(action.runId, state.runEvents.paused), events),
+          statusLine: `Workspace cleanup ${result.cleanupResult.status} for ${action.runId}; detail and events refreshed.`,
+        }));
+      } catch (refreshError) {
+        updateState({
+          ...state,
+          pendingWorkspaceCleanupAction: {
+            ...nextCleanupAction,
+            message: `${nextCleanupAction.message} Follow-up refresh failed: ${refreshError instanceof Error ? refreshError.message : "unknown error"}`,
+          },
+          error: refreshError instanceof Error ? refreshError.message : "Failed to refresh cleanup state.",
+          statusLine: `Workspace cleanup ${result.cleanupResult.status} for ${action.runId}; follow-up refresh failed.`,
+        });
+      }
     } catch (error) {
       updateState({
         ...state,

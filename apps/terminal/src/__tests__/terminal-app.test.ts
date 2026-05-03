@@ -212,6 +212,37 @@ test("SpecRailTerminalApiClient preserves server refusal details for workspace c
   assert.equal(result.expectedConfirmation, "apply workspace cleanup for run-cleanup-a");
 });
 
+test("SpecRailTerminalApiClient loads run events for post-action refresh", async () => {
+  const client = new SpecRailTerminalApiClient("http://example.test", async (input) => {
+    const url = String(input);
+
+    if (url.endsWith("/runs/run-cleanup-a/events")) {
+      return new Response(
+        JSON.stringify({
+          events: [
+            {
+              id: "run-cleanup-a:workspace-cleanup:2026-05-03T00:00:00.000Z",
+              executionId: "run-cleanup-a",
+              type: "summary",
+              timestamp: "2026-05-03T00:00:00.000Z",
+              source: "specrail",
+              summary: "Workspace cleanup applied for execution run-cleanup-a",
+              payload: { status: "applied" },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  const events = await client.loadRunEvents("run-cleanup-a");
+  assert.equal(events[0]?.summary, "Workspace cleanup applied for execution run-cleanup-a");
+  assert.equal(events[0]?.payload?.status, "applied");
+});
+
 test("SpecRailTerminalApiClient parses SSE frames from run event streams", async () => {
   const encoder = new TextEncoder();
   const chunks = [
