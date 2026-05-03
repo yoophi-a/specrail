@@ -25,6 +25,14 @@ export function operatorUiPreviewHtml(label: string, value: unknown): string {
   return `<h3>${operatorUiEscapeHtml(label)}</h3><div class="artifact-preview">${operatorUiEscapeHtml(String(value).slice(0, 2_000))}</div>`;
 }
 
+export function operatorUiProjectCreatePath(): string {
+  return "/projects";
+}
+
+export function operatorUiProjectUpdatePath(projectId: string): string {
+  return `/projects/${encodeURIComponent(projectId)}`;
+}
+
 export function operatorUiApprovalDecisionPath(approvalRequestId: string, decision: "approve" | "reject"): string {
   return `/approval-requests/${encodeURIComponent(approvalRequestId)}/${decision}`;
 }
@@ -99,6 +107,7 @@ export function renderOperatorUiHtml(): string {
       <label>Project scope
         <select id="project-scope"><option value="">All projects</option></select>
       </label>
+      <p><button id="project-create">Create project</button> <button id="project-update">Update selected project</button></p>
       <p id="status" class="muted">Loading…</p>
     </section>
     <div class="grid">
@@ -114,7 +123,10 @@ export function renderOperatorUiHtml(): string {
     const runs = document.querySelector('#runs');
     const detail = document.querySelector('#detail');
     const refresh = document.querySelector('#refresh');
+    const projectCreate = document.querySelector('#project-create');
+    const projectUpdate = document.querySelector('#project-update');
     let activeEventStream = null;
+    let projectsById = new Map();
 
     async function api(path, init) {
       const response = await fetch(path, { headers: { accept: 'application/json', 'content-type': 'application/json' }, ...init });
@@ -124,6 +136,10 @@ export function renderOperatorUiHtml(): string {
 
     function postJson(path, body) {
       return api(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
+    }
+
+    function patchJson(path, body) {
+      return api(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) });
     }
 
     function item(label, meta, onClick) {
@@ -418,6 +434,7 @@ export function renderOperatorUiHtml(): string {
       ]);
 
       const selectedProject = scope.value;
+      projectsById = new Map(projectPayload.projects.map((project) => [project.id, project]));
       scope.replaceChildren(new Option('All projects', ''), ...projectPayload.projects.map((project) => new Option(project.name + ' (' + project.id + ')', project.id)));
       scope.value = selectedProject;
 
@@ -433,6 +450,65 @@ export function renderOperatorUiHtml(): string {
       )));
       status.textContent = 'Loaded ' + projectPayload.projects.length + ' projects, ' + trackPayload.tracks.length + ' tracks, and ' + runPayload.runs.length + ' runs.';
     }
+
+    projectCreate.addEventListener('click', async () => {
+      const name = window.prompt('New project name');
+      if (!name) {
+        status.textContent = 'Project creation cancelled.';
+        return;
+      }
+      projectCreate.disabled = true;
+      try {
+        status.textContent = 'Creating project ' + name + '…';
+        const payload = await postJson('/projects', { name });
+        scope.value = payload.project.id;
+        await load();
+        projectCreate.disabled = false;
+        status.textContent = 'Created project ' + payload.project.id + '.';
+      } catch (error) {
+        projectCreate.disabled = false;
+        status.textContent = error instanceof Error ? error.message : String(error);
+      }
+    });
+
+    projectUpdate.addEventListener('click', async () => {
+      const projectId = scope.value;
+      if (!projectId) {
+        status.textContent = 'Select a project before updating it.';
+        return;
+      }
+      const currentProject = projectsById.get(projectId) ?? {};
+      const currentLabel = scope.selectedOptions[0]?.textContent ?? projectId;
+      const currentName = currentProject.name ?? currentLabel.replace(/ \([^)]*\)$/, '');
+      const name = window.prompt('Updated project name for ' + projectId, currentName);
+      if (!name) {
+        status.textContent = 'Project update cancelled for ' + projectId + '.';
+        return;
+      }
+      const repoUrlInput = window.prompt('Repository URL for ' + projectId + ' (blank clears)', currentProject.repoUrl ?? '');
+      const localRepoPathInput = window.prompt('Local repository path for ' + projectId + ' (blank clears)', currentProject.localRepoPath ?? '');
+      const workflowPolicyInput = window.prompt('Default workflow policy for ' + projectId + ' (blank clears)', currentProject.defaultWorkflowPolicy ?? '');
+      const planningSystemInput = window.prompt('Default planning system for ' + projectId + ' (blank clears)', currentProject.defaultPlanningSystem ?? '');
+      const optionalText = (value) => value === null ? undefined : value.trim() === '' ? null : value.trim();
+      projectUpdate.disabled = true;
+      try {
+        status.textContent = 'Updating project ' + projectId + '…';
+        const payload = await patchJson('/projects/' + encodeURIComponent(projectId), {
+          name,
+          repoUrl: optionalText(repoUrlInput),
+          localRepoPath: optionalText(localRepoPathInput),
+          defaultWorkflowPolicy: optionalText(workflowPolicyInput),
+          defaultPlanningSystem: optionalText(planningSystemInput),
+        });
+        scope.value = payload.project.id;
+        await load();
+        projectUpdate.disabled = false;
+        status.textContent = 'Updated project ' + payload.project.id + '.';
+      } catch (error) {
+        projectUpdate.disabled = false;
+        status.textContent = error instanceof Error ? error.message : String(error);
+      }
+    });
 
     scope.addEventListener('change', load);
     refresh.addEventListener('click', load);
