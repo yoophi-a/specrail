@@ -67,6 +67,15 @@ setTimeout(() => process.exit(0), 10_000);
   }
 }
 
+async function assertJsonResponseStatus(response: Response, expectedStatus: number): Promise<void> {
+  if (response.status === expectedStatus) {
+    return;
+  }
+
+  const body = await response.text().catch((error) => `failed to read response body: ${error instanceof Error ? error.message : String(error)}`);
+  assert.equal(response.status, expectedStatus, `expected HTTP ${expectedStatus}, received HTTP ${response.status}: ${body}`);
+}
+
 function parseSseEvents(buffer: string): Array<{ id: string; summary: string }> {
   return buffer
     .split("\n\n")
@@ -672,7 +681,7 @@ test("API supports resuming and cancelling a run", async () => {
     assert.ok(eventsPayload.events.some((event) => /Cancelled Codex session/.test(event.summary)));
 
     const cleanupPreviewResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/preview`);
-    assert.equal(cleanupPreviewResponse.status, 200);
+    await assertJsonResponseStatus(cleanupPreviewResponse, 200);
     const cleanupPreviewPayload = (await cleanupPreviewResponse.json()) as {
       cleanupPlan: {
         executionId: string;
@@ -695,7 +704,7 @@ test("API supports resuming and cancelling a run", async () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ confirm: "cleanup" }),
     });
-    assert.equal(refusedCleanupResponse.status, 200);
+    await assertJsonResponseStatus(refusedCleanupResponse, 200);
     const refusedCleanupPayload = (await refusedCleanupResponse.json()) as {
       cleanupResult: { status: string; applied: boolean; refusalReasons: string[] };
       expectedConfirmation: string;
@@ -725,7 +734,7 @@ test("API supports resuming and cancelling a run", async () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ confirm: `apply workspace cleanup for ${runPayload.run.id}` }),
     });
-    assert.equal(appliedCleanupResponse.status, 200);
+    await assertJsonResponseStatus(appliedCleanupResponse, 200);
     const appliedCleanupPayload = (await appliedCleanupResponse.json()) as {
       cleanupResult: { status: string; applied: boolean; operations: Array<{ status: string }> };
     };
