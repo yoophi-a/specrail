@@ -22,8 +22,13 @@ test("SpecRailTerminalApiClient loads a summary snapshot", async () => {
   const client = new SpecRailTerminalApiClient("http://example.test", async (input) => {
     const url = String(input);
 
+    if (url.endsWith("/projects")) {
+      return new Response(JSON.stringify({ projects: [{ id: "project-1", name: "SpecRail" }] }), { status: 200 });
+    }
+
     if (url.includes("/tracks?page=")) {
-      return new Response(JSON.stringify({ tracks: [{ id: "track-1", title: "Terminal shell", status: "ready" }] }), { status: 200 });
+      assert.ok(url.includes("projectId=project-1"));
+      return new Response(JSON.stringify({ tracks: [{ id: "track-1", projectId: "project-1", title: "Terminal shell", status: "ready" }] }), { status: 200 });
     }
 
     if (url.includes("/runs?page=")) {
@@ -35,7 +40,8 @@ test("SpecRailTerminalApiClient loads a summary snapshot", async () => {
     throw new Error(`Unexpected request: ${url}`);
   });
 
-  const summary = await client.loadSummary();
+  const summary = await client.loadSummary("project-1");
+  assert.equal(summary.projects?.[0]?.id, "project-1");
   assert.equal(summary.tracks[0]?.id, "track-1");
   assert.equal(summary.runs[0]?.id, "run-1");
 });
@@ -389,7 +395,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
 
   assert.match(rendered, /SpecRail Terminal/);
   assert.match(rendered, /\[TRACKS\]/);
-  assert.match(rendered, /> track-1 \| ready \| high \| Terminal shell/);
+  assert.match(rendered, /> track-1 \| project\? \| ready \| high \| Terminal shell/);
   assert.match(rendered, /planning session: plan-1/);
   assert.match(rendered, /pending planning changes: yes/);
   assert.match(rendered, /execution context signal: new approvals needed before new runs/);
@@ -401,7 +407,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, h\/l artifact, \[\/\] revision, v propose, f run filter, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, h\/l artifact, \[\/\] revision, v propose, f run filter, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
 });
 
 test("renderAppShell renders run event monitor details", () => {
@@ -764,8 +770,13 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
     requests.push(`${request.method ?? "GET"} ${request.url ?? "/"}`);
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
+    if (request.method === "GET" && url.pathname === "/projects") {
+      sendJson(response, { projects: [{ id: "project-default", name: "SpecRail" }] });
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/tracks") {
-      sendJson(response, { tracks: [{ id: "track-cleanup-a", title: "Cleanup track", status: "ready" }] });
+      sendJson(response, { tracks: [{ id: "track-cleanup-a", projectId: "project-default", title: "Cleanup track", status: "ready" }] });
       return;
     }
 
