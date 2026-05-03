@@ -19,7 +19,9 @@ import {
   operatorUiRunResumePath,
   operatorUiTrackCreatePath,
   operatorUiTrackUpdatePath,
+  renderOperatorUiClientScript,
   renderOperatorUiHtml,
+  renderOperatorUiStyleCss,
 } from "../operator-ui.js";
 
 test("operator UI helpers escape metadata and previews", () => {
@@ -46,10 +48,23 @@ test("operator UI helpers build encoded action URLs", () => {
   assert.equal(operatorUiRunEventStreamPath("run/1"), "/runs/run%2F1/events/stream");
 });
 
+test("operator UI renderer exposes style and client script helpers", () => {
+  const style = renderOperatorUiStyleCss();
+  const script = renderOperatorUiClientScript();
+
+  assert.match(style, /\.detail-grid/);
+  assert.match(style, /\.artifact-preview/);
+  assert.match(script, /async function withAction/);
+  assert.match(script, /new EventSource/);
+  assert.match(script, /workspace-cleanup\/apply/);
+});
+
 test("operator UI shell keeps hosted action and stream wiring", () => {
   const body = renderOperatorUiHtml();
 
   assert.match(body, /SpecRail Operator/);
+  assert.match(body, /<style>\n/);
+  assert.match(body, /<script type="module">\n/);
   assert.match(body, /id="project-create"/);
   assert.match(body, /id="project-update"/);
   assert.match(body, /id="track-create"/);
@@ -69,6 +84,7 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
   assert.match(body, /workspace-cleanup\/preview/);
   assert.match(body, /workspace-cleanup\/apply/);
   assert.match(body, /new EventSource/);
+  assert.match(body, /\.artifact-preview/);
   assert.match(body, /events\/stream/);
   assert.match(body, /async function withAction/);
   assert.match(body, /function errorMessage/);

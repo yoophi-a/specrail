@@ -81,15 +81,8 @@ export function operatorUiRunEventStreamPath(runId: string): string {
   return `/runs/${encodeURIComponent(runId)}/events/stream`;
 }
 
-export function renderOperatorUiHtml(): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SpecRail Operator</title>
-  <style>
-    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+export function renderOperatorUiStyleCss(): string {
+  return `:root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { margin: 0; padding: 2rem; background: Canvas; color: CanvasText; }
     main { max-width: 1120px; margin: 0 auto; display: grid; gap: 1rem; }
     header { display: flex; align-items: end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
@@ -108,32 +101,11 @@ export function renderOperatorUiHtml(): string {
     .detail-grid dt { font-weight: 700; }
     .artifact-preview { max-height: 12rem; overflow: auto; padding: 0.65rem; border-radius: 0.5rem; background: color-mix(in srgb, Canvas 88%, CanvasText 12%); white-space: pre-wrap; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-  </style>
-</head>
-<body>
-  <main>
-    <header>
-      <div>
-        <h1>SpecRail Operator</h1>
-        <p class="muted">Thin hosted slice over the existing HTTP/SSE API.</p>
-      </div>
-      <button id="refresh">Refresh</button>
-    </header>
-    <section>
-      <label>Project scope
-        <select id="project-scope"><option value="">All projects</option></select>
-      </label>
-      <p><button id="project-create">Create project</button> <button id="project-update">Update selected project</button> <button id="track-create">Create track</button></p>
-      <p id="status" class="muted">Loading…</p>
-    </section>
-    <div class="grid">
-      <section><h2>Tracks</h2><ul id="tracks"></ul></section>
-      <section><h2>Runs</h2><ul id="runs"></ul></section>
-    </div>
-    <section><h2>Selected detail</h2><div id="detail" class="muted">Select a track or run.</div></section>
-  </main>
-  <script type="module">
-    const scope = document.querySelector('#project-scope');
+`;
+}
+
+export function renderOperatorUiClientScript(): string {
+  return `const scope = document.querySelector('#project-scope');
     const status = document.querySelector('#status');
     const tracks = document.querySelector('#tracks');
     const runs = document.querySelector('#runs');
@@ -574,6 +546,44 @@ export function renderOperatorUiHtml(): string {
     scope.addEventListener('change', load);
     refresh.addEventListener('click', load);
     load().catch((error) => { status.textContent = error instanceof Error ? error.message : String(error); });
+`;
+}
+
+export function renderOperatorUiHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SpecRail Operator</title>
+  <style>
+${renderOperatorUiStyleCss()}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>SpecRail Operator</h1>
+        <p class="muted">Thin hosted slice over the existing HTTP/SSE API.</p>
+      </div>
+      <button id="refresh">Refresh</button>
+    </header>
+    <section>
+      <label>Project scope
+        <select id="project-scope"><option value="">All projects</option></select>
+      </label>
+      <p><button id="project-create">Create project</button> <button id="project-update">Update selected project</button> <button id="track-create">Create track</button></p>
+      <p id="status" class="muted">Loading…</p>
+    </section>
+    <div class="grid">
+      <section><h2>Tracks</h2><ul id="tracks"></ul></section>
+      <section><h2>Runs</h2><ul id="runs"></ul></section>
+    </div>
+    <section><h2>Selected detail</h2><div id="detail" class="muted">Select a track or run.</div></section>
+  </main>
+  <script type="module">
+${renderOperatorUiClientScript()}
   </script>
 </body>
 </html>`;
