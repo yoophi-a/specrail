@@ -81,6 +81,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - loads projects, tracks, and runs from the same HTTP API
   - project selection filters tracks via `GET /tracks?projectId=...`
   - selecting a track shows artifact/planning context previews from `GET /tracks/:trackId`
+  - selected tracks can propose spec/plan/tasks revisions through the existing `POST /tracks/:trackId/artifacts/:artifact` endpoint
   - selecting a track can approve/reject pending artifact approval requests through the existing `POST /approval-requests/:approvalRequestId/(approve|reject)` endpoints
   - selecting a run shows run metadata and recent event summaries from `GET /runs/:runId` plus `GET /runs/:runId/events`
   - selected tracks can start runs through the existing `POST /runs` endpoint
