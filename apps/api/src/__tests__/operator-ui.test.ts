@@ -163,6 +163,27 @@ test("operator UI client harness filters tracks by project scope", async () => {
   assert.equal(elements.get("#status")?.textContent, "Loaded 2 projects, 2 tracks, and 0 runs.");
 });
 
+test("operator UI client harness surfaces selected-detail load failures", async () => {
+  const { detail, elements, createTrack, failPath, loadInitialState, startRun } = createHostedUiClientHarness();
+  await loadInitialState();
+  await createTrack({ title: "Failure Detail Track" });
+
+  failPath("/tracks/track-1", "track detail unavailable");
+  await elements.get("#tracks")!.children[0]!.click();
+  await flushClientPromises();
+
+  assert.equal(detail.className, "muted");
+  assert.equal(detail.textContent, "track detail unavailable");
+
+  failPath("/runs/run-1", "run detail unavailable");
+  await startRun("Start run before failure check");
+  await elements.get("#runs")!.children[0]!.click();
+  await flushClientPromises();
+
+  assert.equal(detail.className, "muted");
+  assert.equal(detail.textContent, "run detail unavailable");
+});
+
 test("operator UI client harness submits selected-track detail actions", async () => {
   const { calls, createTrack, detail, loadInitialState, startRun } = createHostedUiClientHarness();
   await loadInitialState();

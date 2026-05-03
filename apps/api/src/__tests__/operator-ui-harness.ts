@@ -176,6 +176,7 @@ export function createHostedUiClientHarness() {
   const runs: Array<Record<string, unknown>> = [];
   const calls: HostedUiFetchCall[] = [];
   const eventSources: FakeEventSource[] = [];
+  const failedPaths = new Map<string, string>();
   let projectCounter = 3;
   let trackCounter = 1;
   let runCounter = 1;
@@ -196,6 +197,11 @@ export function createHostedUiClientHarness() {
     const method = init?.method ?? "GET";
     const body = init?.body === undefined ? undefined : JSON.parse(init.body);
     calls.push({ path, method, body });
+
+    const failureMessage = failedPaths.get(`${method} ${path}`) ?? failedPaths.get(path);
+    if (failureMessage !== undefined) {
+      return { ok: false, text: async () => failureMessage, json: async () => ({ message: failureMessage }) };
+    }
 
     if (path === "/projects" && method === "GET") {
       return { ok: true, json: async () => ({ projects }) };
@@ -308,6 +314,10 @@ export function createHostedUiClientHarness() {
     await flushClientPromises();
   }
 
+  function failPath(path: string, message: string, method = "GET"): void {
+    failedPaths.set(`${method} ${path}`, message);
+  }
+
   async function createTrack(input: { title: string; description?: string; priority?: string }): Promise<void> {
     elements.get("#track-title")!.value = input.title;
     elements.get("#track-description")!.value = input.description ?? "";
@@ -338,7 +348,7 @@ export function createHostedUiClientHarness() {
     await flushClientPromises();
   }
 
-  return { calls, detail, elements, eventSources, scope, createTrack, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, selectProject, startRun };
+  return { calls, detail, elements, eventSources, scope, createTrack, failPath, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, selectProject, startRun };
 }
 
 export async function flushClientPromises(): Promise<void> {
