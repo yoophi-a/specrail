@@ -91,8 +91,9 @@ export function renderOperatorUiStyleCss(): string {
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
     label { display: grid; gap: 0.35rem; font-weight: 600; }
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; align-items: end; }
-    select, input, button { font: inherit; padding: 0.5rem 0.65rem; border-radius: 0.5rem; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
-    input { background: Canvas; color: CanvasText; }
+    select, input, textarea, button { font: inherit; padding: 0.5rem 0.65rem; border-radius: 0.5rem; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
+    input, textarea { background: Canvas; color: CanvasText; }
+    textarea { min-height: 5rem; resize: vertical; }
     button { cursor: pointer; }
     ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
     li { padding: 0.65rem; border-radius: 0.5rem; background: color-mix(in srgb, Canvas 90%, CanvasText 10%); }
@@ -249,8 +250,8 @@ export function renderOperatorUiClientScript(): string {
           ['Updated', track.updatedAt],
         ])
         + '<h3>Track workflow</h3><button data-track-update="workflow">Update track workflow</button>'
-        + '<h3>Planning</h3><button data-planning-session-create="' + escapeHtml(track.id) + '">Create planning session</button> <button data-planning-message-append="' + escapeHtml(planning.planningSessionId ?? '') + '">Append planning message</button>'
-        + '<h3>Artifact proposals</h3><button data-artifact-proposal="spec">Propose spec</button> <button data-artifact-proposal="plan">Propose plan</button> <button data-artifact-proposal="tasks">Propose tasks</button>'
+        + '<h3>Planning</h3><div class="form-grid"><label>Session status <select id="planning-session-status"><option value="active">active</option><option value="waiting_user">waiting_user</option><option value="waiting_agent">waiting_agent</option><option value="approved">approved</option><option value="archived">archived</option></select></label><p><button data-planning-session-create="' + escapeHtml(track.id) + '">Create planning session</button></p><label>Author <select id="planning-message-author"><option value="user">user</option><option value="agent">agent</option><option value="system">system</option></select></label><label>Kind <select id="planning-message-kind"><option value="message">message</option><option value="question">question</option><option value="decision">decision</option><option value="note">note</option></select></label><label>Related artifact <select id="planning-message-artifact"><option value="">none</option><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label><label>Message <textarea id="planning-message-body" placeholder="Planning message"></textarea></label><p><button data-planning-message-append="' + escapeHtml(planning.planningSessionId ?? '') + '">Append planning message</button></p></div>'
+        + '<h3>Artifact proposals</h3><div class="form-grid"><label>Artifact <select id="artifact-proposal-kind"><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label><label>Summary <input id="artifact-proposal-summary" value="Proposed from hosted operator UI" /></label><label>Content <textarea id="artifact-proposal-content" placeholder="New artifact content"></textarea></label><p><button data-artifact-proposal="inline">Propose artifact</button></p></div>'
         + '<h3>Run lifecycle</h3><button data-run-start="' + escapeHtml(track.id) + '">Start run</button>'
         + artifactApprovalActions(artifactPayloads)
         + preview('Spec preview', payload.artifacts?.spec)
@@ -277,7 +278,7 @@ export function renderOperatorUiClientScript(): string {
       });
       detail.querySelector('[data-planning-session-create]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
-        const planningStatus = window.prompt('Planning session status (active, waiting_user, waiting_agent, approved, archived)', 'active') ?? 'active';
+        const planningStatus = detail.querySelector('#planning-session-status')?.value || 'active';
         await withAction(button, 'Creating planning session for ' + track.id + '…', async () => {
           await postJson('/tracks/' + encodeURIComponent(track.id) + '/planning-sessions', { status: planningStatus });
           await loadTrackDetail(track.id);
@@ -290,14 +291,14 @@ export function renderOperatorUiClientScript(): string {
           status.textContent = 'Create a planning session before appending a message for ' + track.id + '.';
           return;
         }
-        const body = window.prompt('Planning message body for ' + track.id);
+        const body = detail.querySelector('#planning-message-body')?.value.trim();
         if (!body) {
-          status.textContent = 'Planning message cancelled for ' + track.id + '.';
+          status.textContent = 'Planning message body is required for ' + track.id + '.';
           return;
         }
-        const authorType = window.prompt('Planning message author (user, agent, system)', 'user') ?? 'user';
-        const kind = window.prompt('Planning message kind (message, question, decision, note)', 'message') ?? 'message';
-        const relatedArtifact = window.prompt('Related artifact (spec, plan, tasks; blank for none)', '') || undefined;
+        const authorType = detail.querySelector('#planning-message-author')?.value || 'user';
+        const kind = detail.querySelector('#planning-message-kind')?.value || 'message';
+        const relatedArtifact = detail.querySelector('#planning-message-artifact')?.value || undefined;
         await withAction(button, 'Appending planning message for ' + track.id + '…', async () => {
           await postJson('/planning-sessions/' + encodeURIComponent(planningSessionId) + '/messages', { authorType, kind, body, relatedArtifact });
           await loadTrackDetail(track.id);
@@ -305,13 +306,13 @@ export function renderOperatorUiClientScript(): string {
       });
       detail.querySelectorAll('[data-artifact-proposal]').forEach((button) => {
         button.addEventListener('click', async () => {
-          const artifact = button.getAttribute('data-artifact-proposal');
-          const content = window.prompt('New ' + artifact + ' content for ' + track.id, payload.artifacts?.[artifact] ?? '');
+          const artifact = detail.querySelector('#artifact-proposal-kind')?.value || 'spec';
+          const content = detail.querySelector('#artifact-proposal-content')?.value.trim();
           if (!content) {
-            status.textContent = 'Artifact proposal cancelled for ' + artifact + '.';
+            status.textContent = 'Artifact proposal content is required for ' + artifact + '.';
             return;
           }
-          const summaryText = window.prompt('Proposal summary for ' + artifact, 'Proposed from hosted operator UI') ?? undefined;
+          const summaryText = detail.querySelector('#artifact-proposal-summary')?.value.trim() || undefined;
           await withAction(button, 'Proposing ' + artifact + ' revision for ' + track.id + '…', async () => {
             await postJson('/tracks/' + encodeURIComponent(track.id) + '/artifacts/' + artifact, { content, summary: summaryText, createdBy: 'user' });
             await loadTrackDetail(track.id);
