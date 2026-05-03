@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   operatorUiApprovalDecisionPath,
+  operatorUiArtifactProposalPath,
   operatorUiCleanupApplyPath,
   operatorUiCleanupPreviewPath,
   operatorUiEscapeHtml,
@@ -24,6 +25,7 @@ test("operator UI helpers escape metadata and previews", () => {
 
 test("operator UI helpers build encoded action URLs", () => {
   assert.equal(operatorUiApprovalDecisionPath("approval/request 1", "approve"), "/approval-requests/approval%2Frequest%201/approve");
+  assert.equal(operatorUiArtifactProposalPath("track/1", "spec"), "/tracks/track%2F1/artifacts/spec");
   assert.equal(operatorUiRunCreatePath(), "/runs");
   assert.equal(operatorUiRunResumePath("run/1"), "/runs/run%2F1/resume");
   assert.equal(operatorUiRunCancelPath("run/1"), "/runs/run%2F1/cancel");
@@ -37,6 +39,9 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
 
   assert.match(body, /SpecRail Operator/);
   assert.match(body, /data-approval-id/);
+  assert.match(body, /data-artifact-proposal/);
+  assert.match(body, /Propose spec/);
+  assert.match(body, /createdBy: 'user'/);
   assert.match(body, /data-run-start/);
   assert.match(body, /data-run-resume/);
   assert.match(body, /data-run-cancel/);

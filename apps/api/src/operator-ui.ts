@@ -29,6 +29,10 @@ export function operatorUiApprovalDecisionPath(approvalRequestId: string, decisi
   return `/approval-requests/${encodeURIComponent(approvalRequestId)}/${decision}`;
 }
 
+export function operatorUiArtifactProposalPath(trackId: string, artifact: "spec" | "plan" | "tasks"): string {
+  return `/tracks/${encodeURIComponent(trackId)}/artifacts/${artifact}`;
+}
+
 export function operatorUiRunCreatePath(): string {
   return "/runs";
 }
@@ -187,11 +191,33 @@ export function renderOperatorUiHtml(): string {
           ['Pending planning changes', planning.hasPendingChanges ? 'yes' : 'no'],
           ['Updated', track.updatedAt],
         ])
+        + '<h3>Artifact proposals</h3><button data-artifact-proposal="spec">Propose spec</button> <button data-artifact-proposal="plan">Propose plan</button> <button data-artifact-proposal="tasks">Propose tasks</button>'
         + '<h3>Run lifecycle</h3><button data-run-start="' + escapeHtml(track.id) + '">Start run</button>'
         + artifactApprovalActions(artifactPayloads)
         + preview('Spec preview', payload.artifacts?.spec)
         + preview('Plan preview', payload.artifacts?.plan)
         + preview('Tasks preview', payload.artifacts?.tasks);
+      detail.querySelectorAll('[data-artifact-proposal]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const artifact = button.getAttribute('data-artifact-proposal');
+          const content = window.prompt('New ' + artifact + ' content for ' + track.id, payload.artifacts?.[artifact] ?? '');
+          if (!content) {
+            status.textContent = 'Artifact proposal cancelled for ' + artifact + '.';
+            return;
+          }
+          const summaryText = window.prompt('Proposal summary for ' + artifact, 'Proposed from hosted operator UI') ?? undefined;
+          button.disabled = true;
+          try {
+            status.textContent = 'Proposing ' + artifact + ' revision for ' + track.id + '…';
+            await postJson('/tracks/' + encodeURIComponent(track.id) + '/artifacts/' + artifact, { content, summary: summaryText, createdBy: 'user' });
+            await loadTrackDetail(track.id);
+            status.textContent = 'Proposed ' + artifact + ' revision for ' + track.id + '.';
+          } catch (error) {
+            button.disabled = false;
+            status.textContent = error instanceof Error ? error.message : String(error);
+          }
+        });
+      });
       detail.querySelector('[data-run-start]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
         const promptText = window.prompt('Prompt for the new run on ' + track.id, 'Implement the selected track.');
