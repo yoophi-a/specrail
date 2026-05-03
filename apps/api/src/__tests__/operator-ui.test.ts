@@ -15,6 +15,8 @@ import {
   operatorUiRunCreatePath,
   operatorUiRunEventStreamPath,
   operatorUiRunResumePath,
+  operatorUiTrackCreatePath,
+  operatorUiTrackUpdatePath,
   renderOperatorUiHtml,
 } from "../operator-ui.js";
 
@@ -28,6 +30,8 @@ test("operator UI helpers escape metadata and previews", () => {
 test("operator UI helpers build encoded action URLs", () => {
   assert.equal(operatorUiProjectCreatePath(), "/projects");
   assert.equal(operatorUiProjectUpdatePath("project/1"), "/projects/project%2F1");
+  assert.equal(operatorUiTrackCreatePath(), "/tracks");
+  assert.equal(operatorUiTrackUpdatePath("track/1"), "/tracks/track%2F1");
   assert.equal(operatorUiApprovalDecisionPath("approval/request 1", "approve"), "/approval-requests/approval%2Frequest%201/approve");
   assert.equal(operatorUiArtifactProposalPath("track/1", "spec"), "/tracks/track%2F1/artifacts/spec");
   assert.equal(operatorUiRunCreatePath(), "/runs");
@@ -44,6 +48,8 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
   assert.match(body, /SpecRail Operator/);
   assert.match(body, /id="project-create"/);
   assert.match(body, /id="project-update"/);
+  assert.match(body, /id="track-create"/);
+  assert.match(body, /data-track-update/);
   assert.match(body, /method: 'PATCH'/);
   assert.match(body, /defaultWorkflowPolicy/);
   assert.match(body, /defaultPlanningSystem/);

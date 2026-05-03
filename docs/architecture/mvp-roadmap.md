@@ -90,6 +90,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI loads project, track, and run summary state from the existing HTTP API
 - hosted UI can create/update projects through existing project APIs
 - hosted UI project selection filters tracks via the same `GET /tracks?projectId=...` contract used by thin clients
+- hosted UI can create tracks and update selected-track workflow/approval state through existing track APIs
 - hosted UI selected-track detail shows artifact/planning context previews from existing track detail APIs
 - hosted UI selected-track detail can propose spec/plan/tasks revisions through existing artifact proposal APIs
 - hosted UI selected-track detail can approve/reject pending artifact requests through existing approval endpoints

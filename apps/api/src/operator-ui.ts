@@ -33,6 +33,14 @@ export function operatorUiProjectUpdatePath(projectId: string): string {
   return `/projects/${encodeURIComponent(projectId)}`;
 }
 
+export function operatorUiTrackCreatePath(): string {
+  return "/tracks";
+}
+
+export function operatorUiTrackUpdatePath(trackId: string): string {
+  return `/tracks/${encodeURIComponent(trackId)}`;
+}
+
 export function operatorUiApprovalDecisionPath(approvalRequestId: string, decision: "approve" | "reject"): string {
   return `/approval-requests/${encodeURIComponent(approvalRequestId)}/${decision}`;
 }
@@ -107,7 +115,7 @@ export function renderOperatorUiHtml(): string {
       <label>Project scope
         <select id="project-scope"><option value="">All projects</option></select>
       </label>
-      <p><button id="project-create">Create project</button> <button id="project-update">Update selected project</button></p>
+      <p><button id="project-create">Create project</button> <button id="project-update">Update selected project</button> <button id="track-create">Create track</button></p>
       <p id="status" class="muted">Loading…</p>
     </section>
     <div class="grid">
@@ -125,6 +133,7 @@ export function renderOperatorUiHtml(): string {
     const refresh = document.querySelector('#refresh');
     const projectCreate = document.querySelector('#project-create');
     const projectUpdate = document.querySelector('#project-update');
+    const trackCreate = document.querySelector('#track-create');
     let activeEventStream = null;
     let projectsById = new Map();
 
@@ -207,12 +216,38 @@ export function renderOperatorUiHtml(): string {
           ['Pending planning changes', planning.hasPendingChanges ? 'yes' : 'no'],
           ['Updated', track.updatedAt],
         ])
+        + '<h3>Track workflow</h3><button data-track-update="workflow">Update track workflow</button>'
         + '<h3>Artifact proposals</h3><button data-artifact-proposal="spec">Propose spec</button> <button data-artifact-proposal="plan">Propose plan</button> <button data-artifact-proposal="tasks">Propose tasks</button>'
         + '<h3>Run lifecycle</h3><button data-run-start="' + escapeHtml(track.id) + '">Start run</button>'
         + artifactApprovalActions(artifactPayloads)
         + preview('Spec preview', payload.artifacts?.spec)
         + preview('Plan preview', payload.artifacts?.plan)
         + preview('Tasks preview', payload.artifacts?.tasks);
+      detail.querySelector('[data-track-update]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const statusInput = window.prompt('Track status for ' + track.id + ' (new, planned, ready, in_progress, blocked, review, done, failed)', track.status ?? 'new');
+        if (!statusInput) {
+          status.textContent = 'Track update cancelled for ' + track.id + '.';
+          return;
+        }
+        const specStatusInput = window.prompt('Spec status for ' + track.id + ' (draft, pending, approved, rejected)', track.specStatus ?? 'draft');
+        const planStatusInput = window.prompt('Plan status for ' + track.id + ' (draft, pending, approved, rejected)', track.planStatus ?? 'draft');
+        button.disabled = true;
+        try {
+          status.textContent = 'Updating track ' + track.id + '…';
+          await patchJson('/tracks/' + encodeURIComponent(track.id), {
+            status: statusInput,
+            specStatus: specStatusInput || undefined,
+            planStatus: planStatusInput || undefined,
+          });
+          await load();
+          await loadTrackDetail(track.id);
+          status.textContent = 'Updated track ' + track.id + '.';
+        } catch (error) {
+          button.disabled = false;
+          status.textContent = error instanceof Error ? error.message : String(error);
+        }
+      });
       detail.querySelectorAll('[data-artifact-proposal]').forEach((button) => {
         button.addEventListener('click', async () => {
           const artifact = button.getAttribute('data-artifact-proposal');
@@ -467,6 +502,29 @@ export function renderOperatorUiHtml(): string {
         status.textContent = 'Created project ' + payload.project.id + '.';
       } catch (error) {
         projectCreate.disabled = false;
+        status.textContent = error instanceof Error ? error.message : String(error);
+      }
+    });
+
+    trackCreate.addEventListener('click', async () => {
+      const title = window.prompt('New track title');
+      if (!title) {
+        status.textContent = 'Track creation cancelled.';
+        return;
+      }
+      const description = window.prompt('New track description', '') ?? '';
+      const priority = window.prompt('Track priority (low, medium, high)', 'medium') ?? 'medium';
+      const projectId = scope.value || undefined;
+      trackCreate.disabled = true;
+      try {
+        status.textContent = 'Creating track ' + title + '…';
+        const payload = await postJson('/tracks', { projectId, title, description, priority });
+        await load();
+        await loadTrackDetail(payload.track.id);
+        trackCreate.disabled = false;
+        status.textContent = 'Created track ' + payload.track.id + '.';
+      } catch (error) {
+        trackCreate.disabled = false;
         status.textContent = error instanceof Error ? error.message : String(error);
       }
     });
