@@ -108,12 +108,12 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI destructive run cancel and workspace cleanup apply flows use in-page confirmation controls
 - hosted UI tests guard against reintroducing browser-native prompt/confirm dialogs and group shell coverage by action area without adding a frontend build pipeline
 - hosted UI markup exposes stable `data-control-group` selectors for major action areas
-- hosted UI client action harness exercises top-level project/track, project-scope filtering, form validation guardrails, selected-detail failure states, selected-track, artifact approval, selected-run click handlers, and live event stream lifecycle without a browser dependency
+- hosted UI client action harness exercises top-level project/track, project-scope filtering, form validation guardrails, action failure states, selected-detail failure states, selected-track, artifact approval, selected-run click handlers, and live event stream lifecycle without a browser dependency
 - hosted UI fake DOM/fetch harness is isolated in a focused API test helper with named setup-flow methods
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
 ## Suggested issue framing from the current baseline
 
-1. **Hosted operator UI action failure harness**
-   - add no-dependency client coverage for failed POST/PATCH actions and user-visible status errors while preserving button re-enable behavior.
+1. **Hosted operator UI cleanup failure harness**
+   - add no-dependency client coverage for workspace cleanup preview/apply refusals and user-visible status/detail behavior.

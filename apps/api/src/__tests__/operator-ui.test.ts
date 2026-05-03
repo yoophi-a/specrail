@@ -224,6 +224,30 @@ test("operator UI client harness blocks invalid form submissions", async () => {
   assert.equal(calls.some((call) => call.method === "POST" && call.path === "/tracks/track-1/artifacts/spec"), false);
 });
 
+test("operator UI client harness surfaces failed mutating actions", async () => {
+  const { createTrack, detail, elements, failPath, loadInitialState, selectProject } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await selectProject("project-1");
+  elements.get("#project-name")!.value = "Project One Update";
+  failPath("/projects/project-1", "project update refused", "PATCH");
+  await elements.get("#project-update")!.click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "project update refused");
+  assert.equal(elements.get("#project-update")!.disabled, false);
+
+  await createTrack({ title: "Action Failure Track" });
+  detail.querySelector("#track-workflow-status").value = "review";
+  failPath("/tracks/track-1", "track update refused", "PATCH");
+  const trackUpdateButton = detail.querySelector("[data-track-update]");
+  await trackUpdateButton.click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "track update refused");
+  assert.equal(trackUpdateButton.disabled, false);
+});
+
 test("operator UI client harness submits selected-track detail actions", async () => {
   const { calls, createTrack, detail, loadInitialState, startRun } = createHostedUiClientHarness();
   await loadInitialState();
