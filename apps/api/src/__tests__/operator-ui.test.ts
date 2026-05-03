@@ -184,6 +184,46 @@ test("operator UI client harness surfaces selected-detail load failures", async 
   assert.equal(detail.textContent, "run detail unavailable");
 });
 
+test("operator UI client harness blocks invalid form submissions", async () => {
+  const { calls, createTrack, detail, elements, loadInitialState } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await elements.get("#project-create")!.click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Project name is required.");
+  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/projects"), false);
+
+  await elements.get("#track-create")!.click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Track title is required.");
+  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/tracks"), false);
+
+  await createTrack({ title: "Validation Track" });
+  const callsBeforeSelectedDetailValidation = calls.length;
+
+  await detail.querySelector("[data-planning-message-append]").click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Planning message body is required for track-1.");
+  assert.equal(calls.length, callsBeforeSelectedDetailValidation);
+
+  detail.querySelector("#run-start-prompt").value = "";
+  await detail.querySelector("[data-run-start]").click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Run start prompt is required for track-1.");
+  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/runs"), false);
+
+  detail.querySelector("#artifact-proposal-content").value = "";
+  await detail.querySelector("[data-artifact-proposal]").click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Artifact proposal content is required for spec.");
+  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/tracks/track-1/artifacts/spec"), false);
+});
+
 test("operator UI client harness submits selected-track detail actions", async () => {
   const { calls, createTrack, detail, loadInitialState, startRun } = createHostedUiClientHarness();
   await loadInitialState();
