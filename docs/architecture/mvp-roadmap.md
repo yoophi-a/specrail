@@ -115,5 +115,5 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **API run lifecycle event summary contract cleanup**
-   - document or refine which execution events are guaranteed at resume/cancel response boundaries versus eventually appended by adapters.
+1. **Run lifecycle event contract enforcement tests**
+   - add focused service-level tests for monotonic run summary recomputation across resume/cancel and future provider event fidelity changes.
