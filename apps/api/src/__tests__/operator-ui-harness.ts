@@ -233,7 +233,37 @@ export function createHostedUiClientHarness() {
     EventSource: undefined,
   });
 
-  return { calls, elements, scope };
+  const detail = elements.get("#detail")!;
+
+  async function loadInitialState(): Promise<void> {
+    await flushClientPromises();
+  }
+
+  async function createTrack(input: { title: string; description?: string; priority?: string }): Promise<void> {
+    elements.get("#track-title")!.value = input.title;
+    elements.get("#track-description")!.value = input.description ?? "";
+    elements.get("#track-priority")!.value = input.priority ?? "medium";
+    await elements.get("#track-create")!.click();
+    await flushClientPromises();
+  }
+
+  async function startRun(prompt: string): Promise<void> {
+    detail.querySelector("#run-start-prompt").value = prompt;
+    await detail.querySelector("[data-run-start]").click();
+    await flushClientPromises();
+  }
+
+  async function requestCleanupPreview(): Promise<void> {
+    await detail.querySelector("[data-cleanup-preview]").click();
+    await flushClientPromises();
+  }
+
+  async function requestCleanupConfirmation(): Promise<void> {
+    await detail.querySelector("[data-cleanup-request]").click();
+    await flushClientPromises();
+  }
+
+  return { calls, detail, elements, scope, createTrack, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun };
 }
 
 export async function flushClientPromises(): Promise<void> {

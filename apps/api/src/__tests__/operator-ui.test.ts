@@ -88,8 +88,8 @@ test("operator UI client script stays on in-page controls instead of native dial
 });
 
 test("operator UI client harness submits top-level project and track actions", async () => {
-  const { calls, elements, scope } = createHostedUiClientHarness();
-  await flushClientPromises();
+  const { calls, createTrack, elements, loadInitialState, scope } = createHostedUiClientHarness();
+  await loadInitialState();
 
   elements.get("#project-name")!.value = "Project Two";
   elements.get("#project-repo-url")!.value = "https://example.com/two";
@@ -123,11 +123,7 @@ test("operator UI client harness submits top-level project and track actions", a
     defaultPlanningSystem: "speckit",
   });
 
-  elements.get("#track-title")!.value = "Track One";
-  elements.get("#track-description")!.value = "Implement track one";
-  elements.get("#track-priority")!.value = "high";
-  await elements.get("#track-create")!.click();
-  await flushClientPromises();
+  await createTrack({ title: "Track One", description: "Implement track one", priority: "high" });
 
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/tracks")?.body, {
     projectId: scope.value,
@@ -140,15 +136,10 @@ test("operator UI client harness submits top-level project and track actions", a
 });
 
 test("operator UI client harness submits selected-track detail actions", async () => {
-  const { calls, elements } = createHostedUiClientHarness();
-  const detail = elements.get("#detail")!;
-  await flushClientPromises();
+  const { calls, createTrack, detail, loadInitialState, startRun } = createHostedUiClientHarness();
+  await loadInitialState();
 
-  elements.get("#track-title")!.value = "Selected Track";
-  elements.get("#track-description")!.value = "Exercise selected-track controls";
-  elements.get("#track-priority")!.value = "medium";
-  await elements.get("#track-create")!.click();
-  await flushClientPromises();
+  await createTrack({ title: "Selected Track", description: "Exercise selected-track controls" });
 
   detail.querySelector("#track-workflow-status").value = "review";
   detail.querySelector("#track-workflow-spec-status").value = "approved";
@@ -196,9 +187,7 @@ test("operator UI client harness submits selected-track detail actions", async (
     createdBy: "user",
   });
 
-  detail.querySelector("#run-start-prompt").value = "Implement selected track now.";
-  await detail.querySelector("[data-run-start]").click();
-  await flushClientPromises();
+  await startRun("Implement selected track now.");
 
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs")?.body, {
     trackId: "track-1",
@@ -207,17 +196,11 @@ test("operator UI client harness submits selected-track detail actions", async (
 });
 
 test("operator UI client harness submits selected-run detail actions", async () => {
-  const { calls, elements } = createHostedUiClientHarness();
-  const detail = elements.get("#detail")!;
-  await flushClientPromises();
+  const { calls, createTrack, detail, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun } = createHostedUiClientHarness();
+  await loadInitialState();
 
-  elements.get("#track-title")!.value = "Run Harness Track";
-  elements.get("#track-description")!.value = "Create a run for selected-run controls";
-  await elements.get("#track-create")!.click();
-  await flushClientPromises();
-  detail.querySelector("#run-start-prompt").value = "Start run for harness.";
-  await detail.querySelector("[data-run-start]").click();
-  await flushClientPromises();
+  await createTrack({ title: "Run Harness Track", description: "Create a run for selected-run controls" });
+  await startRun("Start run for harness.");
 
   detail.querySelector("#run-resume-prompt").value = "Resume with verification.";
   await detail.querySelector("[data-run-resume]").click();
@@ -233,13 +216,11 @@ test("operator UI client harness submits selected-run detail actions", async () 
 
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run-1/cancel")?.body, {});
 
-  await detail.querySelector("[data-cleanup-preview]").click();
-  await flushClientPromises();
+  await requestCleanupPreview();
 
   assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run-1/workspace-cleanup/preview"), true);
 
-  await detail.querySelector("[data-cleanup-request]").click();
-  await flushClientPromises();
+  await requestCleanupConfirmation();
 
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run-1/workspace-cleanup/apply" && (call.body as { confirm?: string }).confirm === "")?.body, {
     confirm: "",
