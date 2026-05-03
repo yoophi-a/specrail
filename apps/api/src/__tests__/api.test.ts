@@ -269,6 +269,73 @@ test("API validates project payloads and returns 404s for missing projects", asy
   });
 });
 
+test("API creates and filters tracks by project", async () => {
+  await withServer(async (baseUrl) => {
+    const createProjectResponse = await fetch(`${baseUrl}/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Project-scoped tracks",
+        defaultPlanningSystem: "speckit",
+      }),
+    });
+    assert.equal(createProjectResponse.status, 201);
+    const createProjectPayload = (await createProjectResponse.json()) as { project: { id: string } };
+
+    const defaultTrackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Default project track",
+        description: "Keeps old clients on the bootstrap project.",
+      }),
+    });
+    assert.equal(defaultTrackResponse.status, 201);
+    const defaultTrackPayload = (await defaultTrackResponse.json()) as {
+      track: { id: string; projectId: string; planningSystem: string };
+    };
+    assert.equal(defaultTrackPayload.track.projectId, "project-default");
+    assert.equal(defaultTrackPayload.track.planningSystem, "native");
+
+    const scopedTrackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: createProjectPayload.project.id,
+        title: "Scoped project track",
+        description: "Uses the requested project metadata.",
+      }),
+    });
+    assert.equal(scopedTrackResponse.status, 201);
+    const scopedTrackPayload = (await scopedTrackResponse.json()) as {
+      track: { id: string; projectId: string; planningSystem: string };
+    };
+    assert.equal(scopedTrackPayload.track.projectId, createProjectPayload.project.id);
+    assert.equal(scopedTrackPayload.track.planningSystem, "speckit");
+
+    const filteredTracksResponse = await fetch(`${baseUrl}/tracks?projectId=${createProjectPayload.project.id}`);
+    assert.equal(filteredTracksResponse.status, 200);
+    const filteredTracksPayload = (await filteredTracksResponse.json()) as { tracks: Array<{ id: string; projectId: string }> };
+    assert.deepEqual(filteredTracksPayload.tracks.map((track) => track.id), [scopedTrackPayload.track.id]);
+
+    const missingProjectTrackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "project-missing",
+        title: "Missing project track",
+        description: "This should fail before artifact creation.",
+      }),
+    });
+    assert.equal(missingProjectTrackResponse.status, 404);
+    const missingProjectTrackPayload = (await missingProjectTrackResponse.json()) as { error: { message: string } };
+    assert.equal(missingProjectTrackPayload.error.message, "Project not found: project-missing");
+
+    const emptyProjectFilterResponse = await fetch(`${baseUrl}/tracks?projectId=`);
+    assert.equal(emptyProjectFilterResponse.status, 422);
+  });
+});
+
 test("API supports creating tracks, planning sessions, messages, starting runs, and listing run events", async () => {
   await withServer(async (baseUrl, paths) => {
     const trackResponse = await fetch(`${baseUrl}/tracks`, {

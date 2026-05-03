@@ -80,8 +80,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ### Milestone D — Project management APIs
 - project create/list/get/update endpoints expose basic project metadata beyond the bootstrap default
-- next: define how tracks are scoped and filtered by project
-- next: add deeper service tests for multi-project behavior once track scoping is introduced
+- track create/list APIs accept project scope while preserving default-project behavior for existing clients
+- next: propagate project selection into thin clients and hosted UI entrypoints
 
 ### Milestone E — Hosted operator UI / GitHub entrypoints
 - introduce a web UI or GitHub-facing entrypoint after the core state contracts stabilize
@@ -90,7 +90,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Scope tracks by project in list/create APIs**
-   - let clients target non-default projects and filter tracks per project.
+1. **Add project selection to thin clients**
+   - let Telegram/terminal/ACP flows opt into non-default project contexts.
 2. **Plan the first hosted operator UI slice**
    - build on the stabilized HTTP/SSE API rather than adding new core behavior.

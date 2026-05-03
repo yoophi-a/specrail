@@ -61,6 +61,7 @@ interface ApiDeps {
 }
 
 interface TrackRequestBody {
+  projectId?: string;
   title: string;
   description: string;
   priority?: "low" | "medium" | "high";
@@ -156,6 +157,7 @@ interface RegisterAttachmentRequestBody {
 }
 
 interface TrackListQuery {
+  projectId?: string;
   status?: TrackStatus;
   priority?: TrackRequestBody["priority"];
   page?: number;
@@ -487,6 +489,10 @@ function assertValidTrackCreateBody(body: TrackRequestBody): void {
 
   if (body.priority !== undefined && !["low", "medium", "high"].includes(body.priority)) {
     details.push({ field: "priority", message: "must be one of low, medium, high" });
+  }
+
+  if (body.projectId !== undefined && !body.projectId.trim()) {
+    details.push({ field: "projectId", message: "must not be empty" });
   }
 
   if (details.length > 0) {
@@ -825,6 +831,10 @@ function assertValidTrackListQuery(query: TrackListQuery): void {
     details.push({ field: "priority", message: "must be one of low, medium, high" });
   }
 
+  if (query.projectId !== undefined && !query.projectId.trim()) {
+    details.push({ field: "projectId", message: "must not be empty" });
+  }
+
   if (query.page !== undefined && (!Number.isInteger(query.page) || query.page < 1)) {
     details.push({ field: "page", message: "must be an integer greater than or equal to 1" });
   }
@@ -1071,6 +1081,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       if (method === "GET" && segments.length === 1 && segments[0] === "tracks") {
         const searchParams = getSearchParams(request);
         const query: TrackListQuery = {
+          projectId: searchParams.get("projectId") ?? undefined,
           status: (searchParams.get("status") ?? undefined) as TrackStatus | undefined,
           priority: (searchParams.get("priority") ?? undefined) as TrackRequestBody["priority"] | undefined,
           page: parsePositiveInteger(searchParams.get("page")),
