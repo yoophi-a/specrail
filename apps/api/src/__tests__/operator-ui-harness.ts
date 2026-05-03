@@ -42,6 +42,12 @@ export class FakeElement {
     }
   }
 
+  public async change(): Promise<void> {
+    for (const listener of this.listeners.get("change") ?? []) {
+      await listener({ currentTarget: this });
+    }
+  }
+
   public replaceChildren(...children: FakeElement[]): void {
     this.children = children;
   }
@@ -157,7 +163,10 @@ export function createHostedUiClientHarness() {
   const trackPriority = elements.get("#track-priority")!;
   trackPriority.value = "medium";
 
-  const projects = [{ id: "project-1", name: "Project One", repoUrl: "https://example.com/one", localRepoPath: "/repo/one", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" }];
+  const projects = [
+    { id: "project-1", name: "Project One", repoUrl: "https://example.com/one", localRepoPath: "/repo/one", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" },
+    { id: "project-2", name: "Project Two", repoUrl: "https://example.com/two", localRepoPath: "/repo/two", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" },
+  ];
   const artifactApprovalRequests = {
     spec: [{ id: "approval-spec-1", status: "pending" }],
     plan: [{ id: "approval-plan-1", status: "pending" }],
@@ -167,7 +176,7 @@ export function createHostedUiClientHarness() {
   const runs: Array<Record<string, unknown>> = [];
   const calls: HostedUiFetchCall[] = [];
   const eventSources: FakeEventSource[] = [];
-  let projectCounter = 2;
+  let projectCounter = 3;
   let trackCounter = 1;
   let runCounter = 1;
   let planningSessionId: string | undefined;
@@ -202,7 +211,9 @@ export function createHostedUiClientHarness() {
       return { ok: true, json: async () => ({ project }) };
     }
     if (path.startsWith("/tracks?page=1&pageSize=20") && method === "GET") {
-      return { ok: true, json: async () => ({ tracks }) };
+      const projectId = new URLSearchParams(path.slice(path.indexOf("?") + 1)).get("projectId");
+      const filteredTracks = projectId === null ? tracks : tracks.filter((track) => track.projectId === projectId);
+      return { ok: true, json: async () => ({ tracks: filteredTracks }) };
     }
     if (path === "/tracks" && method === "POST") {
       const track = { id: `track-${trackCounter++}`, status: "new", ...(body as Record<string, unknown>) };
@@ -311,6 +322,12 @@ export function createHostedUiClientHarness() {
     await flushClientPromises();
   }
 
+  async function selectProject(projectId: string): Promise<void> {
+    scope.value = projectId;
+    await scope.change();
+    await flushClientPromises();
+  }
+
   async function requestCleanupPreview(): Promise<void> {
     await detail.querySelector("[data-cleanup-preview]").click();
     await flushClientPromises();
@@ -321,7 +338,7 @@ export function createHostedUiClientHarness() {
     await flushClientPromises();
   }
 
-  return { calls, detail, elements, eventSources, scope, createTrack, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun };
+  return { calls, detail, elements, eventSources, scope, createTrack, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, selectProject, startRun };
 }
 
 export async function flushClientPromises(): Promise<void> {
