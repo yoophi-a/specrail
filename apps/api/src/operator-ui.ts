@@ -41,6 +41,14 @@ export function operatorUiTrackUpdatePath(trackId: string): string {
   return `/tracks/${encodeURIComponent(trackId)}`;
 }
 
+export function operatorUiPlanningSessionCreatePath(trackId: string): string {
+  return `/tracks/${encodeURIComponent(trackId)}/planning-sessions`;
+}
+
+export function operatorUiPlanningMessageAppendPath(planningSessionId: string): string {
+  return `/planning-sessions/${encodeURIComponent(planningSessionId)}/messages`;
+}
+
 export function operatorUiApprovalDecisionPath(approvalRequestId: string, decision: "approve" | "reject"): string {
   return `/approval-requests/${encodeURIComponent(approvalRequestId)}/${decision}`;
 }
@@ -217,6 +225,7 @@ export function renderOperatorUiHtml(): string {
           ['Updated', track.updatedAt],
         ])
         + '<h3>Track workflow</h3><button data-track-update="workflow">Update track workflow</button>'
+        + '<h3>Planning</h3><button data-planning-session-create="' + escapeHtml(track.id) + '">Create planning session</button> <button data-planning-message-append="' + escapeHtml(planning.planningSessionId ?? '') + '">Append planning message</button>'
         + '<h3>Artifact proposals</h3><button data-artifact-proposal="spec">Propose spec</button> <button data-artifact-proposal="plan">Propose plan</button> <button data-artifact-proposal="tasks">Propose tasks</button>'
         + '<h3>Run lifecycle</h3><button data-run-start="' + escapeHtml(track.id) + '">Start run</button>'
         + artifactApprovalActions(artifactPayloads)
@@ -243,6 +252,46 @@ export function renderOperatorUiHtml(): string {
           await load();
           await loadTrackDetail(track.id);
           status.textContent = 'Updated track ' + track.id + '.';
+        } catch (error) {
+          button.disabled = false;
+          status.textContent = error instanceof Error ? error.message : String(error);
+        }
+      });
+      detail.querySelector('[data-planning-session-create]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const planningStatus = window.prompt('Planning session status (active, waiting_user, waiting_agent, approved, archived)', 'active') ?? 'active';
+        button.disabled = true;
+        try {
+          status.textContent = 'Creating planning session for ' + track.id + '…';
+          await postJson('/tracks/' + encodeURIComponent(track.id) + '/planning-sessions', { status: planningStatus });
+          await loadTrackDetail(track.id);
+          status.textContent = 'Created planning session for ' + track.id + '.';
+        } catch (error) {
+          button.disabled = false;
+          status.textContent = error instanceof Error ? error.message : String(error);
+        }
+      });
+      detail.querySelector('[data-planning-message-append]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const planningSessionId = button.getAttribute('data-planning-message-append');
+        if (!planningSessionId) {
+          status.textContent = 'Create a planning session before appending a message for ' + track.id + '.';
+          return;
+        }
+        const body = window.prompt('Planning message body for ' + track.id);
+        if (!body) {
+          status.textContent = 'Planning message cancelled for ' + track.id + '.';
+          return;
+        }
+        const authorType = window.prompt('Planning message author (user, agent, system)', 'user') ?? 'user';
+        const kind = window.prompt('Planning message kind (message, question, decision, note)', 'message') ?? 'message';
+        const relatedArtifact = window.prompt('Related artifact (spec, plan, tasks; blank for none)', '') || undefined;
+        button.disabled = true;
+        try {
+          status.textContent = 'Appending planning message for ' + track.id + '…';
+          await postJson('/planning-sessions/' + encodeURIComponent(planningSessionId) + '/messages', { authorType, kind, body, relatedArtifact });
+          await loadTrackDetail(track.id);
+          status.textContent = 'Appended planning message for ' + track.id + '.';
         } catch (error) {
           button.disabled = false;
           status.textContent = error instanceof Error ? error.message : String(error);
