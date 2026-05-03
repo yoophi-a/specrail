@@ -75,6 +75,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - cleanup apply attempts are recorded as run summary events for applied, refused, and failed outcomes
 - terminal API client exposes cleanup preview/apply methods and preserves server-provided confirmation/refusal details
 - terminal UI exposes guarded cleanup preview/apply controls for selected terminal runs
+- GitHub Actions workflows opt JavaScript actions into the Node.js 24 runtime ahead of runner defaults
 
 ### Milestone D — Project management APIs
 - expose project create/list/get/update endpoints
@@ -88,8 +89,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Harden GitHub Actions runner compatibility**
-   - resolve Node.js 20 action deprecation warnings before the GitHub-hosted runner default changes.
+1. **Add cleanup action result refresh to terminal UI**
+   - refresh the selected run event feed/detail immediately after cleanup apply completes.
 3. **Add project management APIs**
    - move beyond the default bootstrap project.
 5. **Plan the first hosted operator UI slice**
