@@ -63,6 +63,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 ## ACP edge adapter status
 
 `apps/acp-server` now projects SpecRail runs into richer ACP session updates:
+- `_meta.specrail.trackId` can target an existing track, while `_meta.specrail.projectId` lets the first prompt create a new track in a non-default project
 - task status changes refresh ACP `session_info_update` metadata
 - runtime `approval_requested` events emit ACP `session/request_permission`
 - client permission decisions can round-trip back through `session/prompt` via `_meta.specrail.permissionResolution`
@@ -333,7 +334,7 @@ By default this smoke path stays out of `pnpm test` so local and CI runs do not 
 For GitHub Actions, use the opt-in stub at `.github/workflows/claude-smoke.yml` together with `scripts/run-claude-smoke-ci.sh`.
 That workflow is intentionally gated behind repository variable `SPECRAIL_ENABLE_CLAUDE_SMOKE=1` so the default CI path stays stable when Claude credentials are unavailable on runners.
 
-For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`.
+For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`. Set `SPECRAIL_TELEGRAM_PROJECT_ID` (or shared `SPECRAIL_PROJECT_ID`) to create new Telegram-bound tracks in a non-default project; omit it to keep the default-project behavior.
 
 For the API server, you can set `SPECRAIL_EXECUTION_BACKEND` and `SPECRAIL_EXECUTION_PROFILE` to choose the default executor/backend and profile used when callers omit them.
 Set `SPECRAIL_EXECUTION_WORKSPACE_MODE=directory` for the default plain workspace directory behavior, or `SPECRAIL_EXECUTION_WORKSPACE_MODE=git_worktree` to allocate execution workspaces with `git worktree add -b specrail/<runId> workspaces/<runId>` from the configured local repo path.

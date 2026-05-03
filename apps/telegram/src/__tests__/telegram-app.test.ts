@@ -44,12 +44,12 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
           return null;
         },
         async createTrack(input) {
-          calls.push(`createTrack:${input.title}`);
+          calls.push(`createTrack:${input.title}:${input.projectId}`);
           assert.equal(input.description, "Build Telegram frontend\nNeed thin adapter app");
-          return { track: { id: "track-1", title: input.title } };
+          return { track: { id: "track-1", projectId: "project-non-default", title: input.title } };
         },
         async bindChannel(input) {
-          calls.push(`bindChannel:${input.trackId}`);
+          calls.push(`bindChannel:${input.trackId}:${input.projectId}`);
           assert.equal(input.externalThreadId, "7");
           return { binding: { id: "binding-1", trackId: "track-1" } };
         },
@@ -72,13 +72,14 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
           telegramMessages.push(`${input.messageThreadId}:${input.text}`);
         },
       },
+      projectId: "project-non-default",
     },
   );
 
   assert.deepEqual(calls, [
     "findChannelBinding",
-    "createTrack:Build Telegram frontend",
-    "bindChannel:track-1",
+    "createTrack:Build Telegram frontend:project-non-default",
+    "bindChannel:track-1:project-non-default",
     "registerAttachment:file-1:track-1",
     "startRun:track-1",
   ]);
