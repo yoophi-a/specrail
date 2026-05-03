@@ -92,11 +92,12 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI selected-track detail shows artifact/planning context previews from existing track detail APIs
 - hosted UI selected-track detail can approve/reject pending artifact requests through existing approval endpoints
 - hosted UI selected-run detail shows run metadata and recent events from existing run/event APIs
+- hosted UI selected-run detail appends live SSE event updates while a run is selected
 - hosted UI selected-run detail can request cleanup preview/apply through the existing explicit confirmation flow
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
 ## Suggested issue framing from the current baseline
 
-1. **Add hosted operator UI streaming event updates**
-   - replace manual detail refresh for selected runs with SSE-backed incremental event updates.
+1. **Harden hosted operator UI state and error handling**
+   - split the inline UI into testable client helpers and improve action/loading edge cases.
