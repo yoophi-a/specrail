@@ -91,6 +91,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - selected runs can resume or cancel through the existing `POST /runs/:runId/resume` and `POST /runs/:runId/cancel` endpoints
   - selected runs stay live with incremental updates from `GET /runs/:runId/events/stream` while selected
   - selected runs can request workspace cleanup preview/apply through the existing guarded confirmation flow
+  - shared action-state handling disables buttons while requests are in flight and preserves cleanup apply results if post-apply refresh fails
 
 ### Projects
 - `GET /projects`

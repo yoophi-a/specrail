@@ -70,5 +70,9 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
   assert.match(body, /workspace-cleanup\/apply/);
   assert.match(body, /new EventSource/);
   assert.match(body, /events\/stream/);
+  assert.match(body, /async function withAction/);
+  assert.match(body, /function errorMessage/);
   assert.match(body, /button.disabled = true/);
+  assert.match(body, /button.isConnected/);
+  assert.match(body, /Refresh failed:/);
 });
