@@ -398,6 +398,28 @@ test("operator UI client harness submits selected-run detail actions", async () 
   });
 });
 
+test("operator UI client harness blocks invalid run lifecycle submissions", async () => {
+  const { calls, createTrack, detail, elements, loadInitialState, startRun } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Run Lifecycle Validation Track" });
+  await startRun("Start run before lifecycle validation.");
+
+  detail.querySelector("#run-resume-prompt").value = "   ";
+  await detail.querySelector("[data-run-resume]").click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Run resume prompt is required for run-1.");
+  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/runs/run-1/resume"), false);
+
+  detail.querySelector("#run-cancel-confirmation").value = "nope";
+  await detail.querySelector("[data-run-cancel]").click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Type cancel before cancelling run run-1.");
+  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/runs/run-1/cancel"), false);
+});
+
 test("operator UI client harness blocks blank cleanup confirmation", async () => {
   const { calls, createTrack, detail, elements, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun } = createHostedUiClientHarness();
   await loadInitialState();
