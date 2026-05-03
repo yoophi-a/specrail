@@ -102,10 +102,11 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI selected-run detail can request cleanup preview/apply through the existing explicit confirmation flow
 - hosted UI action controls use shared in-flight/error handling and preserve cleanup apply results if post-apply refresh fails
 - hosted UI shell rendering composes separately testable style and client script helpers without adding a new frontend build pipeline
+- hosted UI top-level project and track actions use inline form controls while preserving the same HTTP API calls
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
 ## Suggested issue framing from the current baseline
 
-1. **Hosted operator UI interaction polish**
-   - improve browser form affordances beyond prompt dialogs while continuing to reuse the same HTTP/SSE contracts.
+1. **Hosted operator UI selected-detail form polish**
+   - replace remaining selected-detail prompt dialogs for planning, artifact, run, and cleanup-adjacent actions with clearer inline controls while continuing to reuse the same HTTP/SSE contracts.

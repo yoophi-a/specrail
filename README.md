@@ -93,6 +93,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - selected runs can request workspace cleanup preview/apply through the existing guarded confirmation flow
   - shared action-state handling disables buttons while requests are in flight and preserves cleanup apply results if post-apply refresh fails
   - HTML shell rendering composes separately testable hosted UI style and client script helpers while keeping `GET /operator` as a single served page
+  - top-level project and track actions use inline form controls while preserving the same HTTP API calls
 
 ### Projects
 - `GET /projects`
