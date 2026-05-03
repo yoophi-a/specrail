@@ -214,15 +214,25 @@ test("operator UI client harness submits selected-track detail actions", async (
 });
 
 test("operator UI client harness submits selected-run detail actions", async () => {
-  const { calls, createTrack, detail, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun } = createHostedUiClientHarness();
+  const { calls, createTrack, detail, elements, eventSources, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun } = createHostedUiClientHarness();
   await loadInitialState();
 
   await createTrack({ title: "Run Harness Track", description: "Create a run for selected-run controls" });
   await startRun("Start run for harness.");
 
+  assert.equal(eventSources.at(-1)?.url, "/runs/run-1/events/stream");
+
+  eventSources.at(-1)?.emit("execution-event", { type: "log", summary: "streamed event", timestamp: "2026-01-01T00:00:00.000Z" });
+
+  assert.equal(detail.querySelector("#run-events").children.length, 1);
+  assert.equal(elements.get("#status")?.textContent, "Live event received for run-1.");
+
   detail.querySelector("#run-resume-prompt").value = "Resume with verification.";
   await detail.querySelector("[data-run-resume]").click();
   await flushClientPromises();
+
+  assert.equal(eventSources[0]?.closed, true);
+  assert.equal(eventSources.at(-1)?.url, "/runs/run-1/events/stream");
 
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run-1/resume")?.body, {
     prompt: "Resume with verification.",
@@ -232,7 +242,15 @@ test("operator UI client harness submits selected-run detail actions", async () 
   await detail.querySelector("[data-run-cancel]").click();
   await flushClientPromises();
 
+  assert.equal(eventSources.at(-2)?.closed, true);
+  assert.equal(eventSources.at(-1)?.url, "/runs/run-1/events/stream");
+
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run-1/cancel")?.body, {});
+
+  eventSources.at(-1)?.fail();
+
+  assert.equal(eventSources.at(-1)?.closed, true);
+  assert.equal(elements.get("#status")?.textContent, "Live event stream disconnected for run-1; recent events remain visible.");
 
   await requestCleanupPreview();
 

@@ -106,6 +106,32 @@ export class FakeElement {
   }
 }
 
+export class FakeEventSource {
+  public onerror: (() => void) | undefined;
+  public closed = false;
+  private readonly listeners = new Map<string, Array<(message: { data: string }) => void>>();
+
+  public constructor(public readonly url: string) {}
+
+  public addEventListener(type: string, listener: (message: { data: string }) => void): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  public emit(type: string, data: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ data: JSON.stringify(data) });
+    }
+  }
+
+  public fail(): void {
+    this.onerror?.();
+  }
+
+  public close(): void {
+    this.closed = true;
+  }
+}
+
 export function createHostedUiClientHarness() {
   const selectors = [
     "#project-scope",
@@ -140,6 +166,7 @@ export function createHostedUiClientHarness() {
   const tracks: Array<Record<string, unknown>> = [];
   const runs: Array<Record<string, unknown>> = [];
   const calls: HostedUiFetchCall[] = [];
+  const eventSources: FakeEventSource[] = [];
   let projectCounter = 2;
   let trackCounter = 1;
   let runCounter = 1;
@@ -243,6 +270,13 @@ export function createHostedUiClientHarness() {
     throw new Error(`Unhandled fetch ${method} ${path}`);
   }
 
+  const EventSource = class extends FakeEventSource {
+    public constructor(url: string) {
+      super(url);
+      eventSources.push(this);
+    }
+  };
+
   vm.runInNewContext(renderOperatorUiClientScript(), {
     document,
     fetch,
@@ -254,7 +288,7 @@ export function createHostedUiClientHarness() {
         this.value = value;
       }
     },
-    EventSource: undefined,
+    EventSource,
   });
 
   const detail = elements.get("#detail")!;
@@ -287,7 +321,7 @@ export function createHostedUiClientHarness() {
     await flushClientPromises();
   }
 
-  return { calls, detail, elements, scope, createTrack, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun };
+  return { calls, detail, elements, eventSources, scope, createTrack, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun };
 }
 
 export async function flushClientPromises(): Promise<void> {
