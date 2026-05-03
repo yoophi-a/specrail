@@ -91,7 +91,9 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI project selection filters tracks via the same `GET /tracks?projectId=...` contract used by thin clients
 - hosted UI selected-track detail shows artifact/planning context previews from existing track detail APIs
 - hosted UI selected-track detail can approve/reject pending artifact requests through existing approval endpoints
+- hosted UI selected-track detail can start runs through the existing run creation API
 - hosted UI selected-run detail shows run metadata and recent events from existing run/event APIs
+- hosted UI selected-run detail can resume/cancel runs through existing lifecycle APIs
 - hosted UI selected-run detail appends live SSE event updates while a run is selected
 - hosted UI selected-run detail can request cleanup preview/apply through the existing explicit confirmation flow
 - keep HTTP/SSE as the system of record for new clients
