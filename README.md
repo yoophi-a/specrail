@@ -80,6 +80,8 @@ Current endpoints in `apps/api/src/index.ts`:
   - serves the first thin hosted operator UI slice
   - loads projects, tracks, and runs from the same HTTP API
   - project selection filters tracks via `GET /tracks?projectId=...`
+  - selecting a track shows artifact/planning context previews from `GET /tracks/:trackId`
+  - selecting a run shows run metadata and recent event summaries from `GET /runs/:runId` plus `GET /runs/:runId/events`
 
 ### Projects
 - `GET /projects`
