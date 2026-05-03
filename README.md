@@ -83,6 +83,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - selecting a track shows artifact/planning context previews from `GET /tracks/:trackId`
   - selecting a track can approve/reject pending artifact approval requests through the existing `POST /approval-requests/:approvalRequestId/(approve|reject)` endpoints
   - selecting a run shows run metadata and recent event summaries from `GET /runs/:runId` plus `GET /runs/:runId/events`
+  - selected runs stay live with incremental updates from `GET /runs/:runId/events/stream` while selected
   - selected runs can request workspace cleanup preview/apply through the existing guarded confirmation flow
 
 ### Projects

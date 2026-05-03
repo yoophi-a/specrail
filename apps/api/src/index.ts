@@ -435,6 +435,7 @@ function renderOperatorUiHtml(): string {
     const runs = document.querySelector('#runs');
     const detail = document.querySelector('#detail');
     const refresh = document.querySelector('#refresh');
+    let activeEventStream = null;
 
     async function api(path, init) {
       const response = await fetch(path, { headers: { accept: 'application/json', 'content-type': 'application/json' }, ...init });
@@ -487,7 +488,15 @@ function renderOperatorUiHtml(): string {
       return '<h3>Approval actions</h3><ul>' + pending.map((request) => '<li><strong>' + escapeHtml(request.artifact) + ' approval</strong><br><span class="muted">' + escapeHtml(request.id) + '</span><br><button data-approval-id="' + escapeHtml(request.id) + '" data-decision="approve">Approve</button> <button data-approval-id="' + escapeHtml(request.id) + '" data-decision="reject">Reject</button></li>').join('') + '</ul>';
     }
 
+    function closeEventStream() {
+      if (activeEventStream) {
+        activeEventStream.close();
+        activeEventStream = null;
+      }
+    }
+
     function renderTrackDetail(payload, artifactPayloads) {
+      closeEventStream();
       const track = payload.track;
       const planning = payload.planningContext ?? {};
       detail.className = 'detail-grid';
@@ -519,6 +528,32 @@ function renderOperatorUiHtml(): string {
       });
     }
 
+    function appendRunEvent(event) {
+      const list = detail.querySelector('#run-events');
+      if (!list) return;
+      list.append(item(event.type, (event.summary ?? '') + ' · ' + (event.timestamp ?? ''), () => {}));
+      while (list.children.length > 20) {
+        list.firstElementChild?.remove();
+      }
+    }
+
+    function startRunEventStream(runId) {
+      closeEventStream();
+      if (typeof EventSource === 'undefined') {
+        status.textContent = 'Live event stream unavailable in this browser.';
+        return;
+      }
+      activeEventStream = new EventSource('/runs/' + encodeURIComponent(runId) + '/events/stream');
+      activeEventStream.addEventListener('execution-event', (message) => {
+        appendRunEvent(JSON.parse(message.data));
+        status.textContent = 'Live event received for ' + runId + '.';
+      });
+      activeEventStream.onerror = () => {
+        status.textContent = 'Live event stream disconnected for ' + runId + '; recent events remain visible.';
+        closeEventStream();
+      };
+    }
+
     function renderRunDetail(runPayload, eventsPayload, cleanupPayload) {
       const run = runPayload.run;
       const events = eventsPayload.events ?? [];
@@ -545,12 +580,13 @@ function renderOperatorUiHtml(): string {
           ['Finished', run.finishedAt],
         ])
         + cleanupSection
-        + '<h3>Recent events</h3><ul>' + events.slice(-10).map((event) => '<li><span class="pill">' + escapeHtml(event.type) + '</span> ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>').join('') + '</ul>';
+        + '<h3>Recent events</h3><p class="muted">Live updates use <code>GET /runs/:runId/events/stream</code> while this run is selected.</p><ul id="run-events">' + events.slice(-10).map((event) => '<li><span class="pill">' + escapeHtml(event.type) + '</span> ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>').join('') + '</ul>';
       detail.querySelector('[data-cleanup-preview]')?.addEventListener('click', async () => {
         status.textContent = 'Loading cleanup preview for ' + run.id + '…';
         await loadRunDetail(run.id, true);
         status.textContent = 'Cleanup preview refreshed for ' + run.id + '.';
       });
+      startRunEventStream(run.id);
       detail.querySelector('[data-cleanup-apply]')?.addEventListener('click', async () => {
         status.textContent = 'Requesting cleanup confirmation for ' + run.id + '…';
         const confirmationPayload = await postJson('/runs/' + encodeURIComponent(run.id) + '/workspace-cleanup/apply', { confirm: '' });
@@ -590,6 +626,7 @@ function renderOperatorUiHtml(): string {
     }
 
     async function load() {
+      closeEventStream();
       status.textContent = 'Loading…';
       const projectId = scope.value;
       const query = projectId ? '&projectId=' + encodeURIComponent(projectId) : '';
