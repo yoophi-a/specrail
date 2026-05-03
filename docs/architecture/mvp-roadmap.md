@@ -90,11 +90,13 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI loads project, track, and run summary state from the existing HTTP API
 - hosted UI project selection filters tracks via the same `GET /tracks?projectId=...` contract used by thin clients
 - hosted UI selected-track detail shows artifact/planning context previews from existing track detail APIs
+- hosted UI selected-track detail can approve/reject pending artifact requests through existing approval endpoints
 - hosted UI selected-run detail shows run metadata and recent events from existing run/event APIs
+- hosted UI selected-run detail can request cleanup preview/apply through the existing explicit confirmation flow
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
 ## Suggested issue framing from the current baseline
 
-1. **Add hosted operator UI actions for approvals and cleanup**
-   - layer controlled POST actions onto the hosted UI while preserving existing API confirmation/approval safeguards.
+1. **Add hosted operator UI streaming event updates**
+   - replace manual detail refresh for selected runs with SSE-backed incremental event updates.
