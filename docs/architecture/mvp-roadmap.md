@@ -104,10 +104,11 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI shell rendering composes separately testable style and client script helpers without adding a new frontend build pipeline
 - hosted UI top-level project and track actions use inline form controls while preserving the same HTTP API calls
 - hosted UI selected-track planning and artifact proposal actions use inline controls for session/message/proposal fields
+- hosted UI selected-detail workflow and run lifecycle actions use inline controls for status and prompt fields
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
 ## Suggested issue framing from the current baseline
 
-1. **Hosted operator UI run/action form polish**
-   - replace remaining selected-detail prompt dialogs for track workflow and run resume/start actions with clearer inline controls while continuing to reuse the same HTTP/SSE contracts.
+1. **Hosted operator UI destructive-action confirmation polish**
+   - replace remaining browser-native confirmation prompts for cancel/cleanup destructive actions with clearer in-page confirmation affordances while preserving explicit confirmation semantics.
