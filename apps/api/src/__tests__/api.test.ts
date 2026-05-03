@@ -178,6 +178,97 @@ async function openSseStream(url: string): Promise<{
   });
 }
 
+test("API supports project create, list, get, and update", async () => {
+  await withServer(async (baseUrl) => {
+    const initialListResponse = await fetch(`${baseUrl}/projects`);
+    assert.equal(initialListResponse.status, 200);
+    const initialListPayload = (await initialListResponse.json()) as { projects: Array<{ id: string; name: string }> };
+    assert.deepEqual(initialListPayload.projects.map((project) => project.id), ["project-default"]);
+
+    const createResponse = await fetch(`${baseUrl}/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Operator UI",
+        repoUrl: "https://github.com/yoophi-a/specrail-operator",
+        localRepoPath: "/work/specrail-operator",
+        defaultWorkflowPolicy: "artifact-first-mvp",
+        defaultPlanningSystem: "openspec",
+      }),
+    });
+    assert.equal(createResponse.status, 201);
+    const createPayload = (await createResponse.json()) as {
+      project: { id: string; name: string; repoUrl?: string; localRepoPath?: string; defaultPlanningSystem?: string };
+    };
+    assert.match(createPayload.project.id, /^project-/);
+    assert.equal(createPayload.project.name, "Operator UI");
+    assert.equal(createPayload.project.defaultPlanningSystem, "openspec");
+
+    const getResponse = await fetch(`${baseUrl}/projects/${createPayload.project.id}`);
+    assert.equal(getResponse.status, 200);
+    const getPayload = (await getResponse.json()) as { project: { id: string; repoUrl?: string } };
+    assert.equal(getPayload.project.id, createPayload.project.id);
+    assert.equal(getPayload.project.repoUrl, "https://github.com/yoophi-a/specrail-operator");
+
+    const updateResponse = await fetch(`${baseUrl}/projects/${createPayload.project.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Operator Console",
+        repoUrl: null,
+        defaultPlanningSystem: "speckit",
+      }),
+    });
+    assert.equal(updateResponse.status, 200);
+    const updatePayload = (await updateResponse.json()) as {
+      project: { id: string; name: string; repoUrl?: string; defaultPlanningSystem?: string; updatedAt: string };
+    };
+    assert.equal(updatePayload.project.name, "Operator Console");
+    assert.equal(updatePayload.project.repoUrl, undefined);
+    assert.equal(updatePayload.project.defaultPlanningSystem, "speckit");
+
+    const listResponse = await fetch(`${baseUrl}/projects`);
+    assert.equal(listResponse.status, 200);
+    const listPayload = (await listResponse.json()) as { projects: Array<{ id: string; name: string }> };
+    assert.deepEqual(
+      listPayload.projects.map((project) => project.id).sort(),
+      ["project-default", createPayload.project.id].sort(),
+    );
+  });
+});
+
+test("API validates project payloads and returns 404s for missing projects", async () => {
+  await withServer(async (baseUrl) => {
+    const createResponse = await fetch(`${baseUrl}/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "", defaultPlanningSystem: "unknown" }),
+    });
+    assert.equal(createResponse.status, 422);
+    const createPayload = (await createResponse.json()) as { error: { details: Array<{ field: string }> } };
+    assert.deepEqual(createPayload.error.details.map((detail) => detail.field), ["name", "defaultPlanningSystem"]);
+
+    const updateResponse = await fetch(`${baseUrl}/projects/project-missing`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Missing" }),
+    });
+    assert.equal(updateResponse.status, 404);
+    const updatePayload = (await updateResponse.json()) as { error: { message: string } };
+    assert.equal(updatePayload.error.message, "Project not found: project-missing");
+
+    const emptyUpdateResponse = await fetch(`${baseUrl}/projects/project-default`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(emptyUpdateResponse.status, 422);
+
+    const getResponse = await fetch(`${baseUrl}/projects/project-missing`);
+    assert.equal(getResponse.status, 404);
+  });
+});
+
 test("API supports creating tracks, planning sessions, messages, starting runs, and listing run events", async () => {
   await withServer(async (baseUrl, paths) => {
     const trackResponse = await fetch(`${baseUrl}/tracks`, {

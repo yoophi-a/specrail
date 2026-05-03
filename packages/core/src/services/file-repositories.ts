@@ -132,6 +132,14 @@ export class FileProjectRepository implements ProjectRepository {
   getById(projectId: string): Promise<Project | null> {
     return this.repository.getById(projectId);
   }
+
+  list(): Promise<Project[]> {
+    return this.repository.list();
+  }
+
+  update(project: Project): Promise<void> {
+    return this.repository.update(project);
+  }
 }
 
 export class FileTrackRepository implements TrackRepository {

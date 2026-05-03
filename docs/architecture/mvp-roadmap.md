@@ -41,7 +41,6 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - hosted web UI and GitHub app/webhook entrypoints are still deferred
 
 ### Not started
-- project management APIs beyond the default bootstrap project
 - database-backed persistence
 - production auth system
 - production deployment manifests
@@ -80,9 +79,9 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - terminal cleanup controls have an integration-style keypress flow test for preview, confirmation, apply, and refresh
 
 ### Milestone D — Project management APIs
-- expose project create/list/get/update endpoints
-- define how tracks are scoped and filtered by project
-- add API and service tests for multi-project behavior
+- project create/list/get/update endpoints expose basic project metadata beyond the bootstrap default
+- next: define how tracks are scoped and filtered by project
+- next: add deeper service tests for multi-project behavior once track scoping is introduced
 
 ### Milestone E — Hosted operator UI / GitHub entrypoints
 - introduce a web UI or GitHub-facing entrypoint after the core state contracts stabilize
@@ -91,9 +90,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Add project management APIs**
-   - move beyond the default bootstrap project.
-3. **Add project management APIs**
-   - move beyond the default bootstrap project.
-5. **Plan the first hosted operator UI slice**
+1. **Scope tracks by project in list/create APIs**
+   - let clients target non-default projects and filter tracks per project.
+2. **Plan the first hosted operator UI slice**
    - build on the stabilized HTTP/SSE API rather than adding new core behavior.

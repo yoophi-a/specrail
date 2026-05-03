@@ -21,6 +21,7 @@ import type {
   ExecutionStatus,
   PlanningMessage,
   PlanningMessageKind,
+  PlanningSystem,
   PlanningSession,
   PlanningSessionStatus,
   Project,
@@ -126,6 +127,23 @@ export interface SpecRailServiceDependencies {
   workspaceManager?: ExecutionWorkspaceManager;
   now?: () => string;
   idGenerator?: () => string;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  repoUrl?: string;
+  localRepoPath?: string;
+  defaultWorkflowPolicy?: string;
+  defaultPlanningSystem?: PlanningSystem;
+}
+
+export interface UpdateProjectInput {
+  projectId: string;
+  name?: string;
+  repoUrl?: string | null;
+  localRepoPath?: string | null;
+  defaultWorkflowPolicy?: string | null;
+  defaultPlanningSystem?: PlanningSystem | null;
 }
 
 export interface CreateTrackInput {
@@ -420,6 +438,84 @@ export class SpecRailService {
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.idGenerator = dependencies.idGenerator ?? randomUUID;
     this.workspaceManager = dependencies.workspaceManager ?? new DirectoryExecutionWorkspaceManager();
+  }
+
+  async createProject(input: CreateProjectInput): Promise<Project> {
+    const timestamp = this.now();
+    const project: Project = {
+      id: `project-${this.idGenerator()}`,
+      name: normalizeRequiredString(input.name),
+      ...(input.repoUrl !== undefined ? { repoUrl: normalizeRequiredString(input.repoUrl) } : {}),
+      ...(input.localRepoPath !== undefined ? { localRepoPath: normalizeRequiredString(input.localRepoPath) } : {}),
+      ...(input.defaultWorkflowPolicy !== undefined ? { defaultWorkflowPolicy: normalizeRequiredString(input.defaultWorkflowPolicy) } : {}),
+      ...(input.defaultPlanningSystem !== undefined ? { defaultPlanningSystem: input.defaultPlanningSystem } : {}),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    await this.dependencies.projectRepository.create(project);
+    return project;
+  }
+
+  async getProject(projectId: string): Promise<Project | null> {
+    return this.dependencies.projectRepository.getById(projectId);
+  }
+
+  async listProjects(): Promise<Project[]> {
+    await this.ensureDefaultProject();
+    return (await this.dependencies.projectRepository.list())
+      .sort((left, right) => compareValues(left.updatedAt, right.updatedAt, "desc"));
+  }
+
+  async updateProject(input: UpdateProjectInput): Promise<Project> {
+    const existing = await this.dependencies.projectRepository.getById(input.projectId);
+    if (!existing) {
+      throw new NotFoundError(`Project not found: ${input.projectId}`);
+    }
+
+    const next: Project = {
+      ...existing,
+      updatedAt: this.now(),
+    };
+
+    if (input.name !== undefined) {
+      next.name = normalizeRequiredString(input.name);
+    }
+
+    if (input.repoUrl !== undefined) {
+      if (input.repoUrl === null) {
+        delete next.repoUrl;
+      } else {
+        next.repoUrl = normalizeRequiredString(input.repoUrl);
+      }
+    }
+
+    if (input.localRepoPath !== undefined) {
+      if (input.localRepoPath === null) {
+        delete next.localRepoPath;
+      } else {
+        next.localRepoPath = normalizeRequiredString(input.localRepoPath);
+      }
+    }
+
+    if (input.defaultWorkflowPolicy !== undefined) {
+      if (input.defaultWorkflowPolicy === null) {
+        delete next.defaultWorkflowPolicy;
+      } else {
+        next.defaultWorkflowPolicy = normalizeRequiredString(input.defaultWorkflowPolicy);
+      }
+    }
+
+    if (input.defaultPlanningSystem !== undefined) {
+      if (input.defaultPlanningSystem === null) {
+        delete next.defaultPlanningSystem;
+      } else {
+        next.defaultPlanningSystem = input.defaultPlanningSystem;
+      }
+    }
+
+    await this.dependencies.projectRepository.update(next);
+    return next;
   }
 
   async createTrack(input: CreateTrackInput): Promise<Track> {
