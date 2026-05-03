@@ -107,6 +107,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI selected-detail workflow and run lifecycle actions use inline controls for status and prompt fields
 - hosted UI destructive run cancel and workspace cleanup apply flows use in-page confirmation controls
 - hosted UI tests guard against reintroducing browser-native prompt/confirm dialogs and group shell coverage by action area without adding a frontend build pipeline
+- hosted UI markup exposes stable `data-control-group` selectors for major action areas
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
