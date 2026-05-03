@@ -159,6 +159,31 @@ export function renderOperatorUiHtml(): string {
       return api(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) });
     }
 
+    function errorMessage(error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+
+    async function withAction(button, inFlightText, action, successText) {
+      button.disabled = true;
+      status.textContent = inFlightText;
+      try {
+        const result = await action();
+        if (successText !== undefined) {
+          status.textContent = typeof successText === 'function' ? successText(result) : successText;
+        }
+        if (button.isConnected) {
+          button.disabled = false;
+        }
+        return result;
+      } catch (error) {
+        if (button.isConnected) {
+          button.disabled = false;
+        }
+        status.textContent = errorMessage(error);
+        return undefined;
+      }
+    }
+
     function item(label, meta, onClick) {
       const node = document.createElement('li');
       node.innerHTML = '<strong></strong><br><span class="muted"></span>';
@@ -241,9 +266,7 @@ export function renderOperatorUiHtml(): string {
         }
         const specStatusInput = window.prompt('Spec status for ' + track.id + ' (draft, pending, approved, rejected)', track.specStatus ?? 'draft');
         const planStatusInput = window.prompt('Plan status for ' + track.id + ' (draft, pending, approved, rejected)', track.planStatus ?? 'draft');
-        button.disabled = true;
-        try {
-          status.textContent = 'Updating track ' + track.id + '…';
+        await withAction(button, 'Updating track ' + track.id + '…', async () => {
           await patchJson('/tracks/' + encodeURIComponent(track.id), {
             status: statusInput,
             specStatus: specStatusInput || undefined,
@@ -251,25 +274,15 @@ export function renderOperatorUiHtml(): string {
           });
           await load();
           await loadTrackDetail(track.id);
-          status.textContent = 'Updated track ' + track.id + '.';
-        } catch (error) {
-          button.disabled = false;
-          status.textContent = error instanceof Error ? error.message : String(error);
-        }
+        }, 'Updated track ' + track.id + '.');
       });
       detail.querySelector('[data-planning-session-create]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
         const planningStatus = window.prompt('Planning session status (active, waiting_user, waiting_agent, approved, archived)', 'active') ?? 'active';
-        button.disabled = true;
-        try {
-          status.textContent = 'Creating planning session for ' + track.id + '…';
+        await withAction(button, 'Creating planning session for ' + track.id + '…', async () => {
           await postJson('/tracks/' + encodeURIComponent(track.id) + '/planning-sessions', { status: planningStatus });
           await loadTrackDetail(track.id);
-          status.textContent = 'Created planning session for ' + track.id + '.';
-        } catch (error) {
-          button.disabled = false;
-          status.textContent = error instanceof Error ? error.message : String(error);
-        }
+        }, 'Created planning session for ' + track.id + '.');
       });
       detail.querySelector('[data-planning-message-append]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
@@ -286,16 +299,10 @@ export function renderOperatorUiHtml(): string {
         const authorType = window.prompt('Planning message author (user, agent, system)', 'user') ?? 'user';
         const kind = window.prompt('Planning message kind (message, question, decision, note)', 'message') ?? 'message';
         const relatedArtifact = window.prompt('Related artifact (spec, plan, tasks; blank for none)', '') || undefined;
-        button.disabled = true;
-        try {
-          status.textContent = 'Appending planning message for ' + track.id + '…';
+        await withAction(button, 'Appending planning message for ' + track.id + '…', async () => {
           await postJson('/planning-sessions/' + encodeURIComponent(planningSessionId) + '/messages', { authorType, kind, body, relatedArtifact });
           await loadTrackDetail(track.id);
-          status.textContent = 'Appended planning message for ' + track.id + '.';
-        } catch (error) {
-          button.disabled = false;
-          status.textContent = error instanceof Error ? error.message : String(error);
-        }
+        }, 'Appended planning message for ' + track.id + '.');
       });
       detail.querySelectorAll('[data-artifact-proposal]').forEach((button) => {
         button.addEventListener('click', async () => {
@@ -306,16 +313,10 @@ export function renderOperatorUiHtml(): string {
             return;
           }
           const summaryText = window.prompt('Proposal summary for ' + artifact, 'Proposed from hosted operator UI') ?? undefined;
-          button.disabled = true;
-          try {
-            status.textContent = 'Proposing ' + artifact + ' revision for ' + track.id + '…';
+          await withAction(button, 'Proposing ' + artifact + ' revision for ' + track.id + '…', async () => {
             await postJson('/tracks/' + encodeURIComponent(track.id) + '/artifacts/' + artifact, { content, summary: summaryText, createdBy: 'user' });
             await loadTrackDetail(track.id);
-            status.textContent = 'Proposed ' + artifact + ' revision for ' + track.id + '.';
-          } catch (error) {
-            button.disabled = false;
-            status.textContent = error instanceof Error ? error.message : String(error);
-          }
+          }, 'Proposed ' + artifact + ' revision for ' + track.id + '.');
         });
       });
       detail.querySelector('[data-run-start]')?.addEventListener('click', async (event) => {
@@ -325,32 +326,21 @@ export function renderOperatorUiHtml(): string {
           status.textContent = 'Run start cancelled for ' + track.id + '.';
           return;
         }
-        button.disabled = true;
-        try {
-          status.textContent = 'Starting run for ' + track.id + '…';
+        await withAction(button, 'Starting run for ' + track.id + '…', async () => {
           const runPayload = await postJson('/runs', { trackId: track.id, prompt: promptText });
           await load();
           await loadRunDetail(runPayload.run.id);
-          status.textContent = 'Started run ' + runPayload.run.id + ' for ' + track.id + '.';
-        } catch (error) {
-          button.disabled = false;
-          status.textContent = error instanceof Error ? error.message : String(error);
-        }
+          return runPayload;
+        }, (runPayload) => 'Started run ' + runPayload.run.id + ' for ' + track.id + '.');
       });
       detail.querySelectorAll('[data-approval-id]').forEach((button) => {
         button.addEventListener('click', async () => {
           const approvalId = button.getAttribute('data-approval-id');
           const decision = button.getAttribute('data-decision');
-          button.disabled = true;
-          try {
-            status.textContent = (decision === 'approve' ? 'Approving ' : 'Rejecting ') + approvalId + '…';
+          await withAction(button, (decision === 'approve' ? 'Approving ' : 'Rejecting ') + approvalId + '…', async () => {
             await postJson('/approval-requests/' + encodeURIComponent(approvalId) + '/' + decision, { decidedBy: 'user', comment: 'decided from hosted operator UI' });
             await loadTrackDetail(track.id);
-            status.textContent = 'Artifact approval ' + decision + ' completed for ' + approvalId + '.';
-          } catch (error) {
-            button.disabled = false;
-            status.textContent = error instanceof Error ? error.message : String(error);
-          }
+          }, 'Artifact approval ' + decision + ' completed for ' + approvalId + '.');
         });
       });
     }
@@ -416,17 +406,11 @@ export function renderOperatorUiHtml(): string {
           status.textContent = 'Run resume cancelled for ' + run.id + '.';
           return;
         }
-        button.disabled = true;
-        try {
-          status.textContent = 'Resuming run ' + run.id + '…';
+        await withAction(button, 'Resuming run ' + run.id + '…', async () => {
           await postJson('/runs/' + encodeURIComponent(run.id) + '/resume', { prompt: promptText });
           await load();
           await loadRunDetail(run.id);
-          status.textContent = 'Resumed run ' + run.id + '.';
-        } catch (error) {
-          button.disabled = false;
-          status.textContent = error instanceof Error ? error.message : String(error);
-        }
+        }, 'Resumed run ' + run.id + '.');
       });
       detail.querySelector('[data-run-cancel]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
@@ -435,51 +419,39 @@ export function renderOperatorUiHtml(): string {
           status.textContent = 'Run cancel skipped for ' + run.id + '.';
           return;
         }
-        button.disabled = true;
-        try {
-          status.textContent = 'Cancelling run ' + run.id + '…';
+        await withAction(button, 'Cancelling run ' + run.id + '…', async () => {
           await postJson('/runs/' + encodeURIComponent(run.id) + '/cancel', {});
           await load();
           await loadRunDetail(run.id);
-          status.textContent = 'Cancelled run ' + run.id + '.';
-        } catch (error) {
-          button.disabled = false;
-          status.textContent = error instanceof Error ? error.message : String(error);
-        }
+        }, 'Cancelled run ' + run.id + '.');
       });
       detail.querySelector('[data-cleanup-preview]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
-        button.disabled = true;
-        try {
-          status.textContent = 'Loading cleanup preview for ' + run.id + '…';
+        await withAction(button, 'Loading cleanup preview for ' + run.id + '…', async () => {
           await loadRunDetail(run.id, true);
-          status.textContent = 'Cleanup preview refreshed for ' + run.id + '.';
-        } catch (error) {
-          button.disabled = false;
-          status.textContent = error instanceof Error ? error.message : String(error);
-        }
+        }, 'Cleanup preview refreshed for ' + run.id + '.');
       });
       startRunEventStream(run.id);
       detail.querySelector('[data-cleanup-apply]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
-        button.disabled = true;
-        try {
-          status.textContent = 'Requesting cleanup confirmation for ' + run.id + '…';
+        await withAction(button, 'Requesting cleanup confirmation for ' + run.id + '…', async () => {
           const confirmationPayload = await postJson('/runs/' + encodeURIComponent(run.id) + '/workspace-cleanup/apply', { confirm: '' });
           const expectedConfirmation = confirmationPayload.expectedConfirmation;
           const accepted = window.confirm('Apply workspace cleanup for ' + run.id + '?\n\nServer confirmation phrase:\n' + expectedConfirmation);
           if (!accepted) {
-            button.disabled = false;
             status.textContent = 'Workspace cleanup apply cancelled for ' + run.id + '.';
             return;
           }
           const applyPayload = await postJson('/runs/' + encodeURIComponent(run.id) + '/workspace-cleanup/apply', { confirm: expectedConfirmation });
-          await loadRunDetail(run.id, true);
-          status.textContent = 'Workspace cleanup ' + applyPayload.cleanupResult.status + ' for ' + run.id + '.';
-        } catch (error) {
-          button.disabled = false;
-          status.textContent = error instanceof Error ? error.message : String(error);
-        }
+          const resultText = 'Workspace cleanup ' + applyPayload.cleanupResult.status + ' for ' + run.id + '.';
+          status.textContent = resultText;
+          try {
+            await loadRunDetail(run.id, true);
+            status.textContent = resultText;
+          } catch (refreshError) {
+            status.textContent = resultText + ' Refresh failed: ' + errorMessage(refreshError);
+          }
+        });
       });
     }
 
@@ -541,18 +513,12 @@ export function renderOperatorUiHtml(): string {
         status.textContent = 'Project creation cancelled.';
         return;
       }
-      projectCreate.disabled = true;
-      try {
-        status.textContent = 'Creating project ' + name + '…';
+      await withAction(projectCreate, 'Creating project ' + name + '…', async () => {
         const payload = await postJson('/projects', { name });
         scope.value = payload.project.id;
         await load();
-        projectCreate.disabled = false;
-        status.textContent = 'Created project ' + payload.project.id + '.';
-      } catch (error) {
-        projectCreate.disabled = false;
-        status.textContent = error instanceof Error ? error.message : String(error);
-      }
+        return payload;
+      }, (payload) => 'Created project ' + payload.project.id + '.');
     });
 
     trackCreate.addEventListener('click', async () => {
@@ -564,18 +530,12 @@ export function renderOperatorUiHtml(): string {
       const description = window.prompt('New track description', '') ?? '';
       const priority = window.prompt('Track priority (low, medium, high)', 'medium') ?? 'medium';
       const projectId = scope.value || undefined;
-      trackCreate.disabled = true;
-      try {
-        status.textContent = 'Creating track ' + title + '…';
+      await withAction(trackCreate, 'Creating track ' + title + '…', async () => {
         const payload = await postJson('/tracks', { projectId, title, description, priority });
         await load();
         await loadTrackDetail(payload.track.id);
-        trackCreate.disabled = false;
-        status.textContent = 'Created track ' + payload.track.id + '.';
-      } catch (error) {
-        trackCreate.disabled = false;
-        status.textContent = error instanceof Error ? error.message : String(error);
-      }
+        return payload;
+      }, (payload) => 'Created track ' + payload.track.id + '.');
     });
 
     projectUpdate.addEventListener('click', async () => {
@@ -597,9 +557,7 @@ export function renderOperatorUiHtml(): string {
       const workflowPolicyInput = window.prompt('Default workflow policy for ' + projectId + ' (blank clears)', currentProject.defaultWorkflowPolicy ?? '');
       const planningSystemInput = window.prompt('Default planning system for ' + projectId + ' (blank clears)', currentProject.defaultPlanningSystem ?? '');
       const optionalText = (value) => value === null ? undefined : value.trim() === '' ? null : value.trim();
-      projectUpdate.disabled = true;
-      try {
-        status.textContent = 'Updating project ' + projectId + '…';
+      await withAction(projectUpdate, 'Updating project ' + projectId + '…', async () => {
         const payload = await patchJson('/projects/' + encodeURIComponent(projectId), {
           name,
           repoUrl: optionalText(repoUrlInput),
@@ -609,12 +567,8 @@ export function renderOperatorUiHtml(): string {
         });
         scope.value = payload.project.id;
         await load();
-        projectUpdate.disabled = false;
-        status.textContent = 'Updated project ' + payload.project.id + '.';
-      } catch (error) {
-        projectUpdate.disabled = false;
-        status.textContent = error instanceof Error ? error.message : String(error);
-      }
+        return payload;
+      }, (payload) => 'Updated project ' + payload.project.id + '.');
     });
 
     scope.addEventListener('change', load);

@@ -100,10 +100,11 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI selected-run detail can resume/cancel runs through existing lifecycle APIs
 - hosted UI selected-run detail appends live SSE event updates while a run is selected
 - hosted UI selected-run detail can request cleanup preview/apply through the existing explicit confirmation flow
+- hosted UI action controls use shared in-flight/error handling and preserve cleanup apply results if post-apply refresh fails
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
 ## Suggested issue framing from the current baseline
 
-1. **Harden hosted operator UI state and error handling**
-   - split the inline UI into testable client helpers and improve action/loading edge cases.
+1. **Split hosted operator UI into smaller client modules**
+   - move the inline UI script/style toward separately testable browser helpers once the hosted shell grows beyond the current API-only slice.
