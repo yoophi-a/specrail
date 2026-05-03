@@ -366,7 +366,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, h\/l artifact, \[\/\] revision, v propose, f run filter, Space tail pause\/resume, s start, e resume, c cancel, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, h\/l artifact, \[\/\] revision, v propose, f run filter, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
 });
 
 test("renderAppShell renders run event monitor details", () => {
@@ -438,9 +438,76 @@ test("renderAppShell renders run event monitor details", () => {
   assert.match(rendered, /failure focus: Failed Claude Code session run-1-claude \(exit 1\)/);
   assert.match(rendered, /Runs \(1\/1, filter=terminal\)/);
   assert.match(rendered, /stream: reconnecting \(attempt 2\)/);
-  assert.match(rendered, /operator actions: press e to resume this run, Space to pause tail/);
+  assert.match(rendered, /operator actions: press e to resume this run, w to preview workspace cleanup, Space to pause tail/);
   assert.match(rendered, /recent activity:/);
   assert.match(rendered, /task_status_changed \| status=failed \| Failed Claude Code session run-1-claude/);
+});
+
+test("renderAppShell renders guarded workspace cleanup preview and confirmation state", () => {
+  const rendered = renderAppShell({
+    screen: "runs",
+    statusLine: "Cleanup preview ready for run-cleanup-a.",
+    apiBaseUrl: "http://127.0.0.1:4000",
+    refreshIntervalMs: 5000,
+    loading: false,
+    error: null,
+    tracks: {
+      selectedId: "track-1",
+      selectedIndex: 0,
+      loading: false,
+      error: null,
+      data: null,
+    },
+    runs: {
+      selectedId: "run-cleanup-a",
+      selectedIndex: 0,
+      loading: false,
+      error: null,
+      data: {
+        run: { id: "run-cleanup-a", trackId: "track-1", status: "cancelled", backend: "codex" },
+      },
+    },
+    runFilter: "terminal",
+    runEvents: createEmptyRunEventFeedState("run-cleanup-a"),
+    pendingTrackAction: null,
+    pendingExecutionAction: null,
+    pendingProposalAction: null,
+    pendingWorkspaceCleanupAction: {
+      runId: "run-cleanup-a",
+      phase: "confirmation_ready",
+      submitting: false,
+      message: "Server confirmation phrase received. Press Enter again to apply cleanup with that exact phrase.",
+      preview: {
+        cleanupPlan: {
+          dryRun: true,
+          eligible: true,
+          operations: [{ kind: "remove_directory", path: "/tmp/specrail-workspaces/run-cleanup-a" }],
+          refusalReasons: [],
+        },
+      },
+      result: {
+        expectedConfirmation: "apply workspace cleanup for run-cleanup-a",
+        cleanupResult: {
+          applied: false,
+          status: "refused",
+          operations: [],
+          refusalReasons: ["Workspace cleanup apply requires explicit confirmation"],
+        },
+      },
+    },
+    summary: {
+      fetchedAt: "2026-04-10T12:06:00.000Z",
+      tracks: [{ id: "track-1", title: "Terminal shell", status: "failed" }],
+      runs: [{ id: "run-cleanup-a", trackId: "track-1", status: "cancelled", backend: "codex" }],
+    },
+  });
+
+  assert.match(rendered, /Workspace cleanup: run-cleanup-a/);
+  assert.match(rendered, /eligible: yes/);
+  assert.match(rendered, /remove_directory \/tmp\/specrail-workspaces\/run-cleanup-a/);
+  assert.match(rendered, /server confirmation: apply workspace cleanup for run-cleanup-a/);
+  assert.match(rendered, /result: refused/);
+  assert.match(rendered, /Press Enter again to apply cleanup with that exact phrase/);
 });
 
 test("selectNextItem advances run selection on runs screen", () => {

@@ -224,6 +224,15 @@ export interface PendingProposalActionState {
   message: string | null;
 }
 
+export interface PendingWorkspaceCleanupActionState {
+  runId: string;
+  preview: WorkspaceCleanupPreviewResponse;
+  result: WorkspaceCleanupApplyResponse | null;
+  phase: "preview" | "confirmation_ready" | "applying" | "done";
+  submitting: boolean;
+  message: string | null;
+}
+
 export interface TerminalAppState {
   screen: TerminalScreenId;
   statusLine: string;
@@ -239,6 +248,7 @@ export interface TerminalAppState {
   pendingTrackAction: PendingTrackActionState | null;
   pendingExecutionAction: PendingExecutionActionState | null;
   pendingProposalAction: PendingProposalActionState | null;
+  pendingWorkspaceCleanupAction?: PendingWorkspaceCleanupActionState | null;
 }
 
 interface TracksResponse {
@@ -561,6 +571,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     pendingTrackAction: null,
     pendingExecutionAction: null,
     pendingProposalAction: null,
+    pendingWorkspaceCleanupAction: null,
   };
 }
 
@@ -837,10 +848,39 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, h/l artifact, [/] revision, v propose, f run filter, Space tail pause/resume, s start, e resume, c cancel, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, h/l artifact, [/] revision, v propose, f run filter, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
+    ...renderWorkspaceCleanupComposer(state.pendingWorkspaceCleanupAction ?? null),
   ].join("\n");
+}
+
+function renderWorkspaceCleanupComposer(action: PendingWorkspaceCleanupActionState | null): string[] {
+  if (!action) {
+    return [];
+  }
+
+  const plan = action.preview.cleanupPlan;
+  const result = action.result?.cleanupResult;
+  const expectedConfirmation = action.result?.expectedConfirmation;
+  const operationLines = plan.operations.length > 0
+    ? plan.operations.map((operation, index) => `  ${index + 1}. ${operation.kind}${operation.path ? ` ${operation.path}` : ""}${operation.branchName ? ` ${operation.branchName}` : ""}`)
+    : ["  - none"];
+  const refusalLines = plan.refusalReasons.length > 0 ? plan.refusalReasons.map((reason) => `  - ${reason}`) : ["  - none"];
+
+  return [
+    "",
+    `Workspace cleanup: ${action.runId}`,
+    `- eligible: ${plan.eligible ? "yes" : "no"}`,
+    `- phase: ${action.phase}${action.submitting ? " (submitting...)" : ""}`,
+    "- preview operations:",
+    ...operationLines,
+    "- preview refusal reasons:",
+    ...refusalLines,
+    expectedConfirmation ? `- server confirmation: ${expectedConfirmation}` : "- server confirmation: not requested yet",
+    result ? `- result: ${result.status} (${result.operations.length} operations, ${result.refusalReasons.length} refusals)` : "- result: none yet",
+    action.message ? `- note: ${action.message}` : "- note: Enter requests server confirmation, then Enter again applies with that exact phrase; Esc aborts",
+  ];
 }
 
 function renderProposalActionComposer(action: PendingProposalActionState | null): string[] {
@@ -1184,7 +1224,7 @@ function formatRunOperatorActions(run: RunListItem, feed: RunEventFeedState): st
   }
 
   if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
-    return `press e to resume this run, ${tailAction}`;
+    return `press e to resume this run, w to preview workspace cleanup, ${tailAction}`;
   }
 
   return `${tailAction}, resume/cancel unavailable for the current run state`;
@@ -1597,6 +1637,57 @@ export async function runTerminalApp(
     updateState({ ...state, pendingProposalAction: next, statusLine });
   };
 
+  const updateWorkspaceCleanupComposer = (next: PendingWorkspaceCleanupActionState | null, statusLine = state.statusLine) => {
+    updateState({ ...state, pendingWorkspaceCleanupAction: next, statusLine });
+  };
+
+  const openWorkspaceCleanupPreview = async () => {
+    if (state.screen !== "runs") {
+      updateState({ ...state, statusLine: "Switch to the runs screen to preview workspace cleanup." });
+      return;
+    }
+
+    const run = state.runs.data?.run;
+    if (!run || run.id !== state.runs.selectedId) {
+      updateState({ ...state, statusLine: "Run detail is still loading. Press r and try again." });
+      return;
+    }
+
+    if (!(run.status === "completed" || run.status === "failed" || run.status === "cancelled")) {
+      updateState({ ...state, statusLine: `Run ${run.id} is ${run.status}; cleanup is only available after a terminal state.` });
+      return;
+    }
+
+    state = {
+      ...state,
+      pendingExecutionAction: null,
+      pendingProposalAction: null,
+      pendingWorkspaceCleanupAction: null,
+      statusLine: `Loading cleanup preview for ${run.id}...`,
+    };
+    render();
+
+    try {
+      const preview = await client.previewWorkspaceCleanup(run.id);
+      updateWorkspaceCleanupComposer({
+        runId: run.id,
+        preview,
+        result: null,
+        phase: "preview",
+        submitting: false,
+        message: preview.cleanupPlan.eligible
+          ? "Press Enter to request the server confirmation phrase before applying cleanup."
+          : "Cleanup is not eligible; apply is disabled.",
+      }, preview.cleanupPlan.eligible ? `Cleanup preview ready for ${run.id}.` : `Cleanup preview refused for ${run.id}.`);
+    } catch (error) {
+      updateState({
+        ...state,
+        error: error instanceof Error ? error.message : "Failed to preview workspace cleanup.",
+        statusLine: error instanceof Error ? error.message : "Failed to preview workspace cleanup.",
+      });
+    }
+  };
+
   const toggleRunTailPause = () => {
     if (state.screen !== "runs") {
       updateState({ ...state, statusLine: "Switch to the runs screen to control the live tail." });
@@ -1737,6 +1828,51 @@ export async function runTerminalApp(
         },
         error: error instanceof Error ? error.message : "Failed to propose revision.",
         statusLine: error instanceof Error ? error.message : "Failed to propose revision.",
+      });
+    }
+  };
+
+  const submitWorkspaceCleanupAction = async () => {
+    const action = state.pendingWorkspaceCleanupAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    if (!action.preview.cleanupPlan.eligible) {
+      updateWorkspaceCleanupComposer({ ...action, message: "Cleanup preview is not eligible; apply is disabled." }, "Cleanup preview is not eligible.");
+      return;
+    }
+
+    const confirmation = action.result?.expectedConfirmation ?? "";
+    state = {
+      ...state,
+      pendingWorkspaceCleanupAction: { ...action, submitting: true, phase: confirmation ? "applying" : "preview", message: null },
+      statusLine: confirmation ? `Applying workspace cleanup for ${action.runId}...` : `Requesting cleanup confirmation for ${action.runId}...`,
+    };
+    render();
+
+    try {
+      const result = await client.applyWorkspaceCleanup(action.runId, confirmation);
+      const nextPhase = confirmation && result.cleanupResult.applied ? "done" : "confirmation_ready";
+      updateWorkspaceCleanupComposer({
+        ...action,
+        result,
+        phase: nextPhase,
+        submitting: false,
+        message: confirmation
+          ? `Cleanup ${result.cleanupResult.status}; ${result.cleanupResult.operations.length} operation(s) returned.`
+          : "Server confirmation phrase received. Press Enter again to apply cleanup with that exact phrase.",
+      }, confirmation ? `Workspace cleanup ${result.cleanupResult.status} for ${action.runId}.` : `Workspace cleanup confirmation ready for ${action.runId}.`);
+    } catch (error) {
+      updateState({
+        ...state,
+        pendingWorkspaceCleanupAction: {
+          ...action,
+          submitting: false,
+          message: error instanceof Error ? error.message : "Failed to apply workspace cleanup.",
+        },
+        error: error instanceof Error ? error.message : "Failed to apply workspace cleanup.",
+        statusLine: error instanceof Error ? error.message : "Failed to apply workspace cleanup.",
       });
     }
   };
@@ -1914,6 +2050,18 @@ export async function runTerminalApp(
         }
       }
 
+      if (state.pendingWorkspaceCleanupAction) {
+        if (key.name === "escape") {
+          updateState({ ...state, pendingWorkspaceCleanupAction: null, statusLine: "Workspace cleanup action cancelled." });
+          return;
+        }
+
+        if (key.name === "return" || key.name === "enter") {
+          void submitWorkspaceCleanupAction();
+          return;
+        }
+      }
+
       if (key.name === "q") {
         cleanup();
         return;
@@ -1941,6 +2089,11 @@ export async function runTerminalApp(
 
       if (key.name === "c") {
         openCancelRunComposer();
+        return;
+      }
+
+      if (key.name === "w") {
+        void openWorkspaceCleanupPreview();
         return;
       }
 
