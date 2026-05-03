@@ -187,6 +187,24 @@ test("operator UI client harness submits selected-track detail actions", async (
     createdBy: "user",
   });
 
+  const [approveButton] = detail.querySelectorAll("[data-approval-id]");
+  await approveButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/approval-requests/approval-spec-1/approve")?.body, {
+    decidedBy: "user",
+    comment: "decided from hosted operator UI",
+  });
+
+  const [, , , rejectButton] = detail.querySelectorAll("[data-approval-id]");
+  await rejectButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/approval-requests/approval-plan-1/reject")?.body, {
+    decidedBy: "user",
+    comment: "decided from hosted operator UI",
+  });
+
   await startRun("Implement selected track now.");
 
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs")?.body, {

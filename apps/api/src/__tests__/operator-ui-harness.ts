@@ -18,6 +18,7 @@ export class FakeElement {
   public children: FakeElement[] = [];
   private readonly listeners = new Map<string, Array<(event: { currentTarget: FakeElement }) => unknown>>();
   private readonly descendants = new Map<string, FakeElement>();
+  private readonly descendantLists = new Map<string, FakeElement[]>();
   private readonly attributes = new Map<string, string>();
   private innerHtmlValue = "";
 
@@ -28,6 +29,7 @@ export class FakeElement {
   public set innerHTML(value: string) {
     this.innerHtmlValue = value;
     this.descendants.clear();
+    this.descendantLists.clear();
   }
 
   public addEventListener(type: string, listener: (event: { currentTarget: FakeElement }) => unknown): void {
@@ -71,6 +73,19 @@ export class FakeElement {
   public querySelectorAll(selector: string): FakeElement[] {
     if (selector === "[data-artifact-proposal]") {
       return [this.querySelector(selector)];
+    }
+    if (selector === "[data-approval-id]") {
+      const existing = this.descendantLists.get(selector);
+      if (existing) return existing;
+
+      const buttons = Array.from(this.innerHTML.matchAll(/<button data-approval-id="([^"]*)" data-decision="([^"]*)">/g)).map((match) => {
+        const button = new FakeElement();
+        button.setAttribute("data-approval-id", match[1] ?? "");
+        button.setAttribute("data-decision", match[2] ?? "");
+        return button;
+      });
+      this.descendantLists.set(selector, buttons);
+      return buttons;
     }
     return [];
   }
@@ -117,6 +132,11 @@ export function createHostedUiClientHarness() {
   trackPriority.value = "medium";
 
   const projects = [{ id: "project-1", name: "Project One", repoUrl: "https://example.com/one", localRepoPath: "/repo/one", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" }];
+  const artifactApprovalRequests = {
+    spec: [{ id: "approval-spec-1", status: "pending" }],
+    plan: [{ id: "approval-plan-1", status: "pending" }],
+    tasks: [],
+  };
   const tracks: Array<Record<string, unknown>> = [];
   const runs: Array<Record<string, unknown>> = [];
   const calls: HostedUiFetchCall[] = [];
@@ -180,7 +200,8 @@ export function createHostedUiClientHarness() {
       return { ok: true, json: async () => ({ message: { id: "message-1", ...(body as Record<string, unknown>) } }) };
     }
     if (/^\/tracks\/[^/]+\/artifacts\/(spec|plan|tasks)$/.test(path) && method === "GET") {
-      return { ok: true, json: async () => ({ approvalRequests: [] }) };
+      const artifact = path.split("/").at(-1) as keyof typeof artifactApprovalRequests;
+      return { ok: true, json: async () => ({ approvalRequests: artifactApprovalRequests[artifact] }) };
     }
     if (/^\/tracks\/[^/]+\/artifacts\/(spec|plan|tasks)$/.test(path) && method === "POST") {
       return { ok: true, json: async () => ({ revision: { id: "revision-1", ...(body as Record<string, unknown>) } }) };
@@ -215,6 +236,9 @@ export function createHostedUiClientHarness() {
         return { ok: true, json: async () => ({ expectedConfirmation: "APPLY CLEANUP run-1" }) };
       }
       return { ok: true, json: async () => ({ cleanupResult: { status: "completed", failures: [] } }) };
+    }
+    if (/^\/approval-requests\/[^/]+\/(approve|reject)$/.test(path) && method === "POST") {
+      return { ok: true, json: async () => ({ approvalRequest: { id: path.split("/")[2], ...(body as Record<string, unknown>) } }) };
     }
     throw new Error(`Unhandled fetch ${method} ${path}`);
   }
