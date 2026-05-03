@@ -163,6 +163,18 @@ test("operator UI client harness filters tracks by project scope", async () => {
   assert.equal(elements.get("#status")?.textContent, "Loaded 2 projects, 2 tracks, and 0 runs.");
 });
 
+test("operator UI client harness surfaces top-level refresh failures", async () => {
+  const { elements, failPath, loadInitialState } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  failPath("/runs?page=1&pageSize=20", "run list unavailable");
+  await elements.get("#refresh")!.click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "run list unavailable");
+  assert.equal(elements.get("#refresh")!.disabled, false);
+});
+
 test("operator UI client harness surfaces selected-detail load failures", async () => {
   const { detail, elements, createTrack, failPath, loadInitialState, startRun } = createHostedUiClientHarness();
   await loadInitialState();

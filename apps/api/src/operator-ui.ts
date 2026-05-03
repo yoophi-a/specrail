@@ -585,8 +585,10 @@ export function renderOperatorUiClientScript(): string {
       populateProjectForm(scope.value);
       load().catch((error) => { status.textContent = errorMessage(error); });
     });
-    refresh.addEventListener('click', load);
-    load().catch((error) => { status.textContent = error instanceof Error ? error.message : String(error); });
+    refresh.addEventListener('click', () => {
+      load().catch((error) => { status.textContent = errorMessage(error); });
+    });
+    load().catch((error) => { status.textContent = errorMessage(error); });
 `;
 }
 
