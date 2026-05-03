@@ -97,7 +97,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - selected-track planning and artifact proposal actions use inline controls for session/message/proposal fields
   - selected-detail workflow and run lifecycle actions use inline controls for status and prompt fields
   - destructive run cancel and workspace cleanup apply flows use in-page confirmation controls
-  - hosted UI tests guard against reintroducing browser-native prompt/confirm dialogs
+  - hosted UI tests guard against reintroducing browser-native prompt/confirm dialogs and group shell coverage by action area
 
 ### Projects
 - `GET /projects`
