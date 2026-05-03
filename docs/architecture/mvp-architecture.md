@@ -448,13 +448,45 @@ Actual branch deletion/cleanup remains a separate explicit operation.
 2. service loads execution + persisted session reference
 3. optional backend must match the persisted run backend
 4. adapter resumes the provider session
-5. resumed events are appended and run summary/status are recomputed
+5. resume-related events returned by the adapter are appended before the response snapshot is returned
+6. run summary/status are recomputed from the persisted canonical event log
 
 ### Cancel run
 1. caller requests cancellation
 2. adapter best-effort terminates the persisted process/session
-3. cancellation event is persisted
+3. cancellation events returned by the adapter are appended before the response snapshot is returned
 4. execution status becomes `cancelled` and the linked track reconciles to `blocked`
+5. run summary/status are recomputed from the persisted canonical event log
+
+### Run lifecycle response-boundary contract
+
+Run lifecycle responses are snapshots after the service has persisted the events produced by that specific service call. They are not a promise that no additional adapter events can appear later.
+
+Synchronous guarantees for `POST /runs/:runId/resume`:
+
+- response status is `200` when the persisted run exists and the backend/profile request is valid
+- `run.id` is unchanged
+- `run.status` reflects the recomputed snapshot after resume events, normally `running`
+- `run.command.prompt` stores the latest resume prompt
+- `run.command.resumeSessionRef` is present when the adapter provided a resumable session reference
+- `run.summary.eventCount` is at least the previously persisted event count plus the resume events appended by this call
+- `run.summary.lastEventSummary` reflects the latest event that was persisted before the response was serialized
+
+Synchronous guarantees for `POST /runs/:runId/cancel`:
+
+- response status is `200` when the persisted run exists and cancellation handling completes
+- `run.status` is `cancelled`
+- `run.finishedAt` is set
+- a cancellation event is persisted before the response snapshot is returned
+- `run.summary.lastEventSummary` reflects the latest persisted cancellation event when no later same-call event supersedes it
+
+Non-guarantees:
+
+- exact `run.summary.eventCount` values at resume/cancel response boundaries
+- provider-specific event ordering beyond events appended by the current adapter call
+- absence of later events from asynchronous provider telemetry, file watchers, or future adapter fidelity improvements
+
+Tests and clients should assert semantic lifecycle facts, event presence, monotonic event-count lower bounds, and current summary coherence instead of exact event-count snapshots.
 
 ### Stream run events
 1. caller opens SSE stream for a run
