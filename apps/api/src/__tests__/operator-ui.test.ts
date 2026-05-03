@@ -8,7 +8,10 @@ import {
   operatorUiEscapeHtml,
   operatorUiMetadataHtml,
   operatorUiPreviewHtml,
+  operatorUiRunCancelPath,
+  operatorUiRunCreatePath,
   operatorUiRunEventStreamPath,
+  operatorUiRunResumePath,
   renderOperatorUiHtml,
 } from "../operator-ui.js";
 
@@ -21,6 +24,9 @@ test("operator UI helpers escape metadata and previews", () => {
 
 test("operator UI helpers build encoded action URLs", () => {
   assert.equal(operatorUiApprovalDecisionPath("approval/request 1", "approve"), "/approval-requests/approval%2Frequest%201/approve");
+  assert.equal(operatorUiRunCreatePath(), "/runs");
+  assert.equal(operatorUiRunResumePath("run/1"), "/runs/run%2F1/resume");
+  assert.equal(operatorUiRunCancelPath("run/1"), "/runs/run%2F1/cancel");
   assert.equal(operatorUiCleanupPreviewPath("run/1"), "/runs/run%2F1/workspace-cleanup/preview");
   assert.equal(operatorUiCleanupApplyPath("run/1"), "/runs/run%2F1/workspace-cleanup/apply");
   assert.equal(operatorUiRunEventStreamPath("run/1"), "/runs/run%2F1/events/stream");
@@ -31,6 +37,9 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
 
   assert.match(body, /SpecRail Operator/);
   assert.match(body, /data-approval-id/);
+  assert.match(body, /data-run-start/);
+  assert.match(body, /data-run-resume/);
+  assert.match(body, /data-run-cancel/);
   assert.match(body, /workspace-cleanup\/preview/);
   assert.match(body, /workspace-cleanup\/apply/);
   assert.match(body, /new EventSource/);

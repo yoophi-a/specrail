@@ -29,6 +29,18 @@ export function operatorUiApprovalDecisionPath(approvalRequestId: string, decisi
   return `/approval-requests/${encodeURIComponent(approvalRequestId)}/${decision}`;
 }
 
+export function operatorUiRunCreatePath(): string {
+  return "/runs";
+}
+
+export function operatorUiRunResumePath(runId: string): string {
+  return `/runs/${encodeURIComponent(runId)}/resume`;
+}
+
+export function operatorUiRunCancelPath(runId: string): string {
+  return `/runs/${encodeURIComponent(runId)}/cancel`;
+}
+
 export function operatorUiCleanupPreviewPath(runId: string): string {
   return `/runs/${encodeURIComponent(runId)}/workspace-cleanup/preview`;
 }
@@ -175,10 +187,30 @@ export function renderOperatorUiHtml(): string {
           ['Pending planning changes', planning.hasPendingChanges ? 'yes' : 'no'],
           ['Updated', track.updatedAt],
         ])
+        + '<h3>Run lifecycle</h3><button data-run-start="' + escapeHtml(track.id) + '">Start run</button>'
         + artifactApprovalActions(artifactPayloads)
         + preview('Spec preview', payload.artifacts?.spec)
         + preview('Plan preview', payload.artifacts?.plan)
         + preview('Tasks preview', payload.artifacts?.tasks);
+      detail.querySelector('[data-run-start]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const promptText = window.prompt('Prompt for the new run on ' + track.id, 'Implement the selected track.');
+        if (!promptText) {
+          status.textContent = 'Run start cancelled for ' + track.id + '.';
+          return;
+        }
+        button.disabled = true;
+        try {
+          status.textContent = 'Starting run for ' + track.id + '…';
+          const runPayload = await postJson('/runs', { trackId: track.id, prompt: promptText });
+          await load();
+          await loadRunDetail(runPayload.run.id);
+          status.textContent = 'Started run ' + runPayload.run.id + ' for ' + track.id + '.';
+        } catch (error) {
+          button.disabled = false;
+          status.textContent = error instanceof Error ? error.message : String(error);
+        }
+      });
       detail.querySelectorAll('[data-approval-id]').forEach((button) => {
         button.addEventListener('click', async () => {
           const approvalId = button.getAttribute('data-approval-id');
@@ -248,8 +280,47 @@ export function renderOperatorUiHtml(): string {
           ['Started', run.startedAt],
           ['Finished', run.finishedAt],
         ])
+        + '<h3>Run lifecycle</h3><button data-run-resume="' + escapeHtml(run.id) + '">Resume run</button> <button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button>'
         + cleanupSection
         + '<h3>Recent events</h3><p class="muted">Live updates use <code>GET /runs/:runId/events/stream</code> while this run is selected.</p><ul id="run-events">' + events.slice(-10).map((event) => '<li><span class="pill">' + escapeHtml(event.type) + '</span> ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>').join('') + '</ul>';
+      detail.querySelector('[data-run-resume]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const promptText = window.prompt('Resume prompt for ' + run.id, 'Continue with verification.');
+        if (!promptText) {
+          status.textContent = 'Run resume cancelled for ' + run.id + '.';
+          return;
+        }
+        button.disabled = true;
+        try {
+          status.textContent = 'Resuming run ' + run.id + '…';
+          await postJson('/runs/' + encodeURIComponent(run.id) + '/resume', { prompt: promptText });
+          await load();
+          await loadRunDetail(run.id);
+          status.textContent = 'Resumed run ' + run.id + '.';
+        } catch (error) {
+          button.disabled = false;
+          status.textContent = error instanceof Error ? error.message : String(error);
+        }
+      });
+      detail.querySelector('[data-run-cancel]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const accepted = window.confirm('Cancel run ' + run.id + '?');
+        if (!accepted) {
+          status.textContent = 'Run cancel skipped for ' + run.id + '.';
+          return;
+        }
+        button.disabled = true;
+        try {
+          status.textContent = 'Cancelling run ' + run.id + '…';
+          await postJson('/runs/' + encodeURIComponent(run.id) + '/cancel', {});
+          await load();
+          await loadRunDetail(run.id);
+          status.textContent = 'Cancelled run ' + run.id + '.';
+        } catch (error) {
+          button.disabled = false;
+          status.textContent = error instanceof Error ? error.message : String(error);
+        }
+      });
       detail.querySelector('[data-cleanup-preview]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
         button.disabled = true;
