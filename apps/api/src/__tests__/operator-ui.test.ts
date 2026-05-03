@@ -398,6 +398,25 @@ test("operator UI client harness submits selected-run detail actions", async () 
   });
 });
 
+test("operator UI client harness blocks blank cleanup confirmation", async () => {
+  const { calls, createTrack, detail, elements, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Cleanup Validation Track" });
+  await startRun("Start run before cleanup validation.");
+  await requestCleanupPreview();
+  await requestCleanupConfirmation();
+
+  const cleanupApplyCallsBeforeValidation = calls.filter((call) => call.method === "POST" && call.path === "/runs/run-1/workspace-cleanup/apply");
+
+  detail.querySelector("#cleanup-confirmation").value = "   ";
+  await detail.querySelector("[data-cleanup-apply]").click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Cleanup confirmation phrase is required for run-1.");
+  assert.deepEqual(calls.filter((call) => call.method === "POST" && call.path === "/runs/run-1/workspace-cleanup/apply"), cleanupApplyCallsBeforeValidation);
+});
+
 test("operator UI client harness surfaces cleanup failure states", async () => {
   const { createTrack, detail, elements, failPath, loadInitialState, requestCleanupPreview, startRun } = createHostedUiClientHarness();
   await loadInitialState();
