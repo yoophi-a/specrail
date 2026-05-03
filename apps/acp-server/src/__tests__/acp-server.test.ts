@@ -22,6 +22,7 @@ function createFakeService() {
     updatedAt: "2026-04-13T00:00:00.000Z",
   };
 
+  const tracks = new Map<string, Track>([[track.id, track]]);
   const runs = new Map<string, Execution>();
   const events = new Map<string, ExecutionEvent[]>();
   let runCounter = 1;
@@ -37,8 +38,24 @@ function createFakeService() {
   };
 
   const service = {
+    async createTrack(input: { title: string; description: string; priority?: "low" | "medium" | "high"; projectId?: string }) {
+      const created: Track = {
+        id: `track-${tracks.size + 1}`,
+        projectId: input.projectId ?? "project-default",
+        title: input.title,
+        description: input.description,
+        status: "planned",
+        specStatus: "pending",
+        planStatus: "pending",
+        priority: input.priority ?? "medium",
+        createdAt: "2026-04-13T00:00:00.000Z",
+        updatedAt: "2026-04-13T00:00:00.000Z",
+      };
+      tracks.set(created.id, created);
+      return created;
+    },
     async getTrack(trackId: string) {
-      return trackId === track.id ? track : null;
+      return tracks.get(trackId) ?? null;
     },
     async startRun(input: { trackId: string; prompt: string; backend?: string; profile?: string; planningSessionId?: string }) {
       const runId = `run-${runCounter++}`;
@@ -191,6 +208,7 @@ function createFakeService() {
     },
   } satisfies Pick<
     SpecRailService,
+    | "createTrack"
     | "getTrack"
     | "startRun"
     | "resumeRun"
@@ -285,6 +303,62 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   );
   assert.equal(loadResponse?.error, undefined);
   assert.ok(loadNotifications.some((payload) => JSON.stringify(payload).includes("Started run-1")));
+});
+
+test("ACP server creates a project-scoped track when session/new omits trackId", async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
+  const server = new SpecRailAcpServer({
+    service: createFakeService() as unknown as SpecRailService,
+    stateDir,
+    now: () => "2026-04-13T12:00:00.000Z",
+    pollIntervalMs: 1,
+  });
+
+  const newResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: {
+        cwd: "/tmp/specrail",
+        _meta: {
+          specrail: {
+            projectId: "project-non-default",
+            title: "Non-default ACP work",
+            backend: "codex",
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  assert.equal(newResponse?.error, undefined);
+  const sessionId = (newResponse?.result as { sessionId: string }).sessionId;
+  const notifications: unknown[] = [];
+  const promptResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Create a track in a non-default project" }],
+      },
+    },
+    (payload) => notifications.push(payload),
+  );
+
+  assert.deepEqual(promptResponse?.result, { stopReason: "end_turn" });
+  assert.ok(JSON.stringify(notifications).includes('"projectId":"project-non-default"'));
+  assert.ok(JSON.stringify(notifications).includes('"trackId":"track-2"'));
+
+  const listResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 3, method: "session/list", params: { cwd: "/tmp/specrail" } },
+    () => {},
+  );
+  assert.ok(JSON.stringify(listResponse?.result).includes('"projectId":"project-non-default"'));
+  assert.ok(JSON.stringify(listResponse?.result).includes('"trackId":"track-2"'));
 });
 
 test("ACP server emits richer permission request and resolution updates", async () => {

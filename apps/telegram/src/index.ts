@@ -6,6 +6,7 @@ export interface TelegramAppConfig {
   telegramBotToken: string;
   port: number;
   webhookPath: string;
+  projectId?: string;
 }
 
 export interface TelegramUser {
@@ -45,7 +46,7 @@ export interface TelegramUpdate {
 }
 
 interface TrackResponse {
-  track: { id: string; title: string };
+  track: { id: string; title: string; projectId?: string };
 }
 
 interface RunResponse {
@@ -66,6 +67,7 @@ export function loadTelegramAppConfig(env: NodeJS.ProcessEnv = process.env): Tel
     telegramBotToken: env.TELEGRAM_BOT_TOKEN ?? "",
     port: Number(env.TELEGRAM_APP_PORT ?? 4100),
     webhookPath: env.TELEGRAM_WEBHOOK_PATH ?? "/telegram/webhook",
+    projectId: env.SPECRAIL_TELEGRAM_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID,
   };
 }
 
@@ -185,7 +187,7 @@ export class SpecRailApiClient {
       .then((payload) => payload?.binding ?? null);
   }
 
-  createTrack(input: { title: string; description: string; priority?: "low" | "medium" | "high" }) {
+  createTrack(input: { title: string; description: string; priority?: "low" | "medium" | "high"; projectId?: string }) {
     return this.request<TrackResponse>("/tracks", { method: "POST", body: JSON.stringify(input) });
   }
 
@@ -315,6 +317,7 @@ export interface TelegramFrontendDeps {
     "findChannelBinding" | "createTrack" | "bindChannel" | "registerAttachment" | "startRun" | "streamRunEvents"
   >;
   telegram: Pick<TelegramBotClient, "sendMessage">;
+  projectId?: string;
 }
 
 export async function handleTelegramUpdate(update: TelegramUpdate, deps: TelegramFrontendDeps): Promise<void> {
@@ -331,15 +334,18 @@ export async function handleTelegramUpdate(update: TelegramUpdate, deps: Telegra
     externalThreadId: refs.threadId,
   });
 
+  const projectId = deps.projectId;
+
   if (!binding?.trackId) {
     const track = await deps.specRail.createTrack({
       title: deriveTrackTitle(prompt),
       description: prompt,
       priority: "medium",
+      projectId,
     });
 
     const bound = await deps.specRail.bindChannel({
-      projectId: "project-default",
+      projectId: track.track.projectId ?? projectId ?? "project-default",
       channelType: "telegram",
       externalChatId: refs.chatId,
       externalThreadId: refs.threadId,
@@ -432,7 +438,7 @@ export function createTelegramWebhookServer(config: TelegramAppConfig, deps: Tel
 export function createDefaultTelegramServer(config: TelegramAppConfig = loadTelegramAppConfig()): http.Server {
   const specRail = new SpecRailApiClient(config.apiBaseUrl);
   const telegram = new TelegramBotClient(config.telegramBotToken);
-  return createTelegramWebhookServer(config, { specRail, telegram });
+  return createTelegramWebhookServer(config, { specRail, telegram, projectId: config.projectId });
 }
 
 const isMainModule = process.argv[1] ? pathToFileURL(process.argv[1]).href === import.meta.url : false;

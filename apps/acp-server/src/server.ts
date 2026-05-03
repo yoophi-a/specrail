@@ -29,7 +29,8 @@ interface JsonRpcResponse {
 interface AcpSessionRecord {
   sessionId: string;
   cwd: string;
-  trackId: string;
+  projectId?: string;
+  trackId?: string;
   planningSessionId?: string;
   backend?: string;
   profile?: string;
@@ -56,6 +57,7 @@ interface SessionNewParams {
   mcpServers?: unknown[];
   _meta?: {
     specrail?: {
+      projectId?: string;
       trackId?: string;
       planningSessionId?: string;
       backend?: string;
@@ -186,12 +188,13 @@ export class SpecRailAcpServer {
     const body = (params ?? {}) as SessionNewParams;
     const cwd = this.requireAbsolutePath(body.cwd, "cwd");
     const specrail = body._meta?.specrail;
-    const trackId = this.requireNonEmptyString(specrail?.trackId, "_meta.specrail.trackId");
+    const trackId = this.optionalString(specrail?.trackId);
     const sessionId = `specrail-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const createdAt = this.now();
     const session: AcpSessionRecord = {
       sessionId,
       cwd,
+      projectId: this.optionalString(specrail?.projectId),
       trackId,
       planningSessionId: this.optionalString(specrail?.planningSessionId),
       backend: this.optionalString(specrail?.backend),
@@ -241,6 +244,7 @@ export class SpecRailAcpServer {
         updatedAt: session.updatedAt,
         _meta: {
           specrail: {
+            projectId: session.projectId,
             trackId: session.trackId,
             planningSessionId: session.planningSessionId,
             backend: session.backend,
@@ -281,8 +285,14 @@ export class SpecRailAcpServer {
         execution = await this.options.service.resumeRun({ runId: session.runId, prompt, profile: session.profile, backend: session.backend });
         startingEventCount = (await this.options.service.listRunEvents(execution.id)).length;
       } else {
+        const trackId = session.trackId ?? (await this.options.service.createTrack({
+          title: session.title ?? this.deriveTrackTitle(prompt),
+          description: prompt,
+          priority: "medium",
+          projectId: session.projectId,
+        })).id;
         execution = await this.options.service.startRun({
-          trackId: session.trackId,
+          trackId,
           prompt,
           backend: session.backend,
           profile: session.profile,
@@ -295,6 +305,8 @@ export class SpecRailAcpServer {
       let updatedSession: AcpSessionRecord = {
         ...session,
         title,
+        projectId: track?.projectId ?? session.projectId,
+        trackId: execution.trackId,
         runId: execution.id,
         status: execution.status,
         updatedAt: this.now(),
@@ -389,6 +401,7 @@ export class SpecRailAcpServer {
           _meta: {
             specrail: {
               runId: execution.id,
+              projectId: session.projectId,
               trackId: execution.trackId,
               backend: execution.backend,
               profile: execution.profile,
@@ -460,7 +473,7 @@ export class SpecRailAcpServer {
       notifications.push(
         this.toSessionInfoUpdate(session, {
           id: session.runId ?? event.executionId,
-          trackId: session.trackId,
+          trackId: session.trackId ?? "",
           backend: session.backend ?? event.source,
           profile: session.profile ?? "default",
           workspacePath: "",
@@ -544,6 +557,11 @@ export class SpecRailAcpServer {
       })
       .filter(Boolean)
       .join("\n\n");
+  }
+
+  private deriveTrackTitle(prompt: string): string {
+    const line = prompt.split(/\r?\n/u).find((candidate) => candidate.trim().length > 0)?.trim() ?? "ACP request";
+    return line.length > 80 ? `${line.slice(0, 77)}...` : line;
   }
 
   private requireAbsolutePath(value: unknown, field: string): string {
