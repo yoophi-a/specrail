@@ -400,6 +400,10 @@ function renderOperatorUiHtml(): string {
     li { padding: 0.65rem; border-radius: 0.5rem; background: color-mix(in srgb, Canvas 90%, CanvasText 10%); }
     .muted { color: color-mix(in srgb, CanvasText 65%, transparent); }
     .pill { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 999px; background: color-mix(in srgb, CanvasText 10%, transparent); font-size: 0.85em; }
+    .detail-grid { display: grid; gap: 0.75rem; }
+    .detail-grid dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 0.75rem; margin: 0; }
+    .detail-grid dt { font-weight: 700; }
+    .artifact-preview { max-height: 12rem; overflow: auto; padding: 0.65rem; border-radius: 0.5rem; background: color-mix(in srgb, Canvas 88%, CanvasText 12%); white-space: pre-wrap; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; }
   </style>
 </head>
@@ -422,7 +426,7 @@ function renderOperatorUiHtml(): string {
       <section><h2>Tracks</h2><ul id="tracks"></ul></section>
       <section><h2>Runs</h2><ul id="runs"></ul></section>
     </div>
-    <section><h2>Selected detail</h2><pre id="detail" class="muted">Select a track or run.</pre></section>
+    <section><h2>Selected detail</h2><div id="detail" class="muted">Select a track or run.</div></section>
   </main>
   <script type="module">
     const scope = document.querySelector('#project-scope');
@@ -447,6 +451,85 @@ function renderOperatorUiHtml(): string {
       return node;
     }
 
+    function text(value) {
+      return value === undefined || value === null || value === '' ? 'unknown' : String(value);
+    }
+
+    function escapeHtml(value) {
+      return text(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function metadata(fields) {
+      return '<dl>' + fields.map(([key, value]) => '<dt>' + escapeHtml(key) + '</dt><dd>' + escapeHtml(value) + '</dd>').join('') + '</dl>';
+    }
+
+    function preview(label, value) {
+      if (!value) return '';
+      return '<h3>' + escapeHtml(label) + '</h3><div class="artifact-preview">' + escapeHtml(String(value).slice(0, 2000)) + '</div>';
+    }
+
+    function renderTrackDetail(payload) {
+      const track = payload.track;
+      const planning = payload.planningContext ?? {};
+      detail.className = 'detail-grid';
+      detail.innerHTML = '<h3>' + escapeHtml(track.title ?? track.id) + '</h3>'
+        + metadata([
+          ['Track ID', track.id],
+          ['Project', track.projectId],
+          ['Status', track.status],
+          ['Priority', track.priority],
+          ['Spec approval', track.specStatus],
+          ['Plan approval', track.planStatus],
+          ['Planning session', planning.planningSessionId],
+          ['Pending planning changes', planning.hasPendingChanges ? 'yes' : 'no'],
+          ['Updated', track.updatedAt],
+        ])
+        + preview('Spec preview', payload.artifacts?.spec)
+        + preview('Plan preview', payload.artifacts?.plan)
+        + preview('Tasks preview', payload.artifacts?.tasks);
+    }
+
+    function renderRunDetail(runPayload, eventsPayload) {
+      const run = runPayload.run;
+      const events = eventsPayload.events ?? [];
+      detail.className = 'detail-grid';
+      detail.innerHTML = '<h3>Run ' + escapeHtml(run.id) + '</h3>'
+        + metadata([
+          ['Run ID', run.id],
+          ['Track ID', run.trackId],
+          ['Status', run.status],
+          ['Backend', run.backend],
+          ['Profile', run.profile],
+          ['Workspace', run.workspacePath],
+          ['Branch', run.branchName],
+          ['Planning session', run.planningSessionId],
+          ['Started', run.startedAt],
+          ['Finished', run.finishedAt],
+        ])
+        + '<h3>Recent events</h3><ul>' + events.slice(-10).map((event) => '<li><span class="pill">' + escapeHtml(event.type) + '</span> ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>').join('') + '</ul>';
+    }
+
+    async function loadTrackDetail(trackId) {
+      detail.className = 'muted';
+      detail.textContent = 'Loading track ' + trackId + '…';
+      renderTrackDetail(await api('/tracks/' + encodeURIComponent(trackId)));
+    }
+
+    async function loadRunDetail(runId) {
+      detail.className = 'muted';
+      detail.textContent = 'Loading run ' + runId + '…';
+      const [runPayload, eventsPayload] = await Promise.all([
+        api('/runs/' + encodeURIComponent(runId)),
+        api('/runs/' + encodeURIComponent(runId) + '/events'),
+      ]);
+      renderRunDetail(runPayload, eventsPayload);
+    }
+
     async function load() {
       status.textContent = 'Loading…';
       const projectId = scope.value;
@@ -464,12 +547,12 @@ function renderOperatorUiHtml(): string {
       tracks.replaceChildren(...trackPayload.tracks.map((track) => item(
         track.title ?? track.id,
         track.id + ' · ' + (track.projectId ?? 'project?') + ' · ' + (track.status ?? 'unknown') + ' · ' + (track.priority ?? 'medium'),
-        async () => { detail.textContent = JSON.stringify(await api('/tracks/' + encodeURIComponent(track.id)), null, 2); },
+        () => { loadTrackDetail(track.id).catch((error) => { detail.className = 'muted'; detail.textContent = error instanceof Error ? error.message : String(error); }); },
       )));
       runs.replaceChildren(...runPayload.runs.map((run) => item(
         run.id,
         run.trackId + ' · ' + (run.status ?? 'unknown') + ' · ' + (run.backend ?? 'backend?'),
-        async () => { detail.textContent = JSON.stringify(await api('/runs/' + encodeURIComponent(run.id)), null, 2); },
+        () => { loadRunDetail(run.id).catch((error) => { detail.className = 'muted'; detail.textContent = error instanceof Error ? error.message : String(error); }); },
       )));
       status.textContent = 'Loaded ' + projectPayload.projects.length + ' projects, ' + trackPayload.tracks.length + ' tracks, and ' + runPayload.runs.length + ' runs.';
     }

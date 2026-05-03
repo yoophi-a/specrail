@@ -187,7 +187,12 @@ test("API serves the hosted operator UI shell", async () => {
     assert.match(response.headers.get("content-type") ?? "", /text\/html/);
     assert.match(body, /SpecRail Operator/);
     assert.match(body, /Project scope/);
+    assert.match(body, /Spec preview/);
+    assert.match(body, /Recent events/);
+    assert.match(body, /loadTrackDetail/);
+    assert.match(body, /loadRunDetail/);
     assert.match(body, /\/tracks\?page=1&pageSize=20/);
+    assert.match(body, /\/runs\/.*\/events/);
     assert.match(body, /projectId=/);
   });
 });
