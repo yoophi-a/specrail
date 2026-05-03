@@ -16,6 +16,7 @@ import {
   ARTIFACT_KINDS,
   ATTACHMENT_SOURCE_TYPES,
   CHANNEL_TYPES,
+  PLANNING_SYSTEMS,
   FileAttachmentReferenceRepository,
   FileApprovalRequestRepository,
   FileArtifactRevisionRepository,
@@ -43,6 +44,7 @@ import {
   type ArtifactKind,
   type PlanningMessage,
   type PlanningMessageKind,
+  type PlanningSystem,
   type PlanningSessionStatus,
   type SpecRailServiceDependencies,
   type TrackStatus,
@@ -62,6 +64,22 @@ interface TrackRequestBody {
   title: string;
   description: string;
   priority?: "low" | "medium" | "high";
+}
+
+interface ProjectCreateRequestBody {
+  name: string;
+  repoUrl?: string;
+  localRepoPath?: string;
+  defaultWorkflowPolicy?: string;
+  defaultPlanningSystem?: PlanningSystem;
+}
+
+interface ProjectUpdateRequestBody {
+  name?: string;
+  repoUrl?: string | null;
+  localRepoPath?: string | null;
+  defaultWorkflowPolicy?: string | null;
+  defaultPlanningSystem?: PlanningSystem | null;
 }
 
 interface RunRequestBody {
@@ -401,6 +419,10 @@ function isPlanningMessageKind(value: unknown): value is PlanningMessageKind {
   return typeof value === "string" && PLANNING_MESSAGE_KINDS.includes(value as PlanningMessageKind);
 }
 
+function isPlanningSystem(value: unknown): value is PlanningSystem {
+  return typeof value === "string" && PLANNING_SYSTEMS.includes(value as PlanningSystem);
+}
+
 function isArtifactKind(value: unknown): value is ArtifactKind {
   return typeof value === "string" && ARTIFACT_KINDS.includes(value as ArtifactKind);
 }
@@ -465,6 +487,74 @@ function assertValidTrackCreateBody(body: TrackRequestBody): void {
 
   if (body.priority !== undefined && !["low", "medium", "high"].includes(body.priority)) {
     details.push({ field: "priority", message: "must be one of low, medium, high" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidProjectCreateBody(body: ProjectCreateRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  const nameDetail = getNonEmptyStringDetail("name", body.name);
+  if (nameDetail) {
+    details.push(nameDetail);
+  } else if (body.name.trim().length > 120) {
+    details.push({ field: "name", message: "must be 120 characters or fewer" });
+  }
+
+  for (const field of ["repoUrl", "localRepoPath", "defaultWorkflowPolicy"] as const) {
+    if (body[field] !== undefined) {
+      const detail = getNonEmptyStringDetail(field, body[field]);
+      if (detail) {
+        details.push(detail);
+      }
+    }
+  }
+
+  if (body.defaultPlanningSystem !== undefined && !isPlanningSystem(body.defaultPlanningSystem)) {
+    details.push({ field: "defaultPlanningSystem", message: `must be one of: ${PLANNING_SYSTEMS.join(", ")}` });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
+function assertValidProjectUpdateBody(body: ProjectUpdateRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (
+    body.name === undefined &&
+    body.repoUrl === undefined &&
+    body.localRepoPath === undefined &&
+    body.defaultWorkflowPolicy === undefined &&
+    body.defaultPlanningSystem === undefined
+  ) {
+    details.push({ field: "body", message: "at least one project field is required" });
+  }
+
+  if (body.name !== undefined) {
+    const nameDetail = getNonEmptyStringDetail("name", body.name);
+    if (nameDetail) {
+      details.push(nameDetail);
+    } else if (body.name.trim().length > 120) {
+      details.push({ field: "name", message: "must be 120 characters or fewer" });
+    }
+  }
+
+  for (const field of ["repoUrl", "localRepoPath", "defaultWorkflowPolicy"] as const) {
+    if (body[field] !== undefined && body[field] !== null) {
+      const detail = getNonEmptyStringDetail(field, body[field]);
+      if (detail) {
+        details.push(detail);
+      }
+    }
+  }
+
+  if (body.defaultPlanningSystem !== undefined && body.defaultPlanningSystem !== null && !isPlanningSystem(body.defaultPlanningSystem)) {
+    details.push({ field: "defaultPlanningSystem", message: `must be one of: ${PLANNING_SYSTEMS.join(", ")}` });
   }
 
   if (details.length > 0) {
@@ -926,6 +1016,48 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
     try {
       const method = request.method ?? "GET";
       const segments = getPathSegments(request);
+
+      if (method === "GET" && segments.length === 1 && segments[0] === "projects") {
+        const projects = await deps.service.listProjects();
+        sendJson(response, 200, { projects });
+        return;
+      }
+
+      if (method === "POST" && segments.length === 1 && segments[0] === "projects") {
+        const body = await readJson<ProjectCreateRequestBody>(request);
+        assertValidProjectCreateBody(body);
+
+        const project = await deps.service.createProject(body);
+        sendJson(response, 201, { project });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 2 && segments[0] === "projects") {
+        const project = await deps.service.getProject(segments[1] ?? "");
+        if (!project) {
+          sendError(response, 404, "not_found", "project not found");
+          return;
+        }
+
+        sendJson(response, 200, { project });
+        return;
+      }
+
+      if (method === "PATCH" && segments.length === 2 && segments[0] === "projects") {
+        const body = await readJson<ProjectUpdateRequestBody>(request);
+        assertValidProjectUpdateBody(body);
+
+        const project = await deps.service.updateProject({
+          projectId: segments[1] ?? "",
+          name: body.name,
+          repoUrl: body.repoUrl,
+          localRepoPath: body.localRepoPath,
+          defaultWorkflowPolicy: body.defaultWorkflowPolicy,
+          defaultPlanningSystem: body.defaultPlanningSystem,
+        });
+        sendJson(response, 200, { project });
+        return;
+      }
 
       if (method === "POST" && segments.length === 1 && segments[0] === "tracks") {
         const body = await readJson<TrackRequestBody>(request);

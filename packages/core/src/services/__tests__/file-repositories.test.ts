@@ -62,10 +62,11 @@ test("file repositories persist and reload project/track/execution state", async
   await trackRepository.create(track);
   await executionRepository.create(execution);
 
+  await projectRepository.update({ ...project, name: "SpecRail Updated", updatedAt: "2026-04-09T00:09:00.000Z" });
   await trackRepository.update({ ...track, status: "in_progress", updatedAt: "2026-04-09T00:10:00.000Z" });
   await executionRepository.update({ ...execution, status: "running", startedAt: "2026-04-09T00:11:00.000Z" });
 
-  assert.deepEqual(await projectRepository.getById(project.id), project);
+  assert.deepEqual(await projectRepository.getById(project.id), { ...project, name: "SpecRail Updated", updatedAt: "2026-04-09T00:09:00.000Z" });
   assert.deepEqual(await trackRepository.getById(track.id), {
     ...track,
     status: "in_progress",
@@ -77,6 +78,9 @@ test("file repositories persist and reload project/track/execution state", async
     startedAt: "2026-04-09T00:11:00.000Z",
   });
 
+  assert.deepEqual(await projectRepository.list(), [
+    { ...project, name: "SpecRail Updated", updatedAt: "2026-04-09T00:09:00.000Z" },
+  ]);
   assert.deepEqual(await trackRepository.list(), [
     {
       ...track,

@@ -74,6 +74,20 @@ Current limitation: runtime approval resolution is still adapter-mediated, not a
 
 Current endpoints in `apps/api/src/index.ts`:
 
+### Projects
+- `GET /projects`
+  - list projects, bootstrapping the default project if needed
+- `POST /projects`
+  - create a project
+  - body: `{ name, repoUrl?, localRepoPath?, defaultWorkflowPolicy?, defaultPlanningSystem? }`
+  - `defaultPlanningSystem` supports `native`, `openspec`, and `speckit`
+- `GET /projects/:projectId`
+  - return project metadata
+- `PATCH /projects/:projectId`
+  - update project metadata
+  - body: any of `{ name, repoUrl, localRepoPath, defaultWorkflowPolicy, defaultPlanningSystem }`
+  - nullable optional fields clear the stored value
+
 ### Tracks
 - `POST /tracks`
   - create a track
@@ -130,7 +144,7 @@ Current endpoints in `apps/api/src/index.ts`:
 
 ### Error contract
 - `400` for malformed JSON
-- `404` for missing tracks/runs
+- `404` for missing projects/tracks/runs
 - `422` for validation failures
   - includes invalid pagination/sort params
 - `500` for unexpected server errors

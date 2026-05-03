@@ -14,6 +14,8 @@ import type {
 export interface ProjectRepository {
   create(project: Project): Promise<void>;
   getById(projectId: string): Promise<Project | null>;
+  list(): Promise<Project[]>;
+  update(project: Project): Promise<void>;
 }
 
 export interface TrackRepository {
