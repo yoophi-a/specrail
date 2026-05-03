@@ -98,8 +98,11 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
   assert.match(body, /id="run-start-prompt"/);
   assert.match(body, /data-run-resume/);
   assert.match(body, /id="run-resume-prompt"/);
+  assert.match(body, /id="run-cancel-confirmation"/);
   assert.match(body, /data-run-cancel/);
   assert.match(body, /workspace-cleanup\/preview/);
+  assert.match(body, /data-cleanup-request/);
+  assert.match(body, /id="cleanup-confirmation"/);
   assert.match(body, /workspace-cleanup\/apply/);
   assert.match(body, /new EventSource/);
   assert.match(body, /\.artifact-preview/);
