@@ -200,6 +200,7 @@ test("API serves the hosted operator UI shell", async () => {
     assert.match(body, /Update selected project/);
     assert.match(body, /Create track/);
     assert.match(body, /Update track workflow/);
+    assert.match(body, /track-workflow-status/);
     assert.match(body, /Create planning session/);
     assert.match(body, /Append planning message/);
     assert.match(body, /Spec preview/);
@@ -209,7 +210,9 @@ test("API serves the hosted operator UI shell", async () => {
     assert.match(body, /id="artifact-proposal-kind"/);
     assert.match(body, /Propose artifact/);
     assert.match(body, /data-run-start/);
+    assert.match(body, /run-start-prompt/);
     assert.match(body, /data-run-resume/);
+    assert.match(body, /run-resume-prompt/);
     assert.match(body, /data-run-cancel/);
     assert.match(body, /Recent events/);
     assert.match(body, /EventSource/);

@@ -95,6 +95,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - HTML shell rendering composes separately testable hosted UI style and client script helpers while keeping `GET /operator` as a single served page
   - top-level project and track actions use inline form controls while preserving the same HTTP API calls
   - selected-track planning and artifact proposal actions use inline controls for session/message/proposal fields
+  - selected-detail workflow and run lifecycle actions use inline controls for status and prompt fields
 
 ### Projects
 - `GET /projects`

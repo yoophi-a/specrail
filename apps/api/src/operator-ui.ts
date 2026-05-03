@@ -198,6 +198,10 @@ export function renderOperatorUiClientScript(): string {
       return '<h3>' + escapeHtml(label) + '</h3><div class="artifact-preview">' + escapeHtml(String(value).slice(0, 2000)) + '</div>';
     }
 
+    function option(value, label, selectedValue) {
+      return '<option value="' + escapeHtml(value) + '"' + (value === selectedValue ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+    }
+
     function optionalInputValue(input) {
       return input.value.trim() === '' ? undefined : input.value.trim();
     }
@@ -249,28 +253,24 @@ export function renderOperatorUiClientScript(): string {
           ['Pending planning changes', planning.hasPendingChanges ? 'yes' : 'no'],
           ['Updated', track.updatedAt],
         ])
-        + '<h3>Track workflow</h3><button data-track-update="workflow">Update track workflow</button>'
+        + '<h3>Track workflow</h3><div class="form-grid"><label>Status <select id="track-workflow-status">' + ['new', 'planned', 'ready', 'in_progress', 'blocked', 'review', 'done', 'failed'].map((value) => option(value, value, track.status ?? 'new')).join('') + '</select></label><label>Spec approval <select id="track-workflow-spec-status">' + ['draft', 'pending', 'approved', 'rejected'].map((value) => option(value, value, track.specStatus ?? 'draft')).join('') + '</select></label><label>Plan approval <select id="track-workflow-plan-status">' + ['draft', 'pending', 'approved', 'rejected'].map((value) => option(value, value, track.planStatus ?? 'draft')).join('') + '</select></label><p><button data-track-update="workflow">Update track workflow</button></p></div>'
         + '<h3>Planning</h3><div class="form-grid"><label>Session status <select id="planning-session-status"><option value="active">active</option><option value="waiting_user">waiting_user</option><option value="waiting_agent">waiting_agent</option><option value="approved">approved</option><option value="archived">archived</option></select></label><p><button data-planning-session-create="' + escapeHtml(track.id) + '">Create planning session</button></p><label>Author <select id="planning-message-author"><option value="user">user</option><option value="agent">agent</option><option value="system">system</option></select></label><label>Kind <select id="planning-message-kind"><option value="message">message</option><option value="question">question</option><option value="decision">decision</option><option value="note">note</option></select></label><label>Related artifact <select id="planning-message-artifact"><option value="">none</option><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label><label>Message <textarea id="planning-message-body" placeholder="Planning message"></textarea></label><p><button data-planning-message-append="' + escapeHtml(planning.planningSessionId ?? '') + '">Append planning message</button></p></div>'
         + '<h3>Artifact proposals</h3><div class="form-grid"><label>Artifact <select id="artifact-proposal-kind"><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label><label>Summary <input id="artifact-proposal-summary" value="Proposed from hosted operator UI" /></label><label>Content <textarea id="artifact-proposal-content" placeholder="New artifact content"></textarea></label><p><button data-artifact-proposal="inline">Propose artifact</button></p></div>'
-        + '<h3>Run lifecycle</h3><button data-run-start="' + escapeHtml(track.id) + '">Start run</button>'
+        + '<h3>Run lifecycle</h3><div class="form-grid"><label>Run prompt <textarea id="run-start-prompt">Implement the selected track.</textarea></label><p><button data-run-start="' + escapeHtml(track.id) + '">Start run</button></p></div>'
         + artifactApprovalActions(artifactPayloads)
         + preview('Spec preview', payload.artifacts?.spec)
         + preview('Plan preview', payload.artifacts?.plan)
         + preview('Tasks preview', payload.artifacts?.tasks);
       detail.querySelector('[data-track-update]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
-        const statusInput = window.prompt('Track status for ' + track.id + ' (new, planned, ready, in_progress, blocked, review, done, failed)', track.status ?? 'new');
-        if (!statusInput) {
-          status.textContent = 'Track update cancelled for ' + track.id + '.';
-          return;
-        }
-        const specStatusInput = window.prompt('Spec status for ' + track.id + ' (draft, pending, approved, rejected)', track.specStatus ?? 'draft');
-        const planStatusInput = window.prompt('Plan status for ' + track.id + ' (draft, pending, approved, rejected)', track.planStatus ?? 'draft');
+        const statusInput = detail.querySelector('#track-workflow-status')?.value || 'new';
+        const specStatusInput = detail.querySelector('#track-workflow-spec-status')?.value || undefined;
+        const planStatusInput = detail.querySelector('#track-workflow-plan-status')?.value || undefined;
         await withAction(button, 'Updating track ' + track.id + '…', async () => {
           await patchJson('/tracks/' + encodeURIComponent(track.id), {
             status: statusInput,
-            specStatus: specStatusInput || undefined,
-            planStatus: planStatusInput || undefined,
+            specStatus: specStatusInput,
+            planStatus: planStatusInput,
           });
           await load();
           await loadTrackDetail(track.id);
@@ -321,9 +321,9 @@ export function renderOperatorUiClientScript(): string {
       });
       detail.querySelector('[data-run-start]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
-        const promptText = window.prompt('Prompt for the new run on ' + track.id, 'Implement the selected track.');
+        const promptText = detail.querySelector('#run-start-prompt')?.value.trim();
         if (!promptText) {
-          status.textContent = 'Run start cancelled for ' + track.id + '.';
+          status.textContent = 'Run start prompt is required for ' + track.id + '.';
           return;
         }
         await withAction(button, 'Starting run for ' + track.id + '…', async () => {
@@ -396,14 +396,14 @@ export function renderOperatorUiClientScript(): string {
           ['Started', run.startedAt],
           ['Finished', run.finishedAt],
         ])
-        + '<h3>Run lifecycle</h3><button data-run-resume="' + escapeHtml(run.id) + '">Resume run</button> <button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button>'
+        + '<h3>Run lifecycle</h3><div class="form-grid"><label>Resume prompt <textarea id="run-resume-prompt">Continue with verification.</textarea></label><p><button data-run-resume="' + escapeHtml(run.id) + '">Resume run</button> <button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button></p></div>'
         + cleanupSection
         + '<h3>Recent events</h3><p class="muted">Live updates use <code>GET /runs/:runId/events/stream</code> while this run is selected.</p><ul id="run-events">' + events.slice(-10).map((event) => '<li><span class="pill">' + escapeHtml(event.type) + '</span> ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>').join('') + '</ul>';
       detail.querySelector('[data-run-resume]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
-        const promptText = window.prompt('Resume prompt for ' + run.id, 'Continue with verification.');
+        const promptText = detail.querySelector('#run-resume-prompt')?.value.trim();
         if (!promptText) {
-          status.textContent = 'Run resume cancelled for ' + run.id + '.';
+          status.textContent = 'Run resume prompt is required for ' + run.id + '.';
           return;
         }
         await withAction(button, 'Resuming run ' + run.id + '…', async () => {
