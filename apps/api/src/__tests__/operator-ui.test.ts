@@ -386,6 +386,30 @@ test("operator UI client harness submits selected-run detail actions", async () 
   });
 });
 
+test("operator UI client harness surfaces cleanup failure states", async () => {
+  const { createTrack, detail, elements, failPath, loadInitialState, requestCleanupPreview, startRun } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Cleanup Failure Track" });
+  await startRun("Start run before cleanup failure checks.");
+
+  failPath("/runs/run-1/workspace-cleanup/preview", "cleanup preview refused");
+  const previewButton = detail.querySelector("[data-cleanup-preview]");
+  await requestCleanupPreview();
+
+  assert.equal(elements.get("#status")!.textContent, "Cleanup preview refreshed for run-1.");
+  assert.match(detail.innerHTML, /cleanup preview refused/);
+  assert.equal(previewButton.disabled, false);
+
+  failPath("/runs/run-1/workspace-cleanup/apply", "cleanup confirmation refused", "POST");
+  const requestButton = detail.querySelector("[data-cleanup-request]");
+  await requestButton.click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "cleanup confirmation refused");
+  assert.equal(requestButton.disabled, false);
+});
+
 test("operator UI shell keeps hosted action and stream wiring", () => {
   const body = renderOperatorUiHtml();
 
