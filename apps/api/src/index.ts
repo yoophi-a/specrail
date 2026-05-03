@@ -373,6 +373,115 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
   response.end(`${JSON.stringify(body, null, 2)}\n`);
 }
 
+function sendHtml(response: ServerResponse, statusCode: number, body: string): void {
+  response.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
+  response.end(body);
+}
+
+function renderOperatorUiHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SpecRail Operator</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; padding: 2rem; background: Canvas; color: CanvasText; }
+    main { max-width: 1120px; margin: 0 auto; display: grid; gap: 1rem; }
+    header { display: flex; align-items: end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 1.75rem; }
+    section { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 0.75rem; padding: 1rem; background: color-mix(in srgb, Canvas 94%, CanvasText 6%); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+    label { display: grid; gap: 0.35rem; font-weight: 600; }
+    select, button { font: inherit; padding: 0.5rem 0.65rem; border-radius: 0.5rem; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
+    button { cursor: pointer; }
+    ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
+    li { padding: 0.65rem; border-radius: 0.5rem; background: color-mix(in srgb, Canvas 90%, CanvasText 10%); }
+    .muted { color: color-mix(in srgb, CanvasText 65%, transparent); }
+    .pill { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 999px; background: color-mix(in srgb, CanvasText 10%, transparent); font-size: 0.85em; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>SpecRail Operator</h1>
+        <p class="muted">Thin hosted slice over the existing HTTP/SSE API.</p>
+      </div>
+      <button id="refresh">Refresh</button>
+    </header>
+    <section>
+      <label>Project scope
+        <select id="project-scope"><option value="">All projects</option></select>
+      </label>
+      <p id="status" class="muted">Loading…</p>
+    </section>
+    <div class="grid">
+      <section><h2>Tracks</h2><ul id="tracks"></ul></section>
+      <section><h2>Runs</h2><ul id="runs"></ul></section>
+    </div>
+    <section><h2>Selected detail</h2><pre id="detail" class="muted">Select a track or run.</pre></section>
+  </main>
+  <script type="module">
+    const scope = document.querySelector('#project-scope');
+    const status = document.querySelector('#status');
+    const tracks = document.querySelector('#tracks');
+    const runs = document.querySelector('#runs');
+    const detail = document.querySelector('#detail');
+    const refresh = document.querySelector('#refresh');
+
+    async function api(path) {
+      const response = await fetch(path, { headers: { accept: 'application/json' } });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    }
+
+    function item(label, meta, onClick) {
+      const node = document.createElement('li');
+      node.innerHTML = '<strong></strong><br><span class="muted"></span>';
+      node.querySelector('strong').textContent = label;
+      node.querySelector('span').textContent = meta;
+      node.addEventListener('click', onClick);
+      return node;
+    }
+
+    async function load() {
+      status.textContent = 'Loading…';
+      const projectId = scope.value;
+      const query = projectId ? '&projectId=' + encodeURIComponent(projectId) : '';
+      const [projectPayload, trackPayload, runPayload] = await Promise.all([
+        api('/projects'),
+        api('/tracks?page=1&pageSize=20' + query),
+        api('/runs?page=1&pageSize=20'),
+      ]);
+
+      const selectedProject = scope.value;
+      scope.replaceChildren(new Option('All projects', ''), ...projectPayload.projects.map((project) => new Option(project.name + ' (' + project.id + ')', project.id)));
+      scope.value = selectedProject;
+
+      tracks.replaceChildren(...trackPayload.tracks.map((track) => item(
+        track.title ?? track.id,
+        track.id + ' · ' + (track.projectId ?? 'project?') + ' · ' + (track.status ?? 'unknown') + ' · ' + (track.priority ?? 'medium'),
+        async () => { detail.textContent = JSON.stringify(await api('/tracks/' + encodeURIComponent(track.id)), null, 2); },
+      )));
+      runs.replaceChildren(...runPayload.runs.map((run) => item(
+        run.id,
+        run.trackId + ' · ' + (run.status ?? 'unknown') + ' · ' + (run.backend ?? 'backend?'),
+        async () => { detail.textContent = JSON.stringify(await api('/runs/' + encodeURIComponent(run.id)), null, 2); },
+      )));
+      status.textContent = 'Loaded ' + projectPayload.projects.length + ' projects, ' + trackPayload.tracks.length + ' tracks, and ' + runPayload.runs.length + ' runs.';
+    }
+
+    scope.addEventListener('change', load);
+    refresh.addEventListener('click', load);
+    load().catch((error) => { status.textContent = error instanceof Error ? error.message : String(error); });
+  </script>
+</body>
+</html>`;
+}
+
 function sendError(
   response: ServerResponse,
   statusCode: number,
@@ -1026,6 +1135,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
     try {
       const method = request.method ?? "GET";
       const segments = getPathSegments(request);
+
+      if (method === "GET" && segments.length === 1 && segments[0] === "operator") {
+        sendHtml(response, 200, renderOperatorUiHtml());
+        return;
+      }
 
       if (method === "GET" && segments.length === 1 && segments[0] === "projects") {
         const projects = await deps.service.listProjects();

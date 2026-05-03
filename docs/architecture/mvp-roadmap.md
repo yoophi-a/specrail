@@ -83,14 +83,16 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - track create/list APIs accept project scope while preserving default-project behavior for existing clients
 - terminal client can load projects and cycle project-scoped track listings while preserving all-project behavior by default
 - Telegram and ACP entrypoints can opt into explicit project context while preserving default behavior when omitted
-- next: propagate project selection into hosted UI entrypoints
+- hosted operator UI can select project scope for track listings via the same HTTP contract
 
 ### Milestone E — Hosted operator UI / GitHub entrypoints
-- introduce a web UI or GitHub-facing entrypoint after the core state contracts stabilize
+- first hosted operator UI slice is served from `GET /operator`
+- hosted UI loads project, track, and run summary state from the existing HTTP API
+- hosted UI project selection filters tracks via the same `GET /tracks?projectId=...` contract used by thin clients
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
 ## Suggested issue framing from the current baseline
 
-1. **Plan the first hosted operator UI slice**
-   - build on the stabilized HTTP/SSE API rather than adding new core behavior.
+1. **Expand hosted operator UI detail workflows**
+   - add richer track/run detail interactions on top of the stabilized HTTP/SSE API rather than adding new core behavior.
