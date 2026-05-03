@@ -136,6 +136,82 @@ test("SpecRailTerminalApiClient submits artifact revision proposals", async () =
   assert.equal(result.approvalRequest.id, "approval-2");
 });
 
+test("SpecRailTerminalApiClient previews and applies workspace cleanup with explicit confirmation", async () => {
+  const requests: Array<{ url: string; method?: string; body?: string }> = [];
+  const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
+    const url = String(input);
+    requests.push({ url, method: init?.method, body: init?.body?.toString() });
+
+    if (url.endsWith("/runs/run-cleanup-a/workspace-cleanup/preview") && !init?.method) {
+      return new Response(
+        JSON.stringify({
+          cleanupPlan: {
+            dryRun: true,
+            eligible: true,
+            operations: [{ kind: "remove_directory", path: "/tmp/specrail-workspaces/run-cleanup-a" }],
+            refusalReasons: [],
+          },
+        }),
+        { status: 200 },
+      );
+    }
+
+    if (url.endsWith("/runs/run-cleanup-a/workspace-cleanup/apply") && init?.method === "POST") {
+      return new Response(
+        JSON.stringify({
+          cleanupResult: {
+            applied: true,
+            status: "applied",
+            operations: [{ kind: "remove_directory", path: "/tmp/specrail-workspaces/run-cleanup-a", status: "applied" }],
+            refusalReasons: [],
+          },
+          expectedConfirmation: "apply workspace cleanup for run-cleanup-a",
+        }),
+        { status: 200 },
+      );
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  const preview = await client.previewWorkspaceCleanup("run-cleanup-a");
+  assert.equal(preview.cleanupPlan.eligible, true);
+  assert.equal(preview.cleanupPlan.operations[0]?.kind, "remove_directory");
+
+  const apply = await client.applyWorkspaceCleanup("run-cleanup-a", "apply workspace cleanup for run-cleanup-a");
+  assert.equal(apply.cleanupResult.status, "applied");
+  assert.equal(apply.expectedConfirmation, "apply workspace cleanup for run-cleanup-a");
+  assert.equal(requests[1]?.body, JSON.stringify({ confirm: "apply workspace cleanup for run-cleanup-a" }));
+});
+
+test("SpecRailTerminalApiClient preserves server refusal details for workspace cleanup apply", async () => {
+  const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
+    const url = String(input);
+
+    if (url.endsWith("/runs/run-cleanup-a/workspace-cleanup/apply") && init?.method === "POST") {
+      return new Response(
+        JSON.stringify({
+          cleanupResult: {
+            applied: false,
+            status: "refused",
+            operations: [],
+            refusalReasons: ["Workspace cleanup apply requires explicit confirmation"],
+          },
+          expectedConfirmation: "apply workspace cleanup for run-cleanup-a",
+        }),
+        { status: 200 },
+      );
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  const result = await client.applyWorkspaceCleanup("run-cleanup-a", "cleanup");
+  assert.equal(result.cleanupResult.status, "refused");
+  assert.deepEqual(result.cleanupResult.refusalReasons, ["Workspace cleanup apply requires explicit confirmation"]);
+  assert.equal(result.expectedConfirmation, "apply workspace cleanup for run-cleanup-a");
+});
+
 test("SpecRailTerminalApiClient parses SSE frames from run event streams", async () => {
   const encoder = new TextEncoder();
   const chunks = [

@@ -60,6 +60,41 @@ export interface ExecutionEvent {
   payload?: Record<string, unknown>;
 }
 
+export interface WorkspaceCleanupOperation {
+  kind: "remove_directory" | "git_worktree_remove" | "git_branch_delete";
+  path?: string;
+  branchName?: string;
+  command?: string;
+}
+
+export interface WorkspaceCleanupPlan {
+  dryRun: true;
+  eligible: boolean;
+  operations: WorkspaceCleanupOperation[];
+  refusalReasons: string[];
+}
+
+export interface WorkspaceCleanupPreviewResponse {
+  cleanupPlan: WorkspaceCleanupPlan;
+}
+
+export interface AppliedWorkspaceCleanupOperation extends WorkspaceCleanupOperation {
+  status: "applied" | "failed";
+  error?: string;
+}
+
+export interface WorkspaceCleanupApplyResult {
+  applied: boolean;
+  status: "applied" | "refused" | "failed";
+  operations: AppliedWorkspaceCleanupOperation[];
+  refusalReasons: string[];
+}
+
+export interface WorkspaceCleanupApplyResponse {
+  cleanupResult: WorkspaceCleanupApplyResult;
+  expectedConfirmation: string;
+}
+
 export interface PlanningSessionSummary {
   id: string;
   trackId: string;
@@ -416,6 +451,18 @@ export class SpecRailTerminalApiClient {
     });
 
     return { run: payload.run };
+  }
+
+  async previewWorkspaceCleanup(runId: string): Promise<WorkspaceCleanupPreviewResponse> {
+    return this.request<WorkspaceCleanupPreviewResponse>(`/runs/${runId}/workspace-cleanup/preview`);
+  }
+
+  async applyWorkspaceCleanup(runId: string, confirmation: string): Promise<WorkspaceCleanupApplyResponse> {
+    return this.request<WorkspaceCleanupApplyResponse>(`/runs/${runId}/workspace-cleanup/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirm: confirmation }),
+    });
   }
 
   async *streamRunEvents(runId: string, signal?: AbortSignal): AsyncGenerator<ExecutionEvent> {
