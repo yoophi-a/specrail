@@ -106,10 +106,11 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI selected-track planning and artifact proposal actions use inline controls for session/message/proposal fields
 - hosted UI selected-detail workflow and run lifecycle actions use inline controls for status and prompt fields
 - hosted UI destructive run cancel and workspace cleanup apply flows use in-page confirmation controls
+- hosted UI tests guard against reintroducing browser-native prompt/confirm dialogs without adding a frontend build pipeline
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows
 
 ## Suggested issue framing from the current baseline
 
 1. **Hosted operator UI stateful interaction tests**
-   - add browser-level tests or DOM-level harness coverage for the hosted operator UI action flows that are currently covered primarily through served shell/script assertions.
+   - add browser-level tests or a DOM-level harness for actual click/submit behavior now that lightweight native-dialog regression coverage exists.

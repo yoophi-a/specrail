@@ -63,6 +63,23 @@ test("operator UI renderer exposes style and client script helpers", () => {
   assert.match(script, /workspace-cleanup\/apply/);
 });
 
+test("operator UI client script stays on in-page controls instead of native dialogs", () => {
+  const script = renderOperatorUiClientScript();
+  const body = renderOperatorUiHtml();
+
+  assert.doesNotMatch(script, /window\.prompt/);
+  assert.doesNotMatch(script, /window\.confirm/);
+  assert.match(body, /id="project-name"/);
+  assert.match(body, /id="track-title"/);
+  assert.match(body, /id="planning-message-body"/);
+  assert.match(body, /id="artifact-proposal-content"/);
+  assert.match(body, /id="track-workflow-status"/);
+  assert.match(body, /id="run-start-prompt"/);
+  assert.match(body, /id="run-resume-prompt"/);
+  assert.match(body, /id="run-cancel-confirmation"/);
+  assert.match(body, /id="cleanup-confirmation"/);
+});
+
 test("operator UI shell keeps hosted action and stream wiring", () => {
   const body = renderOperatorUiHtml();
 
