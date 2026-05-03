@@ -230,6 +230,21 @@ function createHostedUiClientHarness() {
     if (/^\/runs\/[^/]+\/events$/.test(path) && method === "GET") {
       return { ok: true, json: async () => ({ events: [] }) };
     }
+    if (/^\/runs\/[^/]+\/resume$/.test(path) && method === "POST") {
+      return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "running", ...(body as Record<string, unknown>) } }) };
+    }
+    if (/^\/runs\/[^/]+\/cancel$/.test(path) && method === "POST") {
+      return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "cancelled" } }) };
+    }
+    if (/^\/runs\/[^/]+\/workspace-cleanup\/preview$/.test(path) && method === "GET") {
+      return { ok: true, json: async () => ({ cleanupPlan: { eligible: true, operations: [{ kind: "delete", path: "/tmp/specrail-worktree" }], refusalReasons: [] } }) };
+    }
+    if (/^\/runs\/[^/]+\/workspace-cleanup\/apply$/.test(path) && method === "POST") {
+      if ((body as { confirm?: string }).confirm === "") {
+        return { ok: true, json: async () => ({ expectedConfirmation: "APPLY CLEANUP run-1" }) };
+      }
+      return { ok: true, json: async () => ({ cleanupResult: { status: "completed", failures: [] } }) };
+    }
     throw new Error(`Unhandled fetch ${method} ${path}`);
   }
 
@@ -427,6 +442,56 @@ test("operator UI client harness submits selected-track detail actions", async (
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs")?.body, {
     trackId: "track-1",
     prompt: "Implement selected track now.",
+  });
+});
+
+test("operator UI client harness submits selected-run detail actions", async () => {
+  const { calls, elements } = createHostedUiClientHarness();
+  const detail = elements.get("#detail")!;
+  await flushClientPromises();
+
+  elements.get("#track-title")!.value = "Run Harness Track";
+  elements.get("#track-description")!.value = "Create a run for selected-run controls";
+  await elements.get("#track-create")!.click();
+  await flushClientPromises();
+  detail.querySelector("#run-start-prompt").value = "Start run for harness.";
+  await detail.querySelector("[data-run-start]").click();
+  await flushClientPromises();
+
+  detail.querySelector("#run-resume-prompt").value = "Resume with verification.";
+  await detail.querySelector("[data-run-resume]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run-1/resume")?.body, {
+    prompt: "Resume with verification.",
+  });
+
+  detail.querySelector("#run-cancel-confirmation").value = "cancel";
+  await detail.querySelector("[data-run-cancel]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run-1/cancel")?.body, {});
+
+  await detail.querySelector("[data-cleanup-preview]").click();
+  await flushClientPromises();
+
+  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run-1/workspace-cleanup/preview"), true);
+
+  await detail.querySelector("[data-cleanup-request]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run-1/workspace-cleanup/apply" && (call.body as { confirm?: string }).confirm === "")?.body, {
+    confirm: "",
+  });
+  assert.equal(detail.querySelector("#cleanup-expected-confirmation").textContent, "APPLY CLEANUP run-1");
+  assert.equal(detail.querySelector("#cleanup-confirm-panel").hidden, false);
+
+  detail.querySelector("#cleanup-confirmation").value = "APPLY CLEANUP run-1";
+  await detail.querySelector("[data-cleanup-apply]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run-1/workspace-cleanup/apply" && (call.body as { confirm?: string }).confirm === "APPLY CLEANUP run-1")?.body, {
+    confirm: "APPLY CLEANUP run-1",
   });
 });
 
