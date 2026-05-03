@@ -100,6 +100,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - hosted UI tests guard against reintroducing browser-native prompt/confirm dialogs and group shell coverage by action area
   - hosted UI markup exposes stable `data-control-group` selectors for major action areas
   - hosted UI client action harness exercises top-level project/track, selected-track, and selected-run click handlers without a browser dependency
+  - hosted UI fake DOM/fetch harness is isolated in a focused API test helper
 
 ### Projects
 - `GET /projects`
