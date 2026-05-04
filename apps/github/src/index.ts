@@ -140,12 +140,25 @@ export interface GitHubDiagnosticLogger {
   }): void;
 }
 
+export type GitHubCommandMetricReason =
+  | "accepted"
+  | "unsupported_repository"
+  | "unauthorized_actor"
+  | "github_authorization_failed"
+  | "specrail_request_failed"
+  | "github_relay_enqueue_failed";
+
+export interface GitHubCommandMetricsSink {
+  increment(input: { reason: GitHubCommandMetricReason }): void;
+}
+
 export interface GitHubWebhookAppDeps {
   config: GitHubAppConfig;
   specRail: GitHubSpecRailPort;
   github?: GitHubIssueCommentPort;
   authorization?: GitHubAuthorizationPort;
   diagnostics?: GitHubDiagnosticLogger;
+  metrics?: GitHubCommandMetricsSink;
   scheduler?: GitHubBackgroundTaskScheduler;
   relayQueue?: GitHubRelayJobQueue;
 }
@@ -581,6 +594,12 @@ export const defaultGitHubDiagnosticLogger: GitHubDiagnosticLogger = {
   },
 };
 
+export const defaultGitHubCommandMetricsSink: GitHubCommandMetricsSink = {
+  increment() {
+    // Default local/dev sink is intentionally quiet; deployments can inject metrics exporters.
+  },
+};
+
 export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRail?: GitHubSpecRailPort; github?: GitHubIssueCommentPort } = {}): http.Server {
   const config = input.config ?? loadGitHubAppConfig();
   const specRail = input.specRail ?? createSpecRailHttpClient(config.apiBaseUrl);
@@ -594,6 +613,7 @@ export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRai
     github,
     authorization,
     diagnostics: defaultGitHubDiagnosticLogger,
+    metrics: defaultGitHubCommandMetricsSink,
     scheduler: defaultGitHubBackgroundTaskScheduler,
     relayQueue,
   });
@@ -1015,6 +1035,10 @@ function logGitHubCommandDiagnostic(
   });
 }
 
+function incrementGitHubCommandMetric(deps: GitHubWebhookAppDeps, reason: GitHubCommandMetricReason): void {
+  deps.metrics?.increment({ reason });
+}
+
 function normalizeWebhookPath(pathname: string | undefined): string {
   const trimmed = pathname?.trim() || "/github/webhook";
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
@@ -1060,6 +1084,7 @@ export async function handleGitHubWebhookHttpRequest(
     const projectId = resolveGitHubProjectId(deps.config, command.repositoryFullName);
     if (!projectId) {
       logGitHubCommandDiagnostic(deps, command, { code: "unsupported_repository" });
+      incrementGitHubCommandMetric(deps, "unsupported_repository");
       sendJson(response, 202, { accepted: false, reason: "unsupported_repository" });
       return;
     }
@@ -1069,11 +1094,13 @@ export async function handleGitHubWebhookHttpRequest(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logGitHubCommandDiagnostic(deps, command, { code: "github_authorization_failed", message });
+      incrementGitHubCommandMetric(deps, "github_authorization_failed");
       sendJson(response, 502, { error: "github_authorization_failed", message });
       return;
     }
     if (!authorized) {
       logGitHubCommandDiagnostic(deps, command, { code: "unauthorized_actor" });
+      incrementGitHubCommandMetric(deps, "unauthorized_actor");
       sendJson(response, 202, { accepted: false, reason: "unauthorized_actor" });
       return;
     }
@@ -1111,11 +1138,14 @@ export async function handleGitHubWebhookHttpRequest(
         });
       }
     } catch (error) {
+      incrementGitHubCommandMetric(deps, "github_relay_enqueue_failed");
       sendJson(response, 502, { error: "github_relay_enqueue_failed", message: error instanceof Error ? error.message : String(error), outcome });
       return;
     }
+    incrementGitHubCommandMetric(deps, "accepted");
     sendJson(response, 202, relay?.scheduled ? { accepted: true, outcome, relay } : { accepted: true, outcome });
   } catch (error) {
+    incrementGitHubCommandMetric(deps, "specrail_request_failed");
     sendJson(response, 502, { error: "specrail_request_failed", message: error instanceof Error ? error.message : String(error) });
   }
 }

@@ -298,6 +298,7 @@ async function withGitHubWebhookServer(
   configOverrides: Partial<ReturnType<typeof loadGitHubAppConfig>> = {},
   authorization?: { isOrganizationMember(input: { organization: string; username: string }): Promise<boolean>; isTeamMember(input: { organization: string; teamSlug: string; username: string }): Promise<boolean> },
   diagnostics?: { log(input: { code: "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed"; repositoryFullName: string; issueNumber: number; senderLogin?: string; message?: string }): void },
+  metrics?: { increment(input: { reason: "accepted" | "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed" | "specrail_request_failed" | "github_relay_enqueue_failed" }): void },
 ): Promise<void> {
   const server = createGitHubWebhookHttpServer({
     config: {
@@ -317,6 +318,7 @@ async function withGitHubWebhookServer(
     specRail,
     authorization,
     diagnostics,
+    metrics,
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -1240,5 +1242,74 @@ test("GitHub webhook HTTP app emits safe diagnostics for denied commands", async
     { code: "unsupported_repository", repositoryFullName: "yoophi-a/specrail", issueNumber: 123, senderLogin: "octocat", message: undefined },
     { code: "unauthorized_actor", repositoryFullName: "yoophi-a/specrail", issueNumber: 123, senderLogin: "octocat", message: undefined },
     { code: "github_authorization_failed", repositoryFullName: "yoophi-a/specrail", issueNumber: 123, senderLogin: "octocat", message: "membership lookup failed" },
+  ]);
+});
+
+test("GitHub webhook HTTP app records command outcome metrics", async () => {
+  const metrics: Array<{ reason: string }> = [];
+  const sink = { increment(input: { reason: "accepted" | "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed" | "specrail_request_failed" | "github_relay_enqueue_failed" }) { metrics.push(input); } };
+
+  await withGitHubWebhookServer(
+    createSpecRailPort().port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run accepted"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(response.status, 202);
+    },
+    {},
+    undefined,
+    undefined,
+    sink,
+  );
+
+  await withGitHubWebhookServer(
+    createSpecRailPort().port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run unsupported"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(response.status, 202);
+    },
+    { repositoryProjects: { "other/repo": "project-other" } },
+    undefined,
+    undefined,
+    sink,
+  );
+
+  await withGitHubWebhookServer(
+    createSpecRailPort().port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run unauthorized"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(response.status, 202);
+    },
+    { allowedActors: ["hubot"] },
+    undefined,
+    undefined,
+    sink,
+  );
+
+  const specRailFailure = createSpecRailPort({
+    async createTrack() {
+      throw new Error("SpecRail unavailable");
+    },
+  });
+  await withGitHubWebhookServer(
+    specRailFailure.port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run fail"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(response.status, 502);
+    },
+    {},
+    undefined,
+    undefined,
+    sink,
+  );
+
+  assert.deepEqual(metrics, [
+    { reason: "accepted" },
+    { reason: "unsupported_repository" },
+    { reason: "unauthorized_actor" },
+    { reason: "specrail_request_failed" },
   ]);
 });

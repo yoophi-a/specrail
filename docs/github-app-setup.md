@@ -95,6 +95,7 @@ The webhook endpoint returns JSON responses:
 - Durable terminal relay is JSON-file based when `GITHUB_RELAY_QUEUE_PATH` is set. Failed relay attempts are retained with `lastError`, attempt count, and retry timing; deployments should place this path on persistent storage.
 - Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling/enqueue, not for the run to reach a terminal state.
 - Hosted operator run links are included in terminal comments only when `SPECRAIL_OPERATOR_BASE_URL` is configured; GitHub remains a thin frontend over SpecRail state.
+- GitHub command outcome metrics are exposed through an injectable metrics sink with coarse reason labels only: accepted, unsupported repository, unauthorized actor, GitHub authorization failure, SpecRail request failure, and relay enqueue failure.
 - Repository/project allowlists plus sender-login, organization, and team-based authorization are supported.
 - Non-terminal progress is intentionally not posted to GitHub; use the operator UI, terminal, Telegram, or SSE surfaces for detailed progress.
 - GitHub is not a canonical artifact or run-history store. Completed-run reports remain derived read-only exports at `GET /runs/:runId/report.md`.
@@ -103,4 +104,4 @@ The webhook endpoint returns JSON responses:
 
 1. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
 2. Add deployment documentation for publishing the hosted operator UI behind auth.
-3. Add metrics counters for GitHub command accept/deny outcomes.
+3. Add operator-facing troubleshooting examples for interpreting GitHub diagnostics and metrics together.
