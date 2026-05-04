@@ -586,14 +586,14 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     screen: config.initialScreen,
     statusLine: "Loading terminal snapshot...",
     summary: null,
-    selectedProjectId: null,
+    selectedProjectId: config.initialProjectId,
     apiBaseUrl: config.apiBaseUrl,
     refreshIntervalMs: config.refreshIntervalMs,
     loading: true,
     error: null,
     tracks: createEmptyDetailState<TrackDetailSnapshot>(),
     runs: createEmptyDetailState<RunDetailSnapshot>(),
-    runFilter: "all",
+    runFilter: config.initialRunFilter,
     runEvents: createEmptyRunEventFeedState(),
     pendingTrackAction: null,
     pendingExecutionAction: null,
@@ -658,22 +658,22 @@ export async function bootstrapTerminalState(
   config: SpecRailTerminalClientConfig,
   client: Pick<SpecRailTerminalApiClient, "loadSummary" | "loadTrackDetail" | "loadRunDetail">,
 ): Promise<TerminalAppState> {
-  const summary = await client.loadSummary(null);
+  const summary = await client.loadSummary(config.initialProjectId);
   const tracks = await populateTrackPanel(createEmptyDetailState<TrackDetailSnapshot>(), summary, client);
-  const runs = await populateRunPanel(createEmptyDetailState<RunDetailSnapshot>(), summary, client, "all");
+  const runs = await populateRunPanel(createEmptyDetailState<RunDetailSnapshot>(), summary, client, config.initialRunFilter);
 
   return syncRunEventSelection({
     screen: config.initialScreen,
     statusLine: `Loaded ${summary.tracks.length} tracks and ${summary.runs.length} runs.`,
     summary,
-    selectedProjectId: null,
+    selectedProjectId: config.initialProjectId,
     apiBaseUrl: config.apiBaseUrl,
     refreshIntervalMs: config.refreshIntervalMs,
     loading: false,
     error: null,
     tracks,
     runs,
-    runFilter: "all",
+    runFilter: config.initialRunFilter,
     runEvents: createEmptyRunEventFeedState(runs.selectedId),
     pendingTrackAction: null,
     pendingExecutionAction: null,

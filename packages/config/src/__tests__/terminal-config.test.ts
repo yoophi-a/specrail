@@ -8,6 +8,8 @@ test("loadTerminalClientConfig returns defaults", () => {
     apiBaseUrl: "http://127.0.0.1:4000",
     refreshIntervalMs: 5000,
     initialScreen: "home",
+    initialProjectId: null,
+    initialRunFilter: "all",
   });
 });
 
@@ -17,11 +19,19 @@ test("loadTerminalClientConfig reads terminal-specific environment values", () =
       SPECRAIL_API_BASE_URL: "http://localhost:9999",
       SPECRAIL_TERMINAL_REFRESH_MS: "15000",
       SPECRAIL_TERMINAL_INITIAL_SCREEN: "runs",
+      SPECRAIL_TERMINAL_INITIAL_PROJECT_ID: "project-1",
+      SPECRAIL_TERMINAL_INITIAL_RUN_FILTER: "active",
     }),
     {
       apiBaseUrl: "http://localhost:9999",
       refreshIntervalMs: 15000,
       initialScreen: "runs",
+      initialProjectId: "project-1",
+      initialRunFilter: "active",
     },
   );
+});
+
+test("loadTerminalClientConfig falls back for unsupported initial run filters", () => {
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_INITIAL_RUN_FILTER: "recent" }).initialRunFilter, "all");
 });
