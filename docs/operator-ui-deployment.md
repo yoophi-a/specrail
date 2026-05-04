@@ -50,6 +50,88 @@ Protect at least these routes as one operator surface:
 
 The UI uses browser `fetch` plus `EventSource`, so the proxy must allow normal HTTP methods and SSE streaming for `GET /runs/:runId/events/stream`.
 
+## Example nginx reverse-proxy template
+
+This template shows the route shape for an nginx deployment. Treat it as a starting point: plug in your own TLS certificates, upstream address, and authentication integration. Authentication must happen before traffic reaches the SpecRail API.
+
+```nginx
+upstream specrail_api {
+  server 127.0.0.1:4000;
+  keepalive 32;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name specrail.example.com;
+
+  ssl_certificate /etc/letsencrypt/live/specrail.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/specrail.example.com/privkey.pem;
+
+  # Replace this with your real auth layer, for example auth_request,
+  # oauth2-proxy, SSO gateway headers from a trusted internal proxy, or VPN-only access.
+  auth_request /_auth;
+
+  # Never expose this endpoint directly to the internet. It is a placeholder
+  # for an identity-aware proxy or internal auth service.
+  location = /_auth {
+    internal;
+    proxy_pass http://127.0.0.1:4180/oauth2/auth;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header X-Original-URI $request_uri;
+  }
+
+  # Hosted operator shell.
+  location = /operator {
+    proxy_pass http://specrail_api;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+
+  # SSE stream used by the operator UI. Disable buffering so EventSource
+  # receives run events as they are emitted.
+  location ~ ^/runs/[^/]+/events/stream$ {
+    proxy_pass http://specrail_api;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 1h;
+    add_header X-Accel-Buffering no;
+  }
+
+  # API routes used by the operator UI. Keep these behind the same auth
+  # boundary as /operator so the browser can fetch run details and actions.
+  location ~ ^/(projects|tracks|runs|planning-sessions|approval-requests)(/|$) {
+    proxy_pass http://specrail_api;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+
+  # Optional: keep GitHub webhooks on a separate route with signature
+  # verification in the app. Do not put the operator auth challenge in front
+  # of GitHub's webhook delivery endpoint.
+  location = /github/webhook {
+    proxy_pass http://specrail_api;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+}
+```
+
+If your auth layer forwards identity headers such as `X-Forwarded-User` or `X-Auth-Request-Email`, only trust them from the private proxy boundary. Do not let clients set those headers directly.
+
+Set `SPECRAIL_OPERATOR_BASE_URL=https://specrail.example.com` only after the authenticated route is reachable by intended operators and the SSE route streams correctly through the proxy.
+
 ## Security checklist
 
 - Require HTTPS for the operator URL.
