@@ -15,6 +15,8 @@ const EXECUTION_PROFILE_OPTIONS: Record<string, string[]> = {
   codex: ["default", "gpt-5.4", "gpt-5.4-mini"],
   claude_code: ["default", "sonnet", "opus"],
 };
+const REFRESH_INTERVAL_STEP_MS = 1_000;
+const MAX_REFRESH_INTERVAL_MS = 60_000;
 
 export interface TrackListItem {
   id: string;
@@ -249,6 +251,7 @@ export interface TerminalPreferenceState {
   runFilter: RunFilterMode;
   liveTailPaused: boolean;
   showRunEventDetail: boolean;
+  refreshIntervalMs: number;
 }
 
 export interface TerminalAppState {
@@ -909,7 +912,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, h/l artifact, [/] revision, v propose, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, v propose, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderContextualHelp(state),
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
@@ -1071,6 +1074,7 @@ function renderScreenBody(state: TerminalAppState): string[] {
         `- API base URL: ${state.apiBaseUrl}`,
         `- Refresh interval: ${state.refreshIntervalMs}ms`,
         "- Navigation: use j/k or arrow keys to move through track/run selections.",
+        "- Press + / - to adjust automatic refresh cadence; set to 0ms to disable automatic refresh.",
         "- Press P to cycle project scope for track listings.",
         "- Tracks view surfaces planning sessions, revision history, and pending approvals.",
         "- Press a/x on the tracks screen to approve or reject the next pending request.",
@@ -1624,12 +1628,16 @@ export async function loadTerminalPreferences(path: string | null): Promise<Part
     const runFilter = parsed.runFilter === "active" || parsed.runFilter === "terminal" || parsed.runFilter === "all" ? parsed.runFilter : undefined;
     const liveTailPaused = typeof parsed.liveTailPaused === "boolean" ? parsed.liveTailPaused : undefined;
     const showRunEventDetail = typeof parsed.showRunEventDetail === "boolean" ? parsed.showRunEventDetail : undefined;
+    const refreshIntervalMs = typeof parsed.refreshIntervalMs === "number" && Number.isFinite(parsed.refreshIntervalMs) && parsed.refreshIntervalMs >= 0
+      ? Math.round(parsed.refreshIntervalMs)
+      : undefined;
 
     return {
       ...(selectedProjectId !== undefined ? { selectedProjectId } : {}),
       ...(runFilter ? { runFilter } : {}),
       ...(liveTailPaused !== undefined ? { liveTailPaused } : {}),
       ...(showRunEventDetail !== undefined ? { showRunEventDetail } : {}),
+      ...(refreshIntervalMs !== undefined ? { refreshIntervalMs } : {}),
     };
   } catch {
     return {};
@@ -1656,6 +1664,7 @@ async function resolveTerminalClientStartup(config: SpecRailTerminalClientConfig
       ...config,
       initialProjectId: preferences.selectedProjectId !== undefined ? preferences.selectedProjectId : config.initialProjectId,
       initialRunFilter: preferences.runFilter ?? config.initialRunFilter,
+      refreshIntervalMs: preferences.refreshIntervalMs ?? config.refreshIntervalMs,
     },
     preferences,
   };
@@ -1676,6 +1685,8 @@ export async function runTerminalApp(
   let disposed = false;
   let monitorSerial = 0;
   let monitorAbort: AbortController | null = null;
+  let refreshTimer: NodeJS.Timeout | null = null;
+  let preferenceSaveQueue: Promise<void> = Promise.resolve();
 
   const render = () => {
     io.stdout.write("\u001Bc");
@@ -1689,12 +1700,25 @@ export async function runTerminalApp(
   };
 
   const persistPreferences = (nextState: TerminalAppState) => {
-    void saveTerminalPreferences(effectiveConfig.preferencePath, {
+    preferenceSaveQueue = preferenceSaveQueue.then(() => saveTerminalPreferences(effectiveConfig.preferencePath, {
       selectedProjectId: nextState.selectedProjectId ?? null,
       runFilter: nextState.runFilter,
       liveTailPaused: nextState.runEvents.paused,
       showRunEventDetail: nextState.showRunEventDetail ?? false,
-    });
+      refreshIntervalMs: nextState.refreshIntervalMs,
+    }));
+    void preferenceSaveQueue;
+  };
+
+  const restartRefreshTimer = () => {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+
+    if (state.refreshIntervalMs > 0) {
+      refreshTimer = setInterval(() => void refresh(), state.refreshIntervalMs);
+    }
   };
 
   const patchRunFeed = (patch: Partial<RunEventFeedState>) => {
@@ -2053,6 +2077,18 @@ export async function runTerminalApp(
     }
   };
 
+  const adjustRefreshInterval = (deltaMs: number) => {
+    const nextInterval = clampIndex(state.refreshIntervalMs + deltaMs, MAX_REFRESH_INTERVAL_MS + 1);
+    const nextState: TerminalAppState = {
+      ...state,
+      refreshIntervalMs: nextInterval,
+      statusLine: nextInterval > 0 ? `Refresh interval set to ${nextInterval}ms.` : "Automatic refresh disabled; press r to refresh manually.",
+    };
+    updateState(nextState);
+    persistPreferences(nextState);
+    restartRefreshTimer();
+  };
+
   const moveRunEventDetailSelection = (delta: number) => {
     if (state.screen !== "runs") {
       updateState({ ...state, statusLine: "Switch to the runs screen to select event detail." });
@@ -2384,7 +2420,7 @@ export async function runTerminalApp(
   io.stdin.setRawMode(true);
   io.stdin.resume();
 
-  const interval = config.refreshIntervalMs > 0 ? setInterval(() => void refresh(), config.refreshIntervalMs) : null;
+  restartRefreshTimer();
 
   await new Promise<void>((resolve) => {
     const cleanup = () => {
@@ -2392,8 +2428,9 @@ export async function runTerminalApp(
       if (monitorAbort) {
         monitorAbort.abort();
       }
-      if (interval) {
-        clearInterval(interval);
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
       }
 
       io.stdin.off("keypress", onKeypress);
@@ -2545,6 +2582,16 @@ export async function runTerminalApp(
 
       if (key.name === "n") {
         moveRunEventDetailSelection(1);
+        return;
+      }
+
+      if (input === "+" || input === "=") {
+        adjustRefreshInterval(REFRESH_INTERVAL_STEP_MS);
+        return;
+      }
+
+      if (input === "-") {
+        adjustRefreshInterval(-REFRESH_INTERVAL_STEP_MS);
         return;
       }
 
