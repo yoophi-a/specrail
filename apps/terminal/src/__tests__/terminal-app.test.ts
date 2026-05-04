@@ -297,9 +297,9 @@ test("terminal preferences load and save local UI defaults", async () => {
   try {
     assert.deepEqual(await loadTerminalPreferences(path), {});
 
-    await saveTerminalPreferences(path, { selectedProjectId: "project-1", runFilter: "terminal" });
-    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { selectedProjectId: "project-1", runFilter: "terminal" });
-    assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project-1", runFilter: "terminal" });
+    await saveTerminalPreferences(path, { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true });
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true });
+    assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true });
 
     await writeFile(path, "{not json", "utf8");
     assert.deepEqual(await loadTerminalPreferences(path), {});
@@ -834,6 +834,8 @@ test("appendRunEvents deduplicates by event id and syncRunEventSelection resets 
 test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh through keypresses", async () => {
   const applyBodies: unknown[] = [];
   const requests: string[] = [];
+  const preferenceDir = await mkdtemp(join(tmpdir(), "specrail-terminal-run-view-prefs-"));
+  const preferencePath = join(preferenceDir, "preferences.json");
 
   const server = createServer(async (request, response) => {
     requests.push(`${request.method ?? "GET"} ${request.url ?? "/"}`);
@@ -945,12 +947,23 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
   const stdin = new FakeTerminalStdin();
   const stdout = new FakeTerminalStdout();
   const app = runTerminalApp(
-    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "runs", initialProjectId: null, initialRunFilter: "all", preferencePath: null },
+    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "runs", initialProjectId: null, initialRunFilter: "all", preferencePath },
     { stdin, stdout } as never,
   );
 
   try {
     await waitFor(() => stdout.output.includes("run-cleanup-a"));
+
+    stdin.key("d");
+    stdin.key(" ", "space");
+    await waitFor(async () => {
+      try {
+        const preferences = JSON.parse(await readFile(preferencePath, "utf8")) as Record<string, unknown>;
+        return preferences.liveTailPaused === true && preferences.showRunEventDetail === true;
+      } catch {
+        return false;
+      }
+    });
 
     stdin.key("w");
     await waitFor(() => stdout.output.includes("Cleanup preview ready for run-cleanup-a."));
@@ -969,6 +982,7 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
     stdin.key("q");
     await app;
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await rm(preferenceDir, { recursive: true, force: true });
   }
 });
 
@@ -1016,14 +1030,14 @@ async function readRequestJson(request: IncomingMessage): Promise<unknown> {
   return body ? JSON.parse(body) : null;
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 1_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (predicate()) {
+    if (await predicate()) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
-  assert.equal(predicate(), true);
+  assert.equal(await predicate(), true);
 }
