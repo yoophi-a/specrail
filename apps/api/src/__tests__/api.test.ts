@@ -566,6 +566,59 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
   });
 });
 
+
+test("API serves completed run Markdown reports without mutating artifacts or events", async () => {
+  await withServer(async (baseUrl, paths) => {
+    const trackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Report export",
+        description: "Render a completed-run report.",
+      }),
+    });
+    const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+    const createRunResponse = await fetch(`${baseUrl}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackId: trackPayload.track.id,
+        prompt: "Generate the report",
+      }),
+    });
+    const runPayload = (await createRunResponse.json()) as { run: { id: string } };
+
+    const eventsBeforeResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
+    const eventsBefore = await eventsBeforeResponse.text();
+    const specPath = path.join(paths.repoArtifactDir, "tracks", trackPayload.track.id, "spec.md");
+    const specBefore = await readFile(specPath, "utf8");
+
+    const reportResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/report.md`);
+    assert.equal(reportResponse.status, 200);
+    assert.match(reportResponse.headers.get("content-type") ?? "", /text\/markdown; charset=utf-8/);
+    assert.match(reportResponse.headers.get("content-disposition") ?? "", new RegExp(`specrail-run-${runPayload.run.id}-report\\.md`));
+
+    const report = await reportResponse.text();
+    assert.match(report, new RegExp(`# Run Report — ${runPayload.run.id}`));
+    assert.match(report, /## Summary/);
+    assert.match(report, /- Track: Report export/);
+    assert.match(report, /## Timeline/);
+    assert.match(report, /Run started/);
+    assert.match(report, new RegExp("Generated from `state/events/" + runPayload.run.id + "\\.jsonl`"));
+    assert.match(report, /does not mutate `spec.md`, `plan.md`, or `tasks.md`/);
+
+    const eventsAfterResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
+    const eventsAfter = await eventsAfterResponse.text();
+    const specAfter = await readFile(specPath, "utf8");
+    assert.equal(eventsAfter, eventsBefore);
+    assert.equal(specAfter, specBefore);
+
+    const missingResponse = await fetch(`${baseUrl}/runs/missing-run/report.md`);
+    await assertJsonResponseStatus(missingResponse, 404);
+  });
+});
+
 test("API supports streaming run events over SSE", async () => {
   await withServer(async (baseUrl) => {
     const trackResponse = await fetch(`${baseUrl}/tracks`, {

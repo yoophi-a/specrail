@@ -38,6 +38,7 @@ import {
   createExecutionWorkspaceManager,
   ExecutionWorkspaceCleanupApplier,
   planExecutionWorkspaceCleanup,
+  renderCompletedRunReport,
   type ExecutionWorkspaceMode,
   type ApplyExecutionWorkspaceCleanupResult,
   type ExecutionEvent,
@@ -376,6 +377,14 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
 
 function sendHtml(response: ServerResponse, statusCode: number, body: string): void {
   response.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
+  response.end(body);
+}
+
+function sendMarkdown(response: ServerResponse, statusCode: number, body: string, filename: string): void {
+  response.writeHead(statusCode, {
+    "content-type": "text/markdown; charset=utf-8",
+    "content-disposition": `inline; filename="${filename}"`,
+  });
   response.end(body);
 }
 
@@ -1455,6 +1464,28 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         }
 
         await streamRunEvents(response, deps.service, deps.eventLogDir, run.id);
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "runs" && segments[2] === "report.md") {
+        const run = await deps.service.getRun(segments[1] ?? "");
+
+        if (!run) {
+          sendError(response, 404, "not_found", "run not found");
+          return;
+        }
+
+        const track = await deps.service.getTrack(run.trackId);
+
+        if (!track) {
+          sendError(response, 404, "not_found", "track not found");
+          return;
+        }
+
+        const project = await deps.service.getProject(track.projectId);
+        const events = await deps.service.listRunEvents(run.id);
+        const report = renderCompletedRunReport({ run, track, project, events, generatedAt: new Date().toISOString() });
+        sendMarkdown(response, 200, report, `specrail-run-${run.id}-report.md`);
         return;
       }
 
