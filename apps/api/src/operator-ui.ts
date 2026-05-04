@@ -81,6 +81,10 @@ export function operatorUiRunEventStreamPath(runId: string): string {
   return `/runs/${encodeURIComponent(runId)}/events/stream`;
 }
 
+export function operatorUiRunReportPath(runId: string): string {
+  return `/runs/${encodeURIComponent(runId)}/report.md`;
+}
+
 export function renderOperatorUiStyleCss(): string {
   return `:root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { margin: 0; padding: 2rem; background: Canvas; color: CanvasText; }
@@ -397,6 +401,7 @@ export function renderOperatorUiClientScript(): string {
           ['Finished', run.finishedAt],
         ])
         + '<h3>Run lifecycle</h3><div class="form-grid" data-control-group="run-lifecycle"><label>Resume prompt <textarea id="run-resume-prompt">Continue with verification.</textarea></label><label>Cancel confirmation <input id="run-cancel-confirmation" autocomplete="off" placeholder="Type cancel to confirm" /></label><p><button data-run-resume="' + escapeHtml(run.id) + '">Resume run</button> <button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button></p></div>'
+        + '<h3>Run report</h3><p data-control-group="run-report"><a data-run-report="' + escapeHtml(run.id) + '" href="/runs/' + encodeURIComponent(run.id) + '/report.md" target="_blank" rel="noopener">Open Markdown run report</a></p>'
         + cleanupSection
         + '<h3>Recent events</h3><p class="muted">Live updates use <code>GET /runs/:runId/events/stream</code> while this run is selected.</p><ul id="run-events">' + events.slice(-10).map((event) => '<li><span class="pill">' + escapeHtml(event.type) + '</span> ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>').join('') + '</ul>';
       detail.querySelector('[data-run-resume]')?.addEventListener('click', async (event) => {

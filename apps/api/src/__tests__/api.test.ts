@@ -215,6 +215,9 @@ test("API serves the hosted operator UI shell", async () => {
     assert.match(body, /run-resume-prompt/);
     assert.match(body, /data-run-cancel/);
     assert.match(body, /run-cancel-confirmation/);
+    assert.match(body, /Run report/);
+    assert.match(body, /data-run-report/);
+    assert.match(body, /report\.md/);
     assert.match(body, /Recent events/);
     assert.match(body, /EventSource/);
     assert.match(body, /events\/stream/);
