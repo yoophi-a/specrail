@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import test from "node:test";
 
@@ -8,9 +11,11 @@ import {
   appendRunEvents,
   bootstrapTerminalState,
   createEmptyRunEventFeedState,
+  loadTerminalPreferences,
   renderAppShell,
   refreshTerminalState,
   runTerminalApp,
+  saveTerminalPreferences,
   SpecRailTerminalApiClient,
   setRunFilter,
   selectNextItem,
@@ -285,6 +290,24 @@ test("SpecRailTerminalApiClient parses SSE frames from run event streams", async
   ]);
 });
 
+test("terminal preferences load and save local UI defaults", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "specrail-terminal-prefs-"));
+  const path = join(dir, "nested", "preferences.json");
+
+  try {
+    assert.deepEqual(await loadTerminalPreferences(path), {});
+
+    await saveTerminalPreferences(path, { selectedProjectId: "project-1", runFilter: "terminal" });
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { selectedProjectId: "project-1", runFilter: "terminal" });
+    assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project-1", runFilter: "terminal" });
+
+    await writeFile(path, "{not json", "utf8");
+    assert.deepEqual(await loadTerminalPreferences(path), {});
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("bootstrapTerminalState initializes detail selections for tracks and runs", async () => {
   const state = await bootstrapTerminalState(
     {
@@ -293,6 +316,7 @@ test("bootstrapTerminalState initializes detail selections for tracks and runs",
       initialScreen: "home",
       initialProjectId: "project-1",
       initialRunFilter: "active",
+      preferencePath: null,
     },
     {
       async loadSummary(projectId) {
@@ -916,7 +940,7 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
   const stdin = new FakeTerminalStdin();
   const stdout = new FakeTerminalStdout();
   const app = runTerminalApp(
-    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "runs", initialProjectId: null, initialRunFilter: "all" },
+    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "runs", initialProjectId: null, initialRunFilter: "all", preferencePath: null },
     { stdin, stdout } as never,
   );
 
