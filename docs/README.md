@@ -33,6 +33,7 @@ Use this index to find the right reference before changing SpecRail's core servi
 - [Hosted Operator UI deployment](./operator-ui-deployment.md) — authentication, reverse-proxy, and security guidance for publishing `/operator` links.
 - [GitHub App setup](./github-app-setup.md) — runnable webhook app configuration, command flow, binding semantics, and current limitations.
 - [GitHub webhook production operations](./github-production-ops.md) — process supervision, durable relay queue storage, restart checks, and safe logging.
+- [GitHub webhook Docker Compose example](./github-docker-compose-example.md) — compose template for API/webhook services, persistent relay queue storage, and proxy routing.
 - [GitHub command troubleshooting](./github-command-troubleshooting.md) — safe diagnostics and metrics interpretation for `/specrail` command outcomes.
 - [Telegram bot interface strategy](./architecture/telegram-bot-interface-strategy.md) — Telegram-facing product and integration strategy.
 
