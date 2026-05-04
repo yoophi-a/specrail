@@ -97,9 +97,21 @@ Required config for implementation:
 
 Rejected requests should be observable in logs/events, but should not leak secrets or internal paths into GitHub comments.
 
+## Current implementation status
+
+Implemented slices now cover:
+
+1. `github` channel binding source types and persistence/API validation.
+2. `apps/github` webhook signature validation and issue-comment command parsing.
+3. GitHub `/specrail run` orchestration through existing SpecRail bindings, tracks, and runs.
+4. Terminal outcome comment formatting/posting boundary with report links.
+5. Webhook HTTP server wiring and runnable SpecRail HTTP client startup.
+
+See [GitHub App setup](../github-app-setup.md) for operator-facing configuration and current limitations.
+
 ## Open implementation follow-ups
 
-1. Add `github` to channel binding source types and persistence/API validation.
-2. Add an `apps/github` thin frontend with webhook signature validation and issue-comment command parsing.
-3. Add GitHub comment posting and terminal run outcome relay with report links.
-4. Add integration-style tests for binding reuse, new-track creation, unauthorized commands, and terminal outcome comments.
+1. Add GitHub App authentication and a live issue-comment client around the existing comment port.
+2. Wire terminal run events from SpecRail SSE to the GitHub terminal outcome comment relay.
+3. Add repository-to-project allowlist and actor/team authorization for `/specrail` commands.
+4. Add integration-style tests for unauthorized commands and live comment delivery boundaries.
