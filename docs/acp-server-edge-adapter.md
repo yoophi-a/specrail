@@ -104,12 +104,31 @@ ACP clients must treat SpecRail workspaces as **SpecRail-managed execution works
 
 These rules keep ACP as a thin interactive edge while preserving SpecRail as the canonical owner of execution state, artifacts, and workspace cleanup.
 
+## Planning and admin boundary
+
+ACP should stay focused on interactive session transport. Planning and admin flows remain owned by the REST/API surface unless they need direct, session-local interaction.
+
+REST/API-native flows:
+- project create/list/update and project-scoped track discovery
+- track creation, status updates, and workflow metadata updates outside an ACP `session/new` bootstrap
+- planning session history, artifact revision proposals, and spec/plan/task approval state
+- channel binding, attachment registration, report serving, and cleanup preview/apply operations
+- operator/admin actions that need full auditability or batch-oriented UI controls
+
+ACP-native candidates:
+- interactive `session/prompt`, `session/cancel`, `session/load`, and `session/list`
+- runtime permission request/response round-trips that are tied to the active ACP session
+- future scoped filesystem or terminal interactions for the linked run workspace, after applying the workspace ownership rules above
+- lightweight session-local projections that help ACP clients render run progress without becoming the canonical artifact store
+
+This boundary keeps canonical planning artifacts, approvals, channel bindings, and cleanup lifecycle in SpecRail APIs while allowing ACP clients to provide a native interactive run experience.
+
 ## Current limitations
 
 This is intentionally an initial bridge, not a full ACP implementation.
 
 1. `session/new` currently requires SpecRail-specific metadata, especially `_meta.specrail.trackId`.
-2. Planning artifacts, approvals, channel bindings, and attachment flows stay in the existing REST API.
+2. Planning artifacts, approvals, channel bindings, attachment flows, and cleanup operations stay in the existing REST API per the planning/admin boundary above.
 3. Runtime permission requests are translated into ACP-friendly updates; decisions are persisted through the core approval path and delivered to executors that implement `resolveRuntimeApproval`.
 4. Event updates include compact projections for common SpecRail event families, but many provider-specific details still remain in `session/update` plus raw `_meta` rather than a full ACP-native event taxonomy.
 5. The adapter stores ACP session records locally, but run state still lives in the normal SpecRail repositories.
@@ -130,4 +149,4 @@ Good next steps from the current bridge:
 - expand ACP-facing projections for provider-specific details that clients need to render natively
 - design the scoped ACP filesystem/terminal capability shape that applies the documented workspace ownership rules
 - build an ACP-aware terminal or editor client spike against this adapter to validate the session/update and permission request shapes with a real client
-- decide which planning/admin flows, if any, should become ACP-native versus staying in the REST API
+- revisit the planning/admin boundary only when a concrete ACP client needs a narrowly scoped session-local interaction
