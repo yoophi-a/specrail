@@ -76,6 +76,28 @@ async function assertJsonResponseStatus(response: Response, expectedStatus: numb
   assert.equal(response.status, expectedStatus, `expected HTTP ${expectedStatus}, received HTTP ${response.status}: ${body}`);
 }
 
+async function waitForRunEvent(
+  baseUrl: string,
+  runId: string,
+  matches: (event: { type: string; summary: string }) => boolean,
+): Promise<void> {
+  const deadline = Date.now() + 5000;
+
+  while (Date.now() < deadline) {
+    const eventsResponse = await fetch(`${baseUrl}/runs/${runId}/events`);
+    assert.equal(eventsResponse.status, 200);
+    const eventsPayload = (await eventsResponse.json()) as { events: Array<{ type: string; summary: string }> };
+
+    if (eventsPayload.events.some(matches)) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(`timed out waiting for run event on ${runId}`);
+}
+
 function parseSseEvents(buffer: string): Array<{ id: string; summary: string }> {
   return buffer
     .split("\n\n")
@@ -620,6 +642,8 @@ test("API serves completed run Markdown reports without mutating artifacts or ev
       }),
     });
     const runPayload = (await createRunResponse.json()) as { run: { id: string } };
+
+    await waitForRunEvent(baseUrl, runPayload.run.id, (event) => event.type === "message" && /STDOUT/.test(event.summary));
 
     const eventsBeforeResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
     const eventsBefore = await eventsBeforeResponse.text();
