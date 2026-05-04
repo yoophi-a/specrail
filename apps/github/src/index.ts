@@ -1,5 +1,7 @@
 import { createHmac, createSign, timingSafeEqual } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const SPEC_RAIL_RUN_COMMAND = "/specrail run";
@@ -21,6 +23,7 @@ export interface GitHubAppConfig {
   githubInstallationId?: string;
   githubPrivateKey?: string;
   followTerminalEvents: boolean;
+  githubRelayQueuePath?: string;
   repositoryProjects: Record<string, string>;
   allowedActors: string[];
 }
@@ -123,6 +126,29 @@ export interface GitHubWebhookAppDeps {
   specRail: GitHubSpecRailPort;
   github?: GitHubIssueCommentPort;
   scheduler?: GitHubBackgroundTaskScheduler;
+  relayQueue?: GitHubRelayJobQueue;
+}
+
+export interface GitHubTerminalRelayJob {
+  id: string;
+  repositoryFullName: string;
+  issueNumber: number;
+  runId: string;
+  reportUrl?: string;
+  status: "pending" | "running" | "completed" | "failed";
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+  nextAttemptAt?: string;
+  lastError?: string;
+}
+
+export interface GitHubRelayJobQueue {
+  enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string }): Promise<GitHubTerminalRelayJob>;
+  claimNext(now?: Date): Promise<GitHubTerminalRelayJob | undefined>;
+  complete(jobId: string, now?: Date): Promise<void>;
+  fail(jobId: string, error: unknown, now?: Date): Promise<void>;
+  list(): Promise<GitHubTerminalRelayJob[]>;
 }
 
 export interface GitHubTerminalOutcomeCommentInput {
@@ -211,6 +237,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubInstallationId: env.GITHUB_INSTALLATION_ID,
     githubPrivateKey: normalizePrivateKey(env.GITHUB_PRIVATE_KEY),
     followTerminalEvents: env.GITHUB_FOLLOW_TERMINAL_EVENTS === "true",
+    githubRelayQueuePath: env.GITHUB_RELAY_QUEUE_PATH,
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
   };
@@ -451,7 +478,16 @@ export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRai
   const specRail = input.specRail ?? createSpecRailHttpClient(config.apiBaseUrl);
   const tokenProvider = createGitHubTokenProviderFromConfig(config);
   const github = input.github ?? (tokenProvider ? createGitHubRestIssueCommentClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
-  const server = createGitHubWebhookHttpServer({ config, specRail, github, scheduler: defaultGitHubBackgroundTaskScheduler });
+  const relayQueue = config.githubRelayQueuePath ? new JsonFileGitHubRelayJobQueue(config.githubRelayQueuePath) : undefined;
+  const server = createGitHubWebhookHttpServer({ config, specRail, github, scheduler: defaultGitHubBackgroundTaskScheduler, relayQueue });
+  if (relayQueue && github) {
+    const interval = setInterval(() => {
+      processGitHubRelayQueue({ queue: relayQueue, specRail, github }).catch((error: unknown) => {
+        console.error("GitHub terminal outcome relay failed", error);
+      });
+    }, 5_000);
+    server.on("close", () => clearInterval(interval));
+  }
   server.listen(config.port, () => {
     console.log(`SpecRail GitHub webhook listening on ${normalizeWebhookPath(config.webhookPath)} at port ${config.port}`);
   });
@@ -644,6 +680,121 @@ export async function relayGitHubRunTerminalOutcome(input: {
   return { posted: false, reason: "no_terminal_event" };
 }
 
+function createRelayJobId(input: { repositoryFullName: string; issueNumber: number; runId: string }, now: Date): string {
+  return Buffer.from(`${input.repositoryFullName}#${input.issueNumber}:${input.runId}:${now.toISOString()}`).toString("base64url");
+}
+
+export class JsonFileGitHubRelayJobQueue implements GitHubRelayJobQueue {
+  constructor(private readonly filePath: string) {}
+
+  async enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string }): Promise<GitHubTerminalRelayJob> {
+    const now = new Date();
+    const jobs = await this.readJobs();
+    const job: GitHubTerminalRelayJob = {
+      id: createRelayJobId(input, now),
+      repositoryFullName: input.repositoryFullName,
+      issueNumber: input.issueNumber,
+      runId: input.runId,
+      reportUrl: input.reportUrl,
+      status: "pending",
+      attempts: 0,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      nextAttemptAt: now.toISOString(),
+    };
+    jobs.push(job);
+    await this.writeJobs(jobs);
+    return job;
+  }
+
+  async claimNext(now: Date = new Date()): Promise<GitHubTerminalRelayJob | undefined> {
+    const jobs = await this.readJobs();
+    const job = jobs.find((candidate) => candidate.status === "pending" && (!candidate.nextAttemptAt || Date.parse(candidate.nextAttemptAt) <= now.getTime()));
+    if (!job) {
+      return undefined;
+    }
+    job.status = "running";
+    job.updatedAt = now.toISOString();
+    await this.writeJobs(jobs);
+    return { ...job };
+  }
+
+  async complete(jobId: string, now: Date = new Date()): Promise<void> {
+    await this.updateJob(jobId, (job) => {
+      job.status = "completed";
+      job.updatedAt = now.toISOString();
+    });
+  }
+
+  async fail(jobId: string, error: unknown, now: Date = new Date()): Promise<void> {
+    await this.updateJob(jobId, (job) => {
+      job.attempts += 1;
+      job.status = job.attempts >= 3 ? "failed" : "pending";
+      job.updatedAt = now.toISOString();
+      job.lastError = error instanceof Error ? error.message : String(error);
+      job.nextAttemptAt = new Date(now.getTime() + Math.min(60_000, 1_000 * 2 ** job.attempts)).toISOString();
+    });
+  }
+
+  async list(): Promise<GitHubTerminalRelayJob[]> {
+    return this.readJobs();
+  }
+
+  private async updateJob(jobId: string, update: (job: GitHubTerminalRelayJob) => void): Promise<void> {
+    const jobs = await this.readJobs();
+    const job = jobs.find((candidate) => candidate.id === jobId);
+    if (!job) {
+      throw new Error(`GitHub relay job not found: ${jobId}`);
+    }
+    update(job);
+    await this.writeJobs(jobs);
+  }
+
+  private async readJobs(): Promise<GitHubTerminalRelayJob[]> {
+    try {
+      return JSON.parse(await readFile(this.filePath, "utf8")) as GitHubTerminalRelayJob[];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  private async writeJobs(jobs: GitHubTerminalRelayJob[]): Promise<void> {
+    await mkdir(path.dirname(this.filePath), { recursive: true });
+    await writeFile(this.filePath, `${JSON.stringify(jobs, null, 2)}\n`, "utf8");
+  }
+}
+
+export async function processGitHubRelayQueue(input: {
+  queue: GitHubRelayJobQueue;
+  specRail: Pick<GitHubSpecRailPort, "streamRunEvents">;
+  github: GitHubIssueCommentPort;
+  now?: Date;
+}): Promise<{ processed: boolean; jobId?: string; result?: GitHubRunEventRelayResult }> {
+  const job = await input.queue.claimNext(input.now);
+  if (!job) {
+    return { processed: false };
+  }
+
+  try {
+    const result = await relayGitHubRunTerminalOutcome({
+      specRail: input.specRail,
+      github: input.github,
+      repositoryFullName: job.repositoryFullName,
+      issueNumber: job.issueNumber,
+      runId: job.runId,
+      reportUrl: job.reportUrl,
+    });
+    await input.queue.complete(job.id, input.now);
+    return { processed: true, jobId: job.id, result };
+  } catch (error) {
+    await input.queue.fail(job.id, error, input.now);
+    throw error;
+  }
+}
+
 export async function executeGitHubRunCommand(input: {
   projectId: string;
   context: GitHubAcceptedRunCommandContext;
@@ -778,17 +929,27 @@ export async function handleGitHubWebhookHttpRequest(
     });
     let relay: GitHubRunEventRelayScheduleResult | undefined;
     try {
-      relay = scheduleGitHubRunTerminalOutcomeRelay({
-        enabled: deps.config.followTerminalEvents,
-        scheduler: deps.scheduler ?? defaultGitHubBackgroundTaskScheduler,
-        specRail: deps.specRail,
-        github: deps.github,
-        repositoryFullName: command.repositoryFullName,
-        issueNumber: command.issueNumber,
-        runId: outcome.runId,
-        reportUrl: outcome.reportUrl,
-        onError: (error) => console.error("GitHub terminal outcome relay failed", error),
-      });
+      if (deps.config.followTerminalEvents && deps.github && deps.relayQueue) {
+        await deps.relayQueue.enqueue({
+          repositoryFullName: command.repositoryFullName,
+          issueNumber: command.issueNumber,
+          runId: outcome.runId,
+          reportUrl: outcome.reportUrl,
+        });
+        relay = { scheduled: true };
+      } else {
+        relay = scheduleGitHubRunTerminalOutcomeRelay({
+          enabled: deps.config.followTerminalEvents,
+          scheduler: deps.scheduler ?? defaultGitHubBackgroundTaskScheduler,
+          specRail: deps.specRail,
+          github: deps.github,
+          repositoryFullName: command.repositoryFullName,
+          issueNumber: command.issueNumber,
+          runId: outcome.runId,
+          reportUrl: outcome.reportUrl,
+          onError: (error) => console.error("GitHub terminal outcome relay failed", error),
+        });
+      }
     } catch (error) {
       sendJson(response, 502, { error: "github_relay_enqueue_failed", message: error instanceof Error ? error.message : String(error), outcome });
       return;

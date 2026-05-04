@@ -52,6 +52,7 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_INSTALLATION_ID` | unset | GitHub App installation id used for installation-token exchange. |
 | `GITHUB_PRIVATE_KEY` | unset | GitHub App private key PEM. Escaped newlines (`\\n`) are normalized at startup. |
 | `GITHUB_FOLLOW_TERMINAL_EVENTS` | `false` | When `true` and a GitHub comment client is supplied, schedule background following of the created run event stream and post one terminal outcome comment. |
+| `GITHUB_RELAY_QUEUE_PATH` | unset | Optional JSON-file durable queue path for terminal outcome relay jobs. When unset, the app uses the in-process scheduler fallback. |
 
 ## Running locally
 
@@ -87,13 +88,14 @@ The webhook endpoint returns JSON responses:
 ## Current limitations
 
 - REST issue-comment posting supports static tokens and GitHub App installation-token refresh. Private keys must be supplied securely by deployment secret management.
-- Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling, not for the run to reach a terminal state.
+- Durable terminal relay is JSON-file based when `GITHUB_RELAY_QUEUE_PATH` is set. Failed relay attempts are retained with `lastError`, attempt count, and retry timing; deployments should place this path on persistent storage.
+- Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling/enqueue, not for the run to reach a terminal state.
 - Repository/project allowlists and sender-login actor authorization are supported; team-based authorization is not implemented yet.
 - Non-terminal progress is intentionally not posted to GitHub; use the operator UI, terminal, Telegram, or SSE surfaces for detailed progress.
 - GitHub is not a canonical artifact or run-history store. Completed-run reports remain derived read-only exports at `GET /runs/:runId/report.md`.
 
 ## Recommended follow-ups
 
-1. Replace the in-process background scheduler with a durable worker/queue for production deployments.
-2. Add GitHub team/org-based authorization for `/specrail` commands.
-3. Add richer terminal outcome links once hosted operator run URLs are finalized.
+1. Add GitHub team/org-based authorization for `/specrail` commands.
+2. Add richer terminal outcome links once hosted operator run URLs are finalized.
+3. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.

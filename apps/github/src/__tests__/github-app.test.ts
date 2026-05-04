@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { once } from "node:events";
+import { mkdtemp } from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import {
   buildGitHubSignature256,
@@ -9,6 +12,7 @@ import {
   createGitHubAppJwt,
   createGitHubRestIssueCommentClient,
   createGitHubWebhookHttpServer,
+  JsonFileGitHubRelayJobQueue,
   createSpecRailHttpClient,
   executeGitHubRunCommand,
   formatGitHubTerminalOutcomeComment,
@@ -18,6 +22,7 @@ import {
   loadGitHubAppConfig,
   parseSpecRailIssueCommentCommand,
   postGitHubTerminalOutcomeComment,
+  processGitHubRelayQueue,
   relayGitHubRunTerminalOutcome,
   resolveGitHubProjectId,
   startGitHubWebhookApp,
@@ -955,4 +960,114 @@ test("createGitHubRestIssueCommentClient accepts token providers", async () => {
   });
 
   assert.deepEqual(requests, [{ authorization: "Bearer provider-token" }]);
+});
+
+test("JsonFileGitHubRelayJobQueue persists relay jobs across instances", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-"));
+  const queuePath = path.join(dir, "queue.json");
+  const queue = new JsonFileGitHubRelayJobQueue(queuePath);
+  const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created", reportUrl: "https://specrail.example.test/runs/run-created/report.md" });
+
+  const reloaded = new JsonFileGitHubRelayJobQueue(queuePath);
+  assert.deepEqual(await reloaded.list(), [created]);
+
+  const claimed = await reloaded.claimNext(new Date(created.createdAt));
+  assert.equal(claimed?.id, created.id);
+  assert.equal((await reloaded.list())[0]?.status, "running");
+});
+
+test("processGitHubRelayQueue posts terminal comments and completes jobs", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-"));
+  const queue = new JsonFileGitHubRelayJobQueue(path.join(dir, "queue.json"));
+  const job = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+  const comments: Array<{ repositoryFullName: string; issueNumber: number; body: string }> = [];
+
+  const result = await processGitHubRelayQueue({
+    queue,
+    specRail: {
+      async *streamRunEvents() {
+        yield { type: "task_status_changed", payload: { status: "completed" } };
+      },
+    },
+    github: {
+      async createIssueComment(input) {
+        comments.push(input);
+        return { id: 1001 };
+      },
+    },
+  });
+
+  assert.equal(result.processed, true);
+  assert.equal(result.jobId, job.id);
+  assert.equal((await queue.list())[0]?.status, "completed");
+  assert.deepEqual(comments, [{ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, body: "SpecRail run run-created completed." }]);
+});
+
+test("processGitHubRelayQueue records retryable failures", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-"));
+  const queue = new JsonFileGitHubRelayJobQueue(path.join(dir, "queue.json"));
+  const job = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+
+  await assert.rejects(
+    processGitHubRelayQueue({
+      queue,
+      specRail: {
+        async *streamRunEvents() {
+          yield { type: "task_status_changed", payload: { status: "failed" } };
+        },
+      },
+      github: {
+        async createIssueComment() {
+          throw new Error("GitHub unavailable");
+        },
+      },
+    }),
+    /GitHub unavailable/u,
+  );
+
+  const [failed] = await queue.list();
+  assert.equal(failed?.id, job.id);
+  assert.equal(failed?.status, "pending");
+  assert.equal(failed?.attempts, 1);
+  assert.equal(failed?.lastError, "GitHub unavailable");
+  assert.ok(failed?.nextAttemptAt);
+});
+
+test("GitHub webhook HTTP app enqueues durable terminal relay jobs", async () => {
+  const { port } = createSpecRailPort();
+  const queue = new JsonFileGitHubRelayJobQueue(path.join(await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-")), "queue.json"));
+  const server = createGitHubWebhookHttpServer({
+    config: {
+      apiBaseUrl: "https://specrail.example.test",
+      port: 0,
+      webhookPath: "/github/webhook",
+      webhookSecret: secret,
+      projectId: "project-default",
+      githubApiBaseUrl: "https://api.github.example.test",
+      followTerminalEvents: true,
+      repositoryProjects: {},
+      allowedActors: [],
+    },
+    specRail: port,
+    github: {
+      async createIssueComment() {
+        return { id: 1001 };
+      },
+    },
+    relayQueue: queue,
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  try {
+    const body = JSON.stringify(payload("/specrail run"));
+    const response = await fetch(`http://127.0.0.1:${address.port}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 202);
+    assert.deepEqual(((await response.json()) as { relay: { scheduled: boolean } }).relay, { scheduled: true });
+    assert.equal((await queue.list())[0]?.runId, "run-created");
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
 });
