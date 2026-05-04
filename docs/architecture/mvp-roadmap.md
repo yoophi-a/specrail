@@ -51,9 +51,9 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 ## Next milestone candidates
 
 ### Milestone A — Artifact/state convergence
-- decide whether repo-visible artifacts should include canonical run history, summaries, or only generated planning documents
-- remove or document duplicated event persistence surfaces
-- connect completed run summaries back into track artifacts if desired
+- canonical run history remains in `state/events/<runId>.jsonl` and HTTP/SSE APIs
+- repo-visible track artifacts remain planning artifacts (`spec.md`, `plan.md`, `tasks.md`, `sync.json`) and do not receive automatic completed-run history appends
+- future run-history Markdown output should be an explicit derived export, not a replacement source of truth
 
 ### Milestone B — Runtime approval broker
 - core/API approval decisions route back to active executors through callback hooks
@@ -115,6 +115,6 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Artifact/state convergence contract for completed runs**
-   - decide whether completed run summaries should be exported into repo-visible track artifacts, remain API/SSE-only, or be exposed through a separate explicit export command.
-   - document the chosen source of truth for `state/events/<runId>.jsonl`, `sessions/<sessionRef>.events.jsonl`, and any future artifact-local run history.
+1. **Explicit completed-run report export command**
+   - design a read-only export path that renders a completed run summary/history from canonical state into Markdown without mutating track planning artifacts.
+   - include guardrails that label the export as derived from `state/events/<runId>.jsonl` at a specific time.

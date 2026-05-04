@@ -401,6 +401,37 @@ flowchart TB
 - `artifacts/tracks/<trackId>/events.jsonl`은 현재 MVP에서 예약 placeholder이며 API가 읽지 않는다.
 - repo-visible track artifact는 `spec.md`, `plan.md`, `tasks.md`, `sync.json` 중심으로 유지한다.
 
+### 완료된 Run 기록과 artifact/state convergence 계약
+
+현재 MVP의 결정은 **완료된 run summary/history를 repo-visible track artifact에 자동으로 쓰지 않는다**는 것이다. 이유는 다음과 같다.
+
+- canonical run history는 append-only JSONL 이벤트 로그여야 하며, Markdown artifact rewrite와 결합되면 이벤트 순서/증분 replay/감사가 흐려진다.
+- `spec.md`, `plan.md`, `tasks.md`는 사람이 검토하고 승인하는 planning artifact이며, execution telemetry와 책임이 다르다.
+- Terminal, Hosted Operator UI, Telegram, ACP, HTTP clients는 모두 HTTP/SSE를 통해 같은 canonical state를 조회해야 한다.
+- provider telemetry(`sessions/<sessionRef>.events.jsonl`)는 디버깅 자료이며, domain event contract와 1:1로 노출하지 않는다.
+
+따라서 source of truth는 다음처럼 고정한다.
+
+```mermaid
+flowchart TB
+  Provider["Provider / adapter raw telemetry"] --> SessionLog["sessions/<sessionRef>.events.jsonl\n디버깅/재생용 telemetry"]
+  Provider --> Normalizer["adapter normalization"]
+  Normalizer --> Canonical["state/events/<runId>.jsonl\ncanonical domain event log"]
+  Canonical --> Summary["executions/<runId>.json\nsummary/status recomputation"]
+  Canonical --> API["GET /runs/:runId/events\nGET /runs/:runId/events/stream"]
+  Summary --> Clients["Hosted UI / Terminal / Telegram / ACP"]
+  API --> Clients
+  TrackArtifacts["artifacts/tracks/<trackId>/\nspec.md / plan.md / tasks.md / sync.json"] -. "자동 run history export 없음" .- Canonical
+```
+
+운영 계약:
+
+- 완료/실패/취소된 run의 history는 `state/events/<runId>.jsonl`과 HTTP/SSE API로 조회한다.
+- `executions/<runId>.json`의 `summary`는 canonical event log에서 재계산한 캐시/스냅샷이다.
+- repo-visible artifact에는 run summary를 자동 append하지 않는다.
+- 외부 보고서, 릴리스 노트, PR comment, Markdown export가 필요하면 별도 명시적 export command/API를 둔다.
+- 미래에 artifact-local run history를 추가하더라도 canonical log를 대체하지 않고, 특정 시점의 derived export로 표시해야 한다.
+
 ## 주요 요청 흐름
 
 ### 트랙 생성과 산출물 materialization

@@ -169,7 +169,7 @@ Run이 종료되면 Track 상태가 자동 조정된다:
 
 ## ExecutionEvent
 
-Run 실행 중 발생하는 개별 이벤트. JSONL 파일에 append-only로 저장된다.
+Run 실행 중 발생하는 개별 이벤트. `state/events/<runId>.jsonl`에 append-only로 저장되며, 이 파일이 run history의 canonical source of truth다. `sessions/<sessionRef>.events.jsonl`은 provider adapter telemetry이고, repo-visible track artifact는 현재 run history를 자동 포함하지 않는다.
 
 | Field | Type | Description |
 |-------|------|-------------|
