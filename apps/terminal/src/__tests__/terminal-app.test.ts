@@ -297,9 +297,9 @@ test("terminal preferences load and save local UI defaults", async () => {
   try {
     assert.deepEqual(await loadTerminalPreferences(path), {});
 
-    await saveTerminalPreferences(path, { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true });
-    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true });
-    assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true });
+    await saveTerminalPreferences(path, { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
+    assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
 
     await writeFile(path, "{not json", "utf8");
     assert.deepEqual(await loadTerminalPreferences(path), {});
@@ -435,7 +435,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, h\/l artifact, \[\/\] revision, v propose, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, v propose, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
   assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, v proposes, a\/x approves or rejects pending revisions, s starts a run\./);
 });
 
@@ -961,10 +961,11 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
 
     stdin.key("d");
     stdin.key(" ", "space");
+    stdin.key("+");
     await waitFor(async () => {
       try {
         const preferences = JSON.parse(await readFile(preferencePath, "utf8")) as Record<string, unknown>;
-        return preferences.liveTailPaused === true && preferences.showRunEventDetail === true;
+        return preferences.liveTailPaused === true && preferences.showRunEventDetail === true && preferences.refreshIntervalMs === 1000;
       } catch {
         return false;
       }
