@@ -1341,6 +1341,8 @@ function formatStreamStatus(feed: RunEventFeedState, terminal: boolean): string 
 
 function formatEventLine(event: ExecutionEvent): string {
   const status = readEventStatus(event);
+  const stream = readEventStream(event);
+  const text = readEventText(event);
   const parts = [event.timestamp, event.type];
   if (event.subtype) {
     parts.push(event.subtype);
@@ -1348,7 +1350,21 @@ function formatEventLine(event: ExecutionEvent): string {
   if (status) {
     parts.push(`status=${status}`);
   }
-  return `${parts.join(" | ")} | ${previewText(event.summary, 120)}`;
+  if (stream) {
+    parts.push(`stream=${stream}`);
+  }
+  const summary = previewText(event.summary, text ? 72 : 120);
+  return text ? `${parts.join(" | ")} | ${summary} — ${previewText(text, 96)}` : `${parts.join(" | ")} | ${summary}`;
+}
+
+function readEventStream(event: ExecutionEvent): string | null {
+  const stream = event.payload?.stream;
+  return stream === "stdout" || stream === "stderr" ? stream : null;
+}
+
+function readEventText(event: ExecutionEvent): string | null {
+  const text = event.payload?.text;
+  return typeof text === "string" && text.trim().length > 0 ? text : null;
 }
 
 function readEventStatus(event: ExecutionEvent): string | null {
