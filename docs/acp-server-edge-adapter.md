@@ -78,6 +78,19 @@ Example client payload:
 }
 ```
 
+## Workspace ownership rules
+
+ACP clients must treat SpecRail workspaces as **SpecRail-managed execution workspaces**, not as client-owned filesystem roots.
+
+- SpecRail allocates and records execution workspaces through the configured execution workspace manager.
+- The linked SpecRail `Execution.id` remains the owner of workspace lifecycle, cleanup eligibility, and audit history.
+- ACP clients may display workspace paths from run metadata as contextual references, but they should not assume direct read/write access unless a future ACP filesystem capability explicitly grants it.
+- Any future ACP filesystem or terminal capability must be scoped to the linked run workspace and mediated by SpecRail, so access checks, refusal reasons, and cleanup state stay consistent with the existing REST/API model.
+- Workspace cleanup remains a SpecRail operation. Clients should call the existing cleanup preview/apply flow rather than deleting paths directly.
+- Provider-created session metadata and transient terminal state are adapter/backend details; they do not transfer ownership of the workspace to the ACP client.
+
+These rules keep ACP as a thin interactive edge while preserving SpecRail as the canonical owner of execution state, artifacts, and workspace cleanup.
+
 ## Current limitations
 
 This is intentionally an initial bridge, not a full ACP implementation.
@@ -87,7 +100,7 @@ This is intentionally an initial bridge, not a full ACP implementation.
 3. Runtime permission requests are translated into ACP-friendly updates; decisions are persisted through the core approval path and delivered to executors that implement `resolveRuntimeApproval`.
 4. Event updates are richer than the initial bridge, but the mapping still collapses many provider-specific details into `session/update` plus `_meta` rather than a full ACP-native event taxonomy.
 5. The adapter stores ACP session records locally, but run state still lives in the normal SpecRail repositories.
-6. Terminal and filesystem ACP capabilities are not exposed yet, because SpecRail-managed workspaces need a clearer ownership model first.
+6. Terminal and filesystem ACP capabilities are not exposed yet; future versions must apply the workspace ownership rules above before granting scoped access.
 7. `approval_resolved` records the operator decision. Callback delivery may additionally append handled, unsupported, or failed callback events depending on the selected executor.
 
 ## Why this shape
@@ -102,6 +115,6 @@ This follows the ACP fit analysis in `docs/research/acp-fit-for-specrail.md`:
 Good next steps from the current bridge:
 - replace approved-permission resume fallbacks with narrower provider-native permission continuation when Codex or Claude Code expose a usable primitive
 - expand the ACP-facing event taxonomy beyond readable `agent_message_chunk` fallbacks for provider-specific details that clients need to render natively
-- define workspace ownership rules before exposing filesystem or terminal ACP capabilities for SpecRail-managed workspaces
+- design the scoped ACP filesystem/terminal capability shape that applies the documented workspace ownership rules
 - build an ACP-aware terminal or editor client spike against this adapter to validate the session/update and permission request shapes with a real client
 - decide which planning/admin flows, if any, should become ACP-native versus staying in the REST API
