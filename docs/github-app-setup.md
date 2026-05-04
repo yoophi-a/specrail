@@ -38,6 +38,7 @@ The runnable app entrypoint reads these environment variables:
 | Variable | Default | Description |
 | --- | --- | --- |
 | `SPECRAIL_API_BASE_URL` | `http://127.0.0.1:4000` | Base URL for the SpecRail API. Also used to derive `/runs/:runId/report.md` links. |
+| `SPECRAIL_OPERATOR_BASE_URL` | unset | Optional hosted operator UI base URL. When set, terminal outcome comments include `/operator?runId=...` links. |
 | `SPECRAIL_GITHUB_PROJECT_ID` | `SPECRAIL_PROJECT_ID` or `project-default` | Default project id used when creating tracks from GitHub issues/PRs. |
 | `SPECRAIL_PROJECT_ID` | `project-default` | Fallback project id when `SPECRAIL_GITHUB_PROJECT_ID` is not set. |
 | `SPECRAIL_GITHUB_REPOSITORY_PROJECTS` | unset | Optional comma-separated repository allowlist and project map, for example `yoophi-a/specrail=project-specrail,other/repo=project-other`. When set, unmapped repositories are ignored. |
@@ -92,12 +93,13 @@ The webhook endpoint returns JSON responses:
 - REST issue-comment posting supports static tokens and GitHub App installation-token refresh. Private keys must be supplied securely by deployment secret management.
 - Durable terminal relay is JSON-file based when `GITHUB_RELAY_QUEUE_PATH` is set. Failed relay attempts are retained with `lastError`, attempt count, and retry timing; deployments should place this path on persistent storage.
 - Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling/enqueue, not for the run to reach a terminal state.
+- Hosted operator run links are included in terminal comments only when `SPECRAIL_OPERATOR_BASE_URL` is configured; GitHub remains a thin frontend over SpecRail state.
 - Repository/project allowlists plus sender-login, organization, and team-based authorization are supported.
 - Non-terminal progress is intentionally not posted to GitHub; use the operator UI, terminal, Telegram, or SSE surfaces for detailed progress.
 - GitHub is not a canonical artifact or run-history store. Completed-run reports remain derived read-only exports at `GET /runs/:runId/report.md`.
 
 ## Recommended follow-ups
 
-1. Add richer terminal outcome links once hosted operator run URLs are finalized.
-2. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
-3. Add admin-facing diagnostics for denied GitHub `/specrail` commands.
+1. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
+2. Add admin-facing diagnostics for denied GitHub `/specrail` commands.
+3. Add deployment documentation for publishing the hosted operator UI behind auth.

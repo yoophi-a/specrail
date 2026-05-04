@@ -131,6 +131,7 @@ export function renderOperatorUiClientScript(): string {
     const trackPriority = document.querySelector('#track-priority');
     let activeEventStream = null;
     let projectsById = new Map();
+    const initialRunId = new URLSearchParams(window.location.search).get('runId');
 
     async function api(path, init) {
       const response = await fetch(path, { headers: { accept: 'application/json', 'content-type': 'application/json' }, ...init });
@@ -593,7 +594,9 @@ export function renderOperatorUiClientScript(): string {
     refresh.addEventListener('click', () => {
       load().catch((error) => { status.textContent = errorMessage(error); });
     });
-    load().catch((error) => { status.textContent = errorMessage(error); });
+    load()
+      .then(() => { if (initialRunId) return loadRunDetail(initialRunId); return undefined; })
+      .catch((error) => { status.textContent = errorMessage(error); });
 `;
 }
 

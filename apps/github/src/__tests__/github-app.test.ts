@@ -8,6 +8,7 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   authorizeGitHubActor,
+  buildGitHubOperatorRunUrl,
   buildGitHubSignature256,
   createGitHubAppInstallationTokenProvider,
   createGitHubAppJwt,
@@ -227,8 +228,9 @@ test("formatGitHubTerminalOutcomeComment formats terminal outcomes with optional
       runId: "run-1",
       status: "completed",
       reportUrl: "https://specrail.example.test/runs/run-1/report.md",
+      operatorUrl: "https://specrail.example.test/operator?runId=run-1",
     }),
-    "SpecRail run run-1 completed.\nReport: https://specrail.example.test/runs/run-1/report.md",
+    "SpecRail run run-1 completed.\nReport: https://specrail.example.test/runs/run-1/report.md\nOperator: https://specrail.example.test/operator?runId=run-1",
   );
   assert.equal(
     formatGitHubTerminalOutcomeComment({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-2", status: "failed" }),
@@ -242,6 +244,10 @@ test("formatGitHubTerminalOutcomeComment formats terminal outcomes with optional
     formatGitHubTerminalOutcomeComment({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-4", status: "running" }),
     undefined,
   );
+});
+
+test("buildGitHubOperatorRunUrl creates encoded hosted run detail links", () => {
+  assert.equal(buildGitHubOperatorRunUrl("https://specrail.example.test", "run/opaque value"), "https://specrail.example.test/operator?runId=run%2Fopaque+value");
 });
 
 test("postGitHubTerminalOutcomeComment posts terminal comments and ignores progress statuses", async () => {
@@ -831,10 +837,12 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
     GITHUB_WEBHOOK_SECRET: "secret",
     SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "yoophi-a/specrail=project-specrail, other/repo = project-other",
     GITHUB_ALLOWED_ACTORS: "octocat,@hubot",
+    SPECRAIL_OPERATOR_BASE_URL: "https://specrail.example.test",
   });
 
   assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project-specrail", "other/repo": "project-other" });
   assert.deepEqual(config.allowedActors, ["octocat", "@hubot"]);
+  assert.equal(config.operatorBaseUrl, "https://specrail.example.test");
   assert.equal(resolveGitHubProjectId(config, "yoophi-a/specrail"), "project-specrail");
   assert.equal(resolveGitHubProjectId(config, "missing/repo"), undefined);
   assert.equal(isGitHubActorAuthorized(config, "octocat"), true);
