@@ -31,7 +31,7 @@ The runs screen now does more than snapshot inspection:
 - keeps the selected run detail panel in sync with periodic refreshes
 - opens an SSE stream against `/runs/:id/events/stream` for the selected run
 - caches the most recent run events in-memory for a tail-style activity view
-- toggles a focused latest-event detail block with `d`, including metadata, provider-aware highlights for known payloads, and a bounded pretty JSON payload preview
+- toggles a focused event detail block with `d` and moves across cached events with `p` / `n`, including metadata, provider-aware highlights for known payloads, and a bounded pretty JSON payload preview
 - surfaces provider `stdout`/`stderr` stream labels and bounded text previews when run events include stream payloads
 - adds compact structured details for tool calls, tool results, and runtime approval events when payload fields are available
 - lets operators pause and resume the live tail without changing selection
@@ -73,5 +73,4 @@ This is intentionally still lightweight:
 
 Good next steps after the live monitor baseline:
 - richer planning interaction beyond the current focused revision selector and lightweight proposal authoring
-- richer event detail navigation for selecting older cached events instead of only the latest event
 - optional persistence for refresh interval if operators need custom refresh cadence to survive restarts

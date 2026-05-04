@@ -524,6 +524,7 @@ test("renderAppShell renders run event monitor details", () => {
       ],
     ),
     showRunEventDetail: true,
+    runEventDetailIndex: 0,
     pendingTrackAction: null,
     pendingExecutionAction: null,
     pendingProposalAction: null,
@@ -540,19 +541,19 @@ test("renderAppShell renders run event monitor details", () => {
   assert.match(rendered, /stream: reconnecting \(attempt 2\)/);
   assert.match(rendered, /report: \/runs\/run-1\/report\.md/);
   assert.match(rendered, /operator actions: press e to resume this run, w to preview workspace cleanup, Space to pause tail/);
-  assert.match(rendered, /Help: runs — f cycles filters, Space pauses live tail, d toggles event detail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup\./);
+  assert.match(rendered, /Help: runs — f cycles filters, Space pauses live tail, d toggles event detail, p\/n selects event detail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup\./);
   assert.match(rendered, /recent activity:/);
   assert.match(rendered, /tool_call \| claude_tool_call \| Claude requested tool Bash — tool=Bash, id=toolu-1, input=\{\"command\":\"pnpm test -- --runInBand\"\}/);
   assert.match(rendered, /approval_requested \| claude_permission_denial \| Claude requested approval for Bash — request=approval-1, tool=Bash/);
   assert.match(rendered, /message \| stream=stderr \| STDERR run-1-claude — first line second line with detailed provider output/);
   assert.match(rendered, /task_status_changed \| status=failed \| Failed Claude Code session run-1-claude/);
-  assert.match(rendered, /event detail:/);
-  assert.match(rendered, /id: evt-1/);
-  assert.match(rendered, /type: task_status_changed/);
+  assert.match(rendered, /event detail \(1\/4\):/);
+  assert.match(rendered, /id: evt-tool/);
+  assert.match(rendered, /type: tool_call \/ claude_tool_call/);
   assert.match(rendered, /highlights:/);
-  assert.match(rendered, /status: failed/);
-  assert.match(rendered, /exit code: 1/);
-  assert.match(rendered, /"exitCode": 1/);
+  assert.match(rendered, /tool call: Bash \(toolu-1\)/);
+  assert.match(rendered, /input: \{"command":"pnpm test -- --runInBand"\}/);
+  assert.match(rendered, /"toolUseId": "toolu-1"/);
 });
 
 test("renderAppShell renders guarded workspace cleanup preview and confirmation state", () => {
