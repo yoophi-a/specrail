@@ -20,8 +20,9 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - API validation/error contract tests
 - baseline validation workflow with typecheck, Markdown link check, tests, and build
 - terminal client planning workspace, run monitor, and SSE follow support
-- Telegram update handling for track binding, attachments, and run-event relay
+- Telegram update handling for track binding, attachments, run-event relay, and terminal-outcome report links
 - ACP edge adapter for session/run mapping and permission-resolution projection
+- completed-run Markdown report export via `GET /runs/:runId/report.md`, derived from run metadata and `state/events/<runId>.jsonl` without mutating planning artifacts
 
 ### In progress / partial
 - event schema breadth
@@ -53,7 +54,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 ### Milestone A — Artifact/state convergence
 - canonical run history remains in `state/events/<runId>.jsonl` and HTTP/SSE APIs
 - repo-visible track artifacts remain planning artifacts (`spec.md`, `plan.md`, `tasks.md`, `sync.json`) and do not receive automatic completed-run history appends
-- future run-history Markdown output should be an explicit derived export, not a replacement source of truth
+- completed-run Markdown output is an explicit derived export, not a replacement source of truth
+- operator, terminal, and Telegram surfaces expose report discovery links rather than copying report content into track artifacts
 
 ### Milestone B — Runtime approval broker
 - core/API approval decisions route back to active executors through callback hooks
@@ -100,6 +102,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI selected-run detail can resume/cancel runs through existing lifecycle APIs
 - hosted UI selected-run detail appends live SSE event updates while a run is selected
 - hosted UI selected-run detail can request cleanup preview/apply through the existing explicit confirmation flow
+- hosted UI selected-run detail links to the derived Markdown report endpoint for selected runs
 - hosted UI action controls use shared in-flight/error handling and preserve cleanup apply results if post-apply refresh fails
 - hosted UI shell rendering composes separately testable style and client script helpers without adding a new frontend build pipeline
 - hosted UI top-level project and track actions use inline form controls while preserving the same HTTP API calls
@@ -115,6 +118,14 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Implement completed-run Markdown report endpoint**
-   - add a shared renderer and `GET /runs/:runId/report.md` endpoint based on the explicit export contract.
-   - keep the endpoint read-only and label output as derived from `state/events/<runId>.jsonl` at a specific time.
+1. **Add completed-run report artifact download options**
+   - keep `GET /runs/:runId/report.md` as the read-only source, but add explicit download/copy affordances where clients can support them.
+   - consider `Content-Disposition` filename hints or a lightweight terminal copy/open command without introducing report persistence.
+
+2. **Broaden provider-neutral event normalization coverage**
+   - audit Codex and Claude Code payload fields that still leak provider-specific structure into first-class UI decisions.
+   - promote stable fields into shared event summaries/status metadata while preserving provider details in `payload` for debugging.
+
+3. **Define the hosted GitHub entrypoint slice**
+   - document the smallest GitHub webhook/app flow that should create or update tracks using existing project, track, planning, approval, and run APIs.
+   - avoid parallel state or artifact workflows; GitHub should remain another thin frontend over the same HTTP/SSE contracts.
