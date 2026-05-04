@@ -424,7 +424,9 @@ test("CodexAdapter normalizes lifecycle and stream events into shared execution 
       summary: "Failed Codex session run-1-codex",
       payload: {
         sessionRef: "run-1-codex",
+        provider: "codex",
         status: "failed",
+        terminal: true,
         exitCode: 1,
         signal: null,
       },

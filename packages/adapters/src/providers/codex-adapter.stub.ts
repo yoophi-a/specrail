@@ -465,7 +465,9 @@ export class CodexAdapter implements ExecutorAdapter {
         summary: `${event.kind === "completed" ? "Completed" : "Failed"} Codex session ${event.sessionRef}`,
         payload: {
           sessionRef: event.sessionRef,
+          provider: this.name,
           status: event.kind === "completed" ? "completed" : "failed",
+          terminal: true,
           exitCode: event.exitCode,
           signal: event.signal,
         },
@@ -481,7 +483,9 @@ export class CodexAdapter implements ExecutorAdapter {
       summary: `${event.kind === "resumed" ? "Resumed" : "Cancelled"} Codex session ${event.sessionRef}`,
       payload: {
         sessionRef: event.sessionRef,
+        provider: this.name,
         status: event.kind,
+        terminal: event.kind === "cancelled",
       },
     };
   }

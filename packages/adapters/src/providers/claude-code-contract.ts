@@ -218,7 +218,9 @@ export function normalizeClaudeCodeEvent(event: ClaudeCodeLifecycleEvent): Execu
     summary: `${toLifecycleVerb(event.kind)} Claude Code session ${event.sessionRef}`,
     payload: {
       sessionRef: event.sessionRef,
+      provider: CLAUDE_CODE_BACKEND,
       status: event.kind,
+      terminal: ["completed", "failed", "cancelled"].includes(event.kind),
       exitCode: event.exitCode,
       signal: event.signal,
       providerSessionId: event.sessionId,
