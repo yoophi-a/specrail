@@ -1,10 +1,19 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import http, { type IncomingMessage, type ServerResponse } from "node:http";
 
 export const SPEC_RAIL_RUN_COMMAND = "/specrail run";
 
 export interface GitHubRunCommand {
   kind: "run";
   prompt?: string;
+}
+
+export interface GitHubAppConfig {
+  apiBaseUrl: string;
+  port: number;
+  webhookPath: string;
+  webhookSecret: string;
+  projectId: string;
 }
 
 export interface GitHubIssueCommentCommandEvent {
@@ -78,6 +87,12 @@ export interface GitHubIssueCommentPort {
   createIssueComment(input: { repositoryFullName: string; issueNumber: number; body: string }): Promise<{ id?: string | number; url?: string }>;
 }
 
+export interface GitHubWebhookAppDeps {
+  config: GitHubAppConfig;
+  specRail: GitHubSpecRailPort;
+  github?: GitHubIssueCommentPort;
+}
+
 export interface GitHubTerminalOutcomeCommentInput {
   repositoryFullName: string;
   issueNumber: number;
@@ -89,6 +104,16 @@ export interface GitHubTerminalOutcomeCommentInput {
 export type GitHubTerminalOutcomeCommentResult =
   | { posted: true; body: string; comment: { id?: string | number; url?: string } }
   | { posted: false; reason: "non_terminal_status" };
+
+export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig {
+  return {
+    apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
+    port: Number(env.GITHUB_APP_PORT ?? 4200),
+    webhookPath: env.GITHUB_WEBHOOK_PATH ?? "/github/webhook",
+    webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",
+    projectId: env.SPECRAIL_GITHUB_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID ?? "project-default",
+  };
+}
 
 export function buildGitHubSignature256(secret: string, payload: string | Buffer): string {
   const digest = createHmac("sha256", secret).update(payload).digest("hex");
@@ -238,6 +263,82 @@ export async function executeGitHubRunCommand(input: {
     runId: run.run.id,
     reportUrl: input.apiBaseUrl ? buildGitHubRunReportUrl(input.apiBaseUrl, run.run.id) : undefined,
   };
+}
+
+async function readRawBody(request: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
+  response.statusCode = statusCode;
+  response.setHeader("content-type", "application/json; charset=utf-8");
+  response.end(`${JSON.stringify(body)}\n`);
+}
+
+function normalizeWebhookPath(pathname: string | undefined): string {
+  const trimmed = pathname?.trim() || "/github/webhook";
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+export async function handleGitHubWebhookHttpRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  deps: GitHubWebhookAppDeps,
+): Promise<void> {
+  const requestUrl = new URL(request.url ?? "/", "http://localhost");
+  const webhookPath = normalizeWebhookPath(deps.config.webhookPath);
+
+  if (request.method !== "POST" || requestUrl.pathname !== webhookPath) {
+    sendJson(response, 404, { error: "not_found" });
+    return;
+  }
+
+  const rawBody = await readRawBody(request);
+  let payload: GitHubIssueCommentCommandEvent;
+  try {
+    payload = JSON.parse(rawBody.toString("utf8")) as GitHubIssueCommentCommandEvent;
+  } catch {
+    sendJson(response, 400, { error: "invalid_json" });
+    return;
+  }
+
+  const command = handleGitHubWebhookCommand({
+    eventName: String(request.headers["x-github-event"] ?? ""),
+    signatureHeader: typeof request.headers["x-hub-signature-256"] === "string" ? request.headers["x-hub-signature-256"] : undefined,
+    secret: deps.config.webhookSecret,
+    rawBody,
+    payload,
+  });
+
+  if (!command.accepted) {
+    const statusCode = command.reason === "invalid_signature" ? 401 : 202;
+    sendJson(response, statusCode, { accepted: false, reason: command.reason });
+    return;
+  }
+
+  try {
+    const outcome = await executeGitHubRunCommand({
+      projectId: deps.config.projectId,
+      context: command,
+      specRail: deps.specRail,
+      apiBaseUrl: deps.config.apiBaseUrl,
+    });
+    sendJson(response, 202, { accepted: true, outcome });
+  } catch (error) {
+    sendJson(response, 502, { error: "specrail_request_failed", message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+export function createGitHubWebhookHttpServer(deps: GitHubWebhookAppDeps): http.Server {
+  return http.createServer((request, response) => {
+    handleGitHubWebhookHttpRequest(request, response, deps).catch((error: unknown) => {
+      sendJson(response, 500, { error: "internal_error", message: error instanceof Error ? error.message : String(error) });
+    });
+  });
 }
 
 export function handleGitHubWebhookCommand(input: {
