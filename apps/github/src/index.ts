@@ -130,11 +130,22 @@ export interface GitHubBackgroundTaskScheduler {
   schedule(task: () => Promise<void>): void;
 }
 
+export interface GitHubDiagnosticLogger {
+  log(input: {
+    code: "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed";
+    repositoryFullName: string;
+    issueNumber: number;
+    senderLogin?: string;
+    message?: string;
+  }): void;
+}
+
 export interface GitHubWebhookAppDeps {
   config: GitHubAppConfig;
   specRail: GitHubSpecRailPort;
   github?: GitHubIssueCommentPort;
   authorization?: GitHubAuthorizationPort;
+  diagnostics?: GitHubDiagnosticLogger;
   scheduler?: GitHubBackgroundTaskScheduler;
   relayQueue?: GitHubRelayJobQueue;
 }
@@ -564,6 +575,12 @@ export const defaultGitHubBackgroundTaskScheduler: GitHubBackgroundTaskScheduler
   },
 };
 
+export const defaultGitHubDiagnosticLogger: GitHubDiagnosticLogger = {
+  log(input) {
+    console.warn("GitHub /specrail command diagnostic", JSON.stringify(input));
+  },
+};
+
 export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRail?: GitHubSpecRailPort; github?: GitHubIssueCommentPort } = {}): http.Server {
   const config = input.config ?? loadGitHubAppConfig();
   const specRail = input.specRail ?? createSpecRailHttpClient(config.apiBaseUrl);
@@ -571,7 +588,15 @@ export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRai
   const github = input.github ?? (tokenProvider ? createGitHubRestIssueCommentClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
   const authorization = tokenProvider ? createGitHubRestAuthorizationClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined;
   const relayQueue = config.githubRelayQueuePath ? new JsonFileGitHubRelayJobQueue(config.githubRelayQueuePath) : undefined;
-  const server = createGitHubWebhookHttpServer({ config, specRail, github, authorization, scheduler: defaultGitHubBackgroundTaskScheduler, relayQueue });
+  const server = createGitHubWebhookHttpServer({
+    config,
+    specRail,
+    github,
+    authorization,
+    diagnostics: defaultGitHubDiagnosticLogger,
+    scheduler: defaultGitHubBackgroundTaskScheduler,
+    relayQueue,
+  });
   if (relayQueue && github) {
     const interval = setInterval(() => {
       processGitHubRelayQueue({ queue: relayQueue, specRail, github }).catch((error: unknown) => {
@@ -976,6 +1001,20 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
   response.end(`${JSON.stringify(body)}\n`);
 }
 
+function logGitHubCommandDiagnostic(
+  deps: GitHubWebhookAppDeps,
+  command: GitHubAcceptedRunCommandContext,
+  input: { code: "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed"; message?: string },
+): void {
+  deps.diagnostics?.log({
+    code: input.code,
+    repositoryFullName: command.repositoryFullName,
+    issueNumber: command.issueNumber,
+    senderLogin: command.senderLogin,
+    message: input.message,
+  });
+}
+
 function normalizeWebhookPath(pathname: string | undefined): string {
   const trimmed = pathname?.trim() || "/github/webhook";
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
@@ -1020,6 +1059,7 @@ export async function handleGitHubWebhookHttpRequest(
   try {
     const projectId = resolveGitHubProjectId(deps.config, command.repositoryFullName);
     if (!projectId) {
+      logGitHubCommandDiagnostic(deps, command, { code: "unsupported_repository" });
       sendJson(response, 202, { accepted: false, reason: "unsupported_repository" });
       return;
     }
@@ -1027,10 +1067,13 @@ export async function handleGitHubWebhookHttpRequest(
     try {
       authorized = await authorizeGitHubActor({ config: deps.config, senderLogin: command.senderLogin, authorization: deps.authorization });
     } catch (error) {
-      sendJson(response, 502, { error: "github_authorization_failed", message: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      logGitHubCommandDiagnostic(deps, command, { code: "github_authorization_failed", message });
+      sendJson(response, 502, { error: "github_authorization_failed", message });
       return;
     }
     if (!authorized) {
+      logGitHubCommandDiagnostic(deps, command, { code: "unauthorized_actor" });
       sendJson(response, 202, { accepted: false, reason: "unauthorized_actor" });
       return;
     }

@@ -297,6 +297,7 @@ async function withGitHubWebhookServer(
   fn: (baseUrl: string) => Promise<void>,
   configOverrides: Partial<ReturnType<typeof loadGitHubAppConfig>> = {},
   authorization?: { isOrganizationMember(input: { organization: string; username: string }): Promise<boolean>; isTeamMember(input: { organization: string; teamSlug: string; username: string }): Promise<boolean> },
+  diagnostics?: { log(input: { code: "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed"; repositoryFullName: string; issueNumber: number; senderLogin?: string; message?: string }): void },
 ): Promise<void> {
   const server = createGitHubWebhookHttpServer({
     config: {
@@ -315,6 +316,7 @@ async function withGitHubWebhookServer(
     },
     specRail,
     authorization,
+    diagnostics,
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -1182,4 +1184,61 @@ test("GitHub webhook HTTP app accepts org-authorized actors and rejects authoriz
     },
   );
   assert.deepEqual(rejected.calls, []);
+});
+
+test("GitHub webhook HTTP app emits safe diagnostics for denied commands", async () => {
+  const diagnostics: Array<{ code: string; repositoryFullName: string; issueNumber: number; senderLogin?: string; message?: string }> = [];
+  const logger = { log(input: { code: "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed"; repositoryFullName: string; issueNumber: number; senderLogin?: string; message?: string }) { diagnostics.push(input); } };
+
+  await withGitHubWebhookServer(
+    createSpecRailPort().port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run unsupported"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(response.status, 202);
+      assert.deepEqual(await response.json(), { accepted: false, reason: "unsupported_repository" });
+    },
+    { repositoryProjects: { "other/repo": "project-other" } },
+    undefined,
+    logger,
+  );
+
+  await withGitHubWebhookServer(
+    createSpecRailPort().port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run unauthorized"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(response.status, 202);
+      assert.deepEqual(await response.json(), { accepted: false, reason: "unauthorized_actor" });
+    },
+    { allowedActors: ["hubot"] },
+    undefined,
+    logger,
+  );
+
+  await withGitHubWebhookServer(
+    createSpecRailPort().port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run auth failure"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(response.status, 502);
+      assert.deepEqual(await response.json(), { error: "github_authorization_failed", message: "membership lookup failed" });
+    },
+    { allowedOrganizations: ["yoophi-a"] },
+    {
+      async isOrganizationMember() {
+        throw new Error("membership lookup failed");
+      },
+      async isTeamMember() {
+        return false;
+      },
+    },
+    logger,
+  );
+
+  assert.deepEqual(diagnostics, [
+    { code: "unsupported_repository", repositoryFullName: "yoophi-a/specrail", issueNumber: 123, senderLogin: "octocat", message: undefined },
+    { code: "unauthorized_actor", repositoryFullName: "yoophi-a/specrail", issueNumber: 123, senderLogin: "octocat", message: undefined },
+    { code: "github_authorization_failed", repositoryFullName: "yoophi-a/specrail", issueNumber: 123, senderLogin: "octocat", message: "membership lookup failed" },
+  ]);
 });
