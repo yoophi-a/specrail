@@ -1348,9 +1348,65 @@ function renderRunEventDetailLines(event: ExecutionEvent | null): string[] {
     `  - source: ${event.source}`,
     `  - timestamp: ${event.timestamp}`,
     `  - summary: ${previewText(event.summary, 160)}`,
+    ...formatEventDetailHighlightLines(event),
     "  - payload:",
     ...formatEventPayloadPreview(event.payload),
   ];
+}
+
+function formatEventDetailHighlightLines(event: ExecutionEvent): string[] {
+  const highlights = formatEventDetailHighlights(event);
+  if (highlights.length === 0) {
+    return [];
+  }
+
+  return ["  - highlights:", ...highlights.map((highlight) => `    - ${highlight}`)];
+}
+
+function formatEventDetailHighlights(event: ExecutionEvent): string[] {
+  const stream = readEventStream(event);
+  const text = readEventText(event);
+  const status = readEventStatus(event);
+  const exitCode = readPayloadNumber(event, "exitCode");
+  const signal = readPayloadString(event, "signal");
+
+  if (event.type === "tool_call") {
+    const toolName = readPayloadString(event, "toolName") ?? "unknown";
+    const toolUseId = readPayloadString(event, "toolUseId");
+    const toolInput = previewPayloadValue(event.payload?.toolInput, 220);
+    return [
+      `tool call: ${toolName}${toolUseId ? ` (${toolUseId})` : ""}`,
+      toolInput ? `input: ${toolInput}` : null,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  if (event.type === "tool_result") {
+    const toolUseId = readPayloadString(event, "toolUseId");
+    const content = previewPayloadValue(event.payload?.content, 260);
+    return [
+      `tool result${toolUseId ? ` (${toolUseId})` : ""}`,
+      content ? `content: ${content}` : null,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  if (event.type === "approval_requested" || event.type === "approval_resolved") {
+    const requestId = readPayloadString(event, "requestId");
+    const outcome = readPayloadString(event, "outcome");
+    const toolName = readPayloadString(event, "toolName");
+    return [
+      `${event.type === "approval_requested" ? "approval requested" : "approval resolved"}${requestId ? `: ${requestId}` : ""}`,
+      toolName ? `tool: ${toolName}` : null,
+      outcome ? `outcome: ${outcome}` : null,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  return [
+    status ? `status: ${status}` : null,
+    exitCode !== null ? `exit code: ${exitCode}` : null,
+    signal ? `signal: ${signal}` : null,
+    stream ? `stream: ${stream}` : null,
+    text ? `text: ${previewText(text, 220)}` : null,
+  ].filter((line): line is string => Boolean(line));
 }
 
 function formatEventPayloadPreview(payload: Record<string, unknown> | undefined): string[] {
@@ -1490,6 +1546,11 @@ function readEventText(event: ExecutionEvent): string | null {
 function readPayloadString(event: ExecutionEvent, key: string): string | null {
   const value = event.payload?.[key];
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function readPayloadNumber(event: ExecutionEvent, key: string): number | null {
+  const value = event.payload?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function previewPayloadValue(value: unknown, maxLength: number): string | null {
