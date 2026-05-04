@@ -15,6 +15,8 @@ export interface GitHubAppConfig {
   webhookPath: string;
   webhookSecret: string;
   projectId: string;
+  githubApiBaseUrl: string;
+  githubToken?: string;
 }
 
 export interface GitHubIssueCommentCommandEvent {
@@ -113,6 +115,50 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     webhookPath: env.GITHUB_WEBHOOK_PATH ?? "/github/webhook",
     webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",
     projectId: env.SPECRAIL_GITHUB_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID ?? "project-default",
+    githubApiBaseUrl: env.GITHUB_API_BASE_URL ?? "https://api.github.com",
+    githubToken: env.GITHUB_TOKEN ?? env.GITHUB_INSTALLATION_TOKEN,
+  };
+}
+
+function encodeGitHubPathSegment(value: string | number): string {
+  return encodeURIComponent(String(value));
+}
+
+async function githubJsonRequest<T>(baseUrl: string, path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(new URL(path, baseUrl), {
+    ...init,
+    headers: {
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...init.headers,
+    },
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    const bodySuffix = responseText ? `: ${responseText}` : "";
+    throw new Error(`GitHub API ${init.method ?? "GET"} ${path} failed with ${response.status}${bodySuffix}`);
+  }
+
+  return (responseText ? JSON.parse(responseText) : {}) as T;
+}
+
+export function createGitHubRestIssueCommentClient(input: { token: string; apiBaseUrl?: string }): GitHubIssueCommentPort {
+  const apiBaseUrl = input.apiBaseUrl ?? "https://api.github.com";
+  return {
+    async createIssueComment(commentInput) {
+      const [owner, repo] = commentInput.repositoryFullName.split("/");
+      if (!owner || !repo) {
+        throw new Error(`invalid GitHub repository full name: ${commentInput.repositoryFullName}`);
+      }
+
+      return githubJsonRequest(apiBaseUrl, `/repos/${encodeGitHubPathSegment(owner)}/${encodeGitHubPathSegment(repo)}/issues/${commentInput.issueNumber}/comments`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${input.token}` },
+        body: JSON.stringify({ body: commentInput.body }),
+      });
+    },
   };
 }
 

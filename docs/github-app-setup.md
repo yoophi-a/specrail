@@ -42,6 +42,9 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_WEBHOOK_SECRET` | empty string | Secret used to validate `X-Hub-Signature-256`. Set this in real deployments. |
 | `GITHUB_APP_PORT` | `4200` | HTTP port for the GitHub webhook server. |
 | `GITHUB_WEBHOOK_PATH` | `/github/webhook` | HTTP path that receives GitHub webhooks. |
+| `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub REST API base URL for issue-comment posting. |
+| `GITHUB_TOKEN` | unset | Token used by the REST issue-comment client. |
+| `GITHUB_INSTALLATION_TOKEN` | unset | Fallback token when `GITHUB_TOKEN` is not set. |
 
 ## Running locally
 
@@ -74,14 +77,14 @@ The webhook endpoint returns JSON responses:
 
 ## Current limitations
 
-- Live GitHub REST comment posting is not wired to GitHub credentials yet.
-- The terminal outcome comment formatter/port exists, but production GitHub App auth and comment delivery remain a follow-up.
+- A REST issue-comment client exists for token-backed comment creation, but production GitHub App installation-token refresh is not implemented yet.
+- The terminal outcome comment formatter/port exists, but SSE-driven live terminal outcome delivery remains a follow-up.
 - Repository/project allowlists and actor/team authorization are not implemented yet.
 - Non-terminal progress is intentionally not posted to GitHub; use the operator UI, terminal, Telegram, or SSE surfaces for detailed progress.
 - GitHub is not a canonical artifact or run-history store. Completed-run reports remain derived read-only exports at `GET /runs/:runId/report.md`.
 
 ## Recommended follow-ups
 
-1. Add GitHub App authentication and a live issue-comment client around the existing `GitHubIssueCommentPort`.
+1. Add GitHub App private-key authentication and installation-token refresh.
 2. Wire terminal run events from SpecRail SSE to the GitHub terminal outcome comment relay.
 3. Add repository-to-project allowlist and actor authorization for `/specrail` commands.
