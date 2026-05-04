@@ -24,6 +24,37 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect docs-only pull request
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docs_only=false
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+            mapfile -t changed_files < <(git diff --name-only "$base_sha" "$head_sha")
+
+            if (( ${#changed_files[@]} > 0 )); then
+              docs_only=true
+              for file in "${changed_files[@]}"; do
+                case "$file" in
+                  docs/*|*.md)
+                    ;;
+                  *)
+                    docs_only=false
+                    break
+                    ;;
+                esac
+              done
+            fi
+          fi
+
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -36,17 +67,21 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck packages
-        run: pnpm check
-
       - name: Check Markdown links
         run: pnpm check:links
 
+      - name: Install dependencies
+        if: steps.changes.outputs.docs_only != 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck packages
+        if: steps.changes.outputs.docs_only != 'true'
+        run: pnpm check
+
       - name: Run tests
+        if: steps.changes.outputs.docs_only != 'true'
         run: pnpm test
 
       - name: Build packages
+        if: steps.changes.outputs.docs_only != 'true'
         run: pnpm build
