@@ -50,6 +50,12 @@ importers:
         specifier: ^4.20.6
         version: 4.21.0
 
+  apps/github:
+    devDependencies:
+      tsx:
+        specifier: ^4.20.6
+        version: 4.21.0
+
   apps/telegram:
     devDependencies:
       tsx:
