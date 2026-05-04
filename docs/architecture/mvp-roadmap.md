@@ -115,5 +115,6 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Run lifecycle event contract enforcement tests**
-   - add focused service-level tests for monotonic run summary recomputation across resume/cancel and future provider event fidelity changes.
+1. **Artifact/state convergence contract for completed runs**
+   - decide whether completed run summaries should be exported into repo-visible track artifacts, remain API/SSE-only, or be exposed through a separate explicit export command.
+   - document the chosen source of truth for `state/events/<runId>.jsonl`, `sessions/<sessionRef>.events.jsonl`, and any future artifact-local run history.
