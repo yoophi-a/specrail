@@ -7,9 +7,11 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  authorizeGitHubActor,
   buildGitHubSignature256,
   createGitHubAppInstallationTokenProvider,
   createGitHubAppJwt,
+  createGitHubRestAuthorizationClient,
   createGitHubRestIssueCommentClient,
   createGitHubWebhookHttpServer,
   JsonFileGitHubRelayJobQueue,
@@ -288,6 +290,7 @@ async function withGitHubWebhookServer(
   specRail: GitHubSpecRailPort,
   fn: (baseUrl: string) => Promise<void>,
   configOverrides: Partial<ReturnType<typeof loadGitHubAppConfig>> = {},
+  authorization?: { isOrganizationMember(input: { organization: string; username: string }): Promise<boolean>; isTeamMember(input: { organization: string; teamSlug: string; username: string }): Promise<boolean> },
 ): Promise<void> {
   const server = createGitHubWebhookHttpServer({
     config: {
@@ -300,9 +303,12 @@ async function withGitHubWebhookServer(
       followTerminalEvents: false,
       repositoryProjects: {},
       allowedActors: [],
+      allowedOrganizations: [],
+      allowedTeams: [],
       ...configOverrides,
     },
     specRail,
+    authorization,
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -515,6 +521,8 @@ test("startGitHubWebhookApp starts the webhook server with injected config and p
       followTerminalEvents: false,
       repositoryProjects: {},
       allowedActors: [],
+      allowedOrganizations: [],
+      allowedTeams: [],
     },
     specRail: port,
   });
@@ -719,6 +727,8 @@ test("GitHub webhook HTTP app schedules terminal relay without waiting for termi
       followTerminalEvents: true,
       repositoryProjects: {},
       allowedActors: [],
+      allowedOrganizations: [],
+      allowedTeams: [],
     },
     specRail: port,
     github: {
@@ -773,6 +783,8 @@ test("GitHub webhook HTTP app surfaces terminal relay enqueue failures", async (
       followTerminalEvents: true,
       repositoryProjects: {},
       allowedActors: [],
+      allowedOrganizations: [],
+      allowedTeams: [],
     },
     specRail: port,
     github: {
@@ -1047,6 +1059,8 @@ test("GitHub webhook HTTP app enqueues durable terminal relay jobs", async () =>
       followTerminalEvents: true,
       repositoryProjects: {},
       allowedActors: [],
+      allowedOrganizations: [],
+      allowedTeams: [],
     },
     specRail: port,
     github: {
@@ -1070,4 +1084,94 @@ test("GitHub webhook HTTP app enqueues durable terminal relay jobs", async () =>
     server.close();
     await once(server, "close");
   }
+});
+
+test("authorizeGitHubActor supports organization and team membership", async () => {
+  const checks: string[] = [];
+  const authorization = {
+    async isOrganizationMember(input: { organization: string; username: string }) {
+      checks.push(`org:${input.organization}:${input.username}`);
+      return input.organization === "yoophi-a";
+    },
+    async isTeamMember(input: { organization: string; teamSlug: string; username: string }) {
+      checks.push(`team:${input.organization}/${input.teamSlug}:${input.username}`);
+      return input.organization === "other" && input.teamSlug === "maintainers";
+    },
+  };
+
+  assert.equal(
+    await authorizeGitHubActor({ config: { allowedActors: [], allowedOrganizations: ["yoophi-a"], allowedTeams: [] }, senderLogin: "octocat", authorization }),
+    true,
+  );
+  assert.equal(
+    await authorizeGitHubActor({ config: { allowedActors: [], allowedOrganizations: ["missing"], allowedTeams: ["other/maintainers"] }, senderLogin: "hubot", authorization }),
+    true,
+  );
+  assert.equal(
+    await authorizeGitHubActor({ config: { allowedActors: [], allowedOrganizations: ["missing"], allowedTeams: ["other/reviewers"] }, senderLogin: "mallory", authorization }),
+    false,
+  );
+  assert.deepEqual(checks, ["org:yoophi-a:octocat", "org:missing:hubot", "team:other/maintainers:hubot", "org:missing:mallory", "team:other/reviewers:mallory"]);
+});
+
+test("createGitHubRestAuthorizationClient checks org and team membership", async () => {
+  const requests: Array<{ url?: string; authorization?: string }> = [];
+  await withJsonServer((request, response) => {
+    requests.push({ url: request.url, authorization: request.headers.authorization });
+    response.statusCode = request.url?.includes("/teams/maintainers/") ? 404 : 204;
+    response.end();
+  }, async (baseUrl) => {
+    const client = createGitHubRestAuthorizationClient({ token: "github-token", apiBaseUrl: baseUrl });
+    assert.equal(await client.isOrganizationMember({ organization: "yoophi-a", username: "octocat" }), true);
+    assert.equal(await client.isTeamMember({ organization: "yoophi-a", teamSlug: "maintainers", username: "octocat" }), false);
+  });
+
+  assert.deepEqual(requests, [
+    { url: "/orgs/yoophi-a/members/octocat", authorization: "Bearer github-token" },
+    { url: "/orgs/yoophi-a/teams/maintainers/memberships/octocat", authorization: "Bearer github-token" },
+  ]);
+});
+
+test("GitHub webhook HTTP app accepts org-authorized actors and rejects authorization failures before runs", async () => {
+  const accepted = createSpecRailPort();
+  await withGitHubWebhookServer(
+    accepted.port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run org"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(response.status, 202);
+      assert.equal(((await response.json()) as { accepted: boolean }).accepted, true);
+    },
+    { allowedOrganizations: ["yoophi-a"] },
+    {
+      async isOrganizationMember() {
+        return true;
+      },
+      async isTeamMember() {
+        return false;
+      },
+    },
+  );
+  assert.notDeepEqual(accepted.calls, []);
+
+  const rejected = createSpecRailPort();
+  await withGitHubWebhookServer(
+    rejected.port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run rejected"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(response.status, 502);
+      assert.deepEqual(await response.json(), { error: "github_authorization_failed", message: "membership check failed" });
+    },
+    { allowedOrganizations: ["yoophi-a"] },
+    {
+      async isOrganizationMember() {
+        throw new Error("membership check failed");
+      },
+      async isTeamMember() {
+        return false;
+      },
+    },
+  );
+  assert.deepEqual(rejected.calls, []);
 });

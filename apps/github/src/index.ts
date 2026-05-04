@@ -26,6 +26,8 @@ export interface GitHubAppConfig {
   githubRelayQueuePath?: string;
   repositoryProjects: Record<string, string>;
   allowedActors: string[];
+  allowedOrganizations: string[];
+  allowedTeams: string[];
 }
 
 export interface GitHubIssueCommentCommandEvent {
@@ -113,6 +115,11 @@ export interface GitHubIssueCommentPort {
   createIssueComment(input: { repositoryFullName: string; issueNumber: number; body: string }): Promise<{ id?: string | number; url?: string }>;
 }
 
+export interface GitHubAuthorizationPort {
+  isOrganizationMember(input: { organization: string; username: string }): Promise<boolean>;
+  isTeamMember(input: { organization: string; teamSlug: string; username: string }): Promise<boolean>;
+}
+
 export interface GitHubTokenProvider {
   getToken(): Promise<string>;
 }
@@ -125,6 +132,7 @@ export interface GitHubWebhookAppDeps {
   config: GitHubAppConfig;
   specRail: GitHubSpecRailPort;
   github?: GitHubIssueCommentPort;
+  authorization?: GitHubAuthorizationPort;
   scheduler?: GitHubBackgroundTaskScheduler;
   relayQueue?: GitHubRelayJobQueue;
 }
@@ -224,6 +232,44 @@ export function isGitHubActorAuthorized(config: Pick<GitHubAppConfig, "allowedAc
   return config.allowedActors.includes(senderLogin) || config.allowedActors.includes(`@${senderLogin}`);
 }
 
+function parseAllowedTeam(value: string): { organization: string; teamSlug: string } {
+  const [organization, teamSlug] = value.split("/").map((part) => part.trim());
+  if (!organization || !teamSlug) {
+    throw new Error(`invalid GITHUB_ALLOWED_TEAMS entry: ${value}`);
+  }
+  return { organization, teamSlug };
+}
+
+export async function authorizeGitHubActor(input: {
+  config: Pick<GitHubAppConfig, "allowedActors" | "allowedOrganizations" | "allowedTeams">;
+  senderLogin?: string;
+  authorization?: GitHubAuthorizationPort;
+}): Promise<boolean> {
+  const hasActorPolicy = input.config.allowedActors.length > 0;
+  const hasMembershipPolicy = input.config.allowedOrganizations.length > 0 || input.config.allowedTeams.length > 0;
+  if (!hasActorPolicy && !hasMembershipPolicy) {
+    return true;
+  }
+  if (hasActorPolicy && isGitHubActorAuthorized({ allowedActors: input.config.allowedActors }, input.senderLogin)) {
+    return true;
+  }
+  if (!hasMembershipPolicy || !input.senderLogin || !input.authorization) {
+    return false;
+  }
+
+  for (const organization of input.config.allowedOrganizations) {
+    if (await input.authorization.isOrganizationMember({ organization, username: input.senderLogin })) {
+      return true;
+    }
+  }
+  for (const team of input.config.allowedTeams) {
+    if (await input.authorization.isTeamMember({ ...parseAllowedTeam(team), username: input.senderLogin })) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig {
   return {
     apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
@@ -240,6 +286,8 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubRelayQueuePath: env.GITHUB_RELAY_QUEUE_PATH,
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
+    allowedOrganizations: parseCsvList(env.GITHUB_ALLOWED_ORGS),
+    allowedTeams: parseCsvList(env.GITHUB_ALLOWED_TEAMS),
   };
 }
 
@@ -355,6 +403,44 @@ export function createGitHubRestIssueCommentClient(input: { token?: string; toke
         headers: { authorization: `Bearer ${token}` },
         body: JSON.stringify({ body: commentInput.body }),
       }, input.fetchFn);
+    },
+  };
+}
+
+export function createGitHubRestAuthorizationClient(input: { token?: string; tokenProvider?: GitHubTokenProvider; apiBaseUrl?: string; fetchFn?: FetchLike }): GitHubAuthorizationPort {
+  const apiBaseUrl = input.apiBaseUrl ?? "https://api.github.com";
+  const tokenProvider = input.tokenProvider ?? (input.token ? createStaticGitHubTokenProvider(input.token) : undefined);
+  if (!tokenProvider) {
+    throw new Error("GitHub authorization client requires a token or token provider");
+  }
+  const provider = tokenProvider;
+  async function request(pathname: string): Promise<boolean> {
+    const token = await provider.getToken();
+    const response = await (input.fetchFn ?? fetch)(new URL(pathname, apiBaseUrl), {
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${token}`,
+        "x-github-api-version": "2022-11-28",
+      },
+    });
+    if (response.status === 204) {
+      return true;
+    }
+    if (response.status === 404) {
+      return false;
+    }
+    const responseText = await response.text();
+    const bodySuffix = responseText ? `: ${responseText}` : "";
+    throw new Error(`GitHub API GET ${pathname} failed with ${response.status}${bodySuffix}`);
+  }
+  return {
+    isOrganizationMember(input) {
+      return request(`/orgs/${encodeGitHubPathSegment(input.organization)}/members/${encodeGitHubPathSegment(input.username)}`);
+    },
+    isTeamMember(input) {
+      return request(
+        `/orgs/${encodeGitHubPathSegment(input.organization)}/teams/${encodeGitHubPathSegment(input.teamSlug)}/memberships/${encodeGitHubPathSegment(input.username)}`,
+      );
     },
   };
 }
@@ -478,8 +564,9 @@ export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRai
   const specRail = input.specRail ?? createSpecRailHttpClient(config.apiBaseUrl);
   const tokenProvider = createGitHubTokenProviderFromConfig(config);
   const github = input.github ?? (tokenProvider ? createGitHubRestIssueCommentClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
+  const authorization = tokenProvider ? createGitHubRestAuthorizationClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined;
   const relayQueue = config.githubRelayQueuePath ? new JsonFileGitHubRelayJobQueue(config.githubRelayQueuePath) : undefined;
-  const server = createGitHubWebhookHttpServer({ config, specRail, github, scheduler: defaultGitHubBackgroundTaskScheduler, relayQueue });
+  const server = createGitHubWebhookHttpServer({ config, specRail, github, authorization, scheduler: defaultGitHubBackgroundTaskScheduler, relayQueue });
   if (relayQueue && github) {
     const interval = setInterval(() => {
       processGitHubRelayQueue({ queue: relayQueue, specRail, github }).catch((error: unknown) => {
@@ -916,7 +1003,14 @@ export async function handleGitHubWebhookHttpRequest(
       sendJson(response, 202, { accepted: false, reason: "unsupported_repository" });
       return;
     }
-    if (!isGitHubActorAuthorized(deps.config, command.senderLogin)) {
+    let authorized: boolean;
+    try {
+      authorized = await authorizeGitHubActor({ config: deps.config, senderLogin: command.senderLogin, authorization: deps.authorization });
+    } catch (error) {
+      sendJson(response, 502, { error: "github_authorization_failed", message: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    if (!authorized) {
       sendJson(response, 202, { accepted: false, reason: "unauthorized_actor" });
       return;
     }

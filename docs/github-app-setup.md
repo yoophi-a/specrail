@@ -41,7 +41,9 @@ The runnable app entrypoint reads these environment variables:
 | `SPECRAIL_GITHUB_PROJECT_ID` | `SPECRAIL_PROJECT_ID` or `project-default` | Default project id used when creating tracks from GitHub issues/PRs. |
 | `SPECRAIL_PROJECT_ID` | `project-default` | Fallback project id when `SPECRAIL_GITHUB_PROJECT_ID` is not set. |
 | `SPECRAIL_GITHUB_REPOSITORY_PROJECTS` | unset | Optional comma-separated repository allowlist and project map, for example `yoophi-a/specrail=project-specrail,other/repo=project-other`. When set, unmapped repositories are ignored. |
-| `GITHUB_ALLOWED_ACTORS` | unset | Optional comma-separated sender login allowlist, for example `octocat,@hubot`. When set, other senders are ignored. |
+| `GITHUB_ALLOWED_ACTORS` | unset | Optional comma-separated sender login allowlist, for example `octocat,@hubot`. When set with no org/team policy, other senders are ignored. |
+| `GITHUB_ALLOWED_ORGS` | unset | Optional comma-separated GitHub organization membership allowlist for `/specrail` command senders. Requires a GitHub token provider. |
+| `GITHUB_ALLOWED_TEAMS` | unset | Optional comma-separated team allowlist in `org/team-slug` form. Requires a GitHub token provider. |
 | `GITHUB_WEBHOOK_SECRET` | empty string | Secret used to validate `X-Hub-Signature-256`. Set this in real deployments. |
 | `GITHUB_APP_PORT` | `4200` | HTTP port for the GitHub webhook server. |
 | `GITHUB_WEBHOOK_PATH` | `/github/webhook` | HTTP path that receives GitHub webhooks. |
@@ -90,12 +92,12 @@ The webhook endpoint returns JSON responses:
 - REST issue-comment posting supports static tokens and GitHub App installation-token refresh. Private keys must be supplied securely by deployment secret management.
 - Durable terminal relay is JSON-file based when `GITHUB_RELAY_QUEUE_PATH` is set. Failed relay attempts are retained with `lastError`, attempt count, and retry timing; deployments should place this path on persistent storage.
 - Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling/enqueue, not for the run to reach a terminal state.
-- Repository/project allowlists and sender-login actor authorization are supported; team-based authorization is not implemented yet.
+- Repository/project allowlists plus sender-login, organization, and team-based authorization are supported.
 - Non-terminal progress is intentionally not posted to GitHub; use the operator UI, terminal, Telegram, or SSE surfaces for detailed progress.
 - GitHub is not a canonical artifact or run-history store. Completed-run reports remain derived read-only exports at `GET /runs/:runId/report.md`.
 
 ## Recommended follow-ups
 
-1. Add GitHub team/org-based authorization for `/specrail` commands.
-2. Add richer terminal outcome links once hosted operator run URLs are finalized.
-3. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
+1. Add richer terminal outcome links once hosted operator run URLs are finalized.
+2. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
+3. Add admin-facing diagnostics for denied GitHub `/specrail` commands.
