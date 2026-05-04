@@ -115,6 +115,6 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Explicit completed-run report export command**
-   - design a read-only export path that renders a completed run summary/history from canonical state into Markdown without mutating track planning artifacts.
-   - include guardrails that label the export as derived from `state/events/<runId>.jsonl` at a specific time.
+1. **Implement completed-run Markdown report endpoint**
+   - add a shared renderer and `GET /runs/:runId/report.md` endpoint based on the explicit export contract.
+   - keep the endpoint read-only and label output as derived from `state/events/<runId>.jsonl` at a specific time.
