@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createDefaultServer } from "../index.js";
+import { createDefaultServer, sanitizeMarkdownFilenameComponent } from "../index.js";
 
 async function withServer(
   run: (baseUrl: string, paths: { dataDir: string; repoArtifactDir: string }) => Promise<void>,
@@ -186,6 +186,12 @@ async function openSseStream(url: string): Promise<{
     request.on("error", reject);
   });
 }
+
+test("sanitizeMarkdownFilenameComponent keeps report filenames filesystem-safe", () => {
+  assert.equal(sanitizeMarkdownFilenameComponent("run-1"), "run-1");
+  assert.equal(sanitizeMarkdownFilenameComponent("run/one with spaces"), "run-one-with-spaces");
+  assert.equal(sanitizeMarkdownFilenameComponent("***"), "unknown");
+});
 
 test("API serves the hosted operator UI shell", async () => {
   await withServer(async (baseUrl) => {
@@ -600,7 +606,10 @@ test("API serves completed run Markdown reports without mutating artifacts or ev
     const reportResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/report.md`);
     assert.equal(reportResponse.status, 200);
     assert.match(reportResponse.headers.get("content-type") ?? "", /text\/markdown; charset=utf-8/);
-    assert.match(reportResponse.headers.get("content-disposition") ?? "", new RegExp(`specrail-run-${runPayload.run.id}-report\\.md`));
+    assert.equal(
+      reportResponse.headers.get("content-disposition"),
+      `attachment; filename="specrail-run-${runPayload.run.id}-report.md"`,
+    );
 
     const report = await reportResponse.text();
     assert.match(report, new RegExp(`# Run Report — ${runPayload.run.id}`));

@@ -380,10 +380,15 @@ function sendHtml(response: ServerResponse, statusCode: number, body: string): v
   response.end(body);
 }
 
+export function sanitizeMarkdownFilenameComponent(value: string): string {
+  const sanitized = value.replace(/[^a-zA-Z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "");
+  return sanitized || "unknown";
+}
+
 function sendMarkdown(response: ServerResponse, statusCode: number, body: string, filename: string): void {
   response.writeHead(statusCode, {
     "content-type": "text/markdown; charset=utf-8",
-    "content-disposition": `inline; filename="${filename}"`,
+    "content-disposition": `attachment; filename="${filename}"`,
   });
   response.end(body);
 }
@@ -1485,7 +1490,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const project = await deps.service.getProject(track.projectId);
         const events = await deps.service.listRunEvents(run.id);
         const report = renderCompletedRunReport({ run, track, project, events, generatedAt: new Date().toISOString() });
-        sendMarkdown(response, 200, report, `specrail-run-${run.id}-report.md`);
+        sendMarkdown(response, 200, report, `specrail-run-${sanitizeMarkdownFilenameComponent(run.id)}-report.md`);
         return;
       }
 
