@@ -4,6 +4,7 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { test } from "node:test";
 import {
   buildGitHubSignature256,
+  createGitHubRestIssueCommentClient,
   createGitHubWebhookHttpServer,
   createSpecRailHttpClient,
   executeGitHubRunCommand,
@@ -281,6 +282,7 @@ async function withGitHubWebhookServer(
       webhookPath: "/github/webhook",
       webhookSecret: secret,
       projectId: "project-default",
+      githubApiBaseUrl: "https://api.github.example.test",
     },
     specRail,
   });
@@ -491,6 +493,7 @@ test("startGitHubWebhookApp starts the webhook server with injected config and p
       webhookPath: "/github/webhook",
       webhookSecret: secret,
       projectId: "project-default",
+      githubApiBaseUrl: "https://api.github.example.test",
     },
     specRail: port,
   });
@@ -499,4 +502,73 @@ test("startGitHubWebhookApp starts the webhook server with injected config and p
   assert.ok(address && typeof address === "object");
   server.close();
   await once(server, "close");
+});
+
+test("createGitHubRestIssueCommentClient posts issue comments with GitHub REST headers", async () => {
+  const requests: Array<{ method: string | undefined; url: string | undefined; headers: Record<string, string>; body?: unknown }> = [];
+  await withJsonServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const bodyText = Buffer.concat(chunks).toString("utf8");
+      requests.push({
+        method: request.method,
+        url: request.url,
+        headers: {
+          accept: request.headers.accept ?? "",
+          authorization: request.headers.authorization ?? "",
+          contentType: request.headers["content-type"] ?? "",
+          apiVersion: request.headers["x-github-api-version"] ?? "",
+        } as Record<string, string>,
+        body: bodyText ? JSON.parse(bodyText) : undefined,
+      });
+      response.statusCode = 201;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ id: 1001, html_url: "https://github.com/yoophi-a/specrail/issues/123#issuecomment-1001" }));
+    });
+  }, async (baseUrl) => {
+    const client = createGitHubRestIssueCommentClient({ token: "github-token", apiBaseUrl: baseUrl });
+    assert.deepEqual(
+      await client.createIssueComment({
+        repositoryFullName: "yoophi-a/specrail",
+        issueNumber: 123,
+        body: "SpecRail run run-1 completed.\nReport: https://specrail.example.test/runs/run-1/report.md",
+      }),
+      { id: 1001, html_url: "https://github.com/yoophi-a/specrail/issues/123#issuecomment-1001" },
+    );
+  });
+
+  assert.deepEqual(requests, [
+    {
+      method: "POST",
+      url: "/repos/yoophi-a/specrail/issues/123/comments",
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: "Bearer github-token",
+        contentType: "application/json",
+        apiVersion: "2022-11-28",
+      },
+      body: { body: "SpecRail run run-1 completed.\nReport: https://specrail.example.test/runs/run-1/report.md" },
+    },
+  ]);
+});
+
+test("createGitHubRestIssueCommentClient rejects invalid repository names and preserves API errors", async () => {
+  const clientWithInvalidRepo = createGitHubRestIssueCommentClient({ token: "github-token", apiBaseUrl: "https://api.github.example.test" });
+  await assert.rejects(
+    clientWithInvalidRepo.createIssueComment({ repositoryFullName: "specrail", issueNumber: 123, body: "hello" }),
+    /invalid GitHub repository full name: specrail/u,
+  );
+
+  await withJsonServer((_request, response) => {
+    response.statusCode = 403;
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ message: "Resource not accessible by integration" }));
+  }, async (baseUrl) => {
+    const client = createGitHubRestIssueCommentClient({ token: "github-token", apiBaseUrl: baseUrl });
+    await assert.rejects(
+      client.createIssueComment({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, body: "hello" }),
+      /GitHub API POST \/repos\/yoophi-a\/specrail\/issues\/123\/comments failed with 403.*Resource not accessible/u,
+    );
+  });
 });
