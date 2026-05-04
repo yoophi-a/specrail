@@ -46,8 +46,11 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_APP_PORT` | `4200` | HTTP port for the GitHub webhook server. |
 | `GITHUB_WEBHOOK_PATH` | `/github/webhook` | HTTP path that receives GitHub webhooks. |
 | `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub REST API base URL for issue-comment posting. |
-| `GITHUB_TOKEN` | unset | Token used by the REST issue-comment client. |
-| `GITHUB_INSTALLATION_TOKEN` | unset | Fallback token when `GITHUB_TOKEN` is not set. |
+| `GITHUB_TOKEN` | unset | Static token used by the REST issue-comment client. |
+| `GITHUB_INSTALLATION_TOKEN` | unset | Static fallback token when `GITHUB_TOKEN` is not set. |
+| `GITHUB_APP_ID` | unset | GitHub App id used to mint installation tokens. Requires `GITHUB_INSTALLATION_ID` and `GITHUB_PRIVATE_KEY`. Takes precedence over static tokens when all three are set. |
+| `GITHUB_INSTALLATION_ID` | unset | GitHub App installation id used for installation-token exchange. |
+| `GITHUB_PRIVATE_KEY` | unset | GitHub App private key PEM. Escaped newlines (`\\n`) are normalized at startup. |
 | `GITHUB_FOLLOW_TERMINAL_EVENTS` | `false` | When `true` and a GitHub comment client is supplied, schedule background following of the created run event stream and post one terminal outcome comment. |
 
 ## Running locally
@@ -83,7 +86,7 @@ The webhook endpoint returns JSON responses:
 
 ## Current limitations
 
-- A REST issue-comment client exists for token-backed comment creation, but production GitHub App installation-token refresh is not implemented yet.
+- REST issue-comment posting supports static tokens and GitHub App installation-token refresh. Private keys must be supplied securely by deployment secret management.
 - Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling, not for the run to reach a terminal state.
 - Repository/project allowlists and sender-login actor authorization are supported; team-based authorization is not implemented yet.
 - Non-terminal progress is intentionally not posted to GitHub; use the operator UI, terminal, Telegram, or SSE surfaces for detailed progress.
@@ -91,6 +94,6 @@ The webhook endpoint returns JSON responses:
 
 ## Recommended follow-ups
 
-1. Add GitHub App private-key authentication and installation-token refresh.
-2. Replace the in-process background scheduler with a durable worker/queue for production deployments.
-3. Add GitHub team/org-based authorization for `/specrail` commands.
+1. Replace the in-process background scheduler with a durable worker/queue for production deployments.
+2. Add GitHub team/org-based authorization for `/specrail` commands.
+3. Add richer terminal outcome links once hosted operator run URLs are finalized.
