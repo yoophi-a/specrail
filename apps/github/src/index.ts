@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import { pathToFileURL } from "node:url";
 
 export const SPEC_RAIL_RUN_COMMAND = "/specrail run";
 
@@ -113,6 +114,71 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",
     projectId: env.SPECRAIL_GITHUB_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID ?? "project-default",
   };
+}
+
+async function specRailJsonRequest<T>(baseUrl: string, path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(new URL(path, baseUrl), {
+    ...init,
+    headers: {
+      accept: "application/json",
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...init.headers,
+    },
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    const bodySuffix = responseText ? `: ${responseText}` : "";
+    throw new Error(`SpecRail API ${init.method ?? "GET"} ${path} failed with ${response.status}${bodySuffix}`);
+  }
+
+  return (responseText ? JSON.parse(responseText) : {}) as T;
+}
+
+export function createSpecRailHttpClient(apiBaseUrl: string): GitHubSpecRailPort {
+  return {
+    async findChannelBinding(input) {
+      const searchParams = new URLSearchParams({
+        channelType: input.channelType,
+        externalChatId: input.externalChatId,
+      });
+      if (input.externalThreadId) {
+        searchParams.set("externalThreadId", input.externalThreadId);
+      }
+
+      try {
+        const result = await specRailJsonRequest<{ binding: { id: string; trackId?: string; planningSessionId?: string } }>(
+          apiBaseUrl,
+          `/channel-bindings?${searchParams.toString()}`,
+        );
+        return result.binding;
+      } catch (error) {
+        if (error instanceof Error && error.message.includes(" failed with 404")) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    async createTrack(input) {
+      return specRailJsonRequest(apiBaseUrl, "/tracks", { method: "POST", body: JSON.stringify(input) });
+    },
+    async bindChannel(input) {
+      return specRailJsonRequest(apiBaseUrl, "/channel-bindings", { method: "POST", body: JSON.stringify(input) });
+    },
+    async startRun(input) {
+      return specRailJsonRequest(apiBaseUrl, "/runs", { method: "POST", body: JSON.stringify(input) });
+    },
+  };
+}
+
+export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRail?: GitHubSpecRailPort } = {}): http.Server {
+  const config = input.config ?? loadGitHubAppConfig();
+  const specRail = input.specRail ?? createSpecRailHttpClient(config.apiBaseUrl);
+  const server = createGitHubWebhookHttpServer({ config, specRail });
+  server.listen(config.port, () => {
+    console.log(`SpecRail GitHub webhook listening on ${normalizeWebhookPath(config.webhookPath)} at port ${config.port}`);
+  });
+  return server;
 }
 
 export function buildGitHubSignature256(secret: string, payload: string | Buffer): string {
@@ -381,4 +447,8 @@ export function handleGitHubWebhookCommand(input: {
     senderId: input.payload.sender?.id,
     isPullRequest: input.payload.issue?.pull_request !== undefined,
   };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  startGitHubWebhookApp();
 }
