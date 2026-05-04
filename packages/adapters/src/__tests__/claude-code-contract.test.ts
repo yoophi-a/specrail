@@ -168,7 +168,9 @@ test("normalizeClaudeCodeEvent preserves shared event semantics for lifecycle an
       summary: "Completed Claude Code session run-claude-2-claude",
       payload: {
         sessionRef: "run-claude-2-claude",
+        provider: "claude_code",
         status: "completed",
+        terminal: true,
         exitCode: 0,
         signal: null,
         providerSessionId: "claude-session-234",

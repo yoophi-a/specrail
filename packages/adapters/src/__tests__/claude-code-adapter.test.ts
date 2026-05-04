@@ -222,7 +222,9 @@ test("ClaudeCodeAdapter resume prefers persisted provider session id and cancel 
   assert.deepEqual(killCalls, [{ pid: 6102, signal: "SIGTERM" }]);
   assert.deepEqual(cancellationEvent.payload, {
     sessionRef: "run-claude-2-claude",
+    provider: "claude_code",
     status: "cancelled",
+    terminal: true,
     exitCode: undefined,
     signal: undefined,
     providerSessionId: "claude-session-real",
@@ -518,7 +520,9 @@ test("ClaudeCodeAdapter normalizes lifecycle and fallback stream events into sha
       summary: "Failed Claude Code session run-claude-3-claude",
       payload: {
         sessionRef: "run-claude-3-claude",
+        provider: "claude_code",
         status: "failed",
+        terminal: true,
         exitCode: 1,
         signal: null,
         providerSessionId: "claude-session-xyz",
