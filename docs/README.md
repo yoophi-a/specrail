@@ -29,6 +29,7 @@ Use this index to find the right reference before changing SpecRail's core servi
 ## Client surfaces
 
 - [Terminal client](./terminal-client.md) — terminal UI behavior, run following, planning workspace, and controls.
+- [Hosted Operator UI deployment](./operator-ui-deployment.md) — authentication, reverse-proxy, and security guidance for publishing `/operator` links.
 - [GitHub App setup](./github-app-setup.md) — runnable webhook app configuration, command flow, binding semantics, and current limitations.
 - [Telegram bot interface strategy](./architecture/telegram-bot-interface-strategy.md) — Telegram-facing product and integration strategy.
 
