@@ -247,6 +247,8 @@ export interface PendingWorkspaceCleanupActionState {
 export interface TerminalPreferenceState {
   selectedProjectId: string | null;
   runFilter: RunFilterMode;
+  liveTailPaused: boolean;
+  showRunEventDetail: boolean;
 }
 
 export interface TerminalAppState {
@@ -1544,10 +1546,14 @@ export async function loadTerminalPreferences(path: string | null): Promise<Part
         ? null
         : undefined;
     const runFilter = parsed.runFilter === "active" || parsed.runFilter === "terminal" || parsed.runFilter === "all" ? parsed.runFilter : undefined;
+    const liveTailPaused = typeof parsed.liveTailPaused === "boolean" ? parsed.liveTailPaused : undefined;
+    const showRunEventDetail = typeof parsed.showRunEventDetail === "boolean" ? parsed.showRunEventDetail : undefined;
 
     return {
       ...(selectedProjectId !== undefined ? { selectedProjectId } : {}),
       ...(runFilter ? { runFilter } : {}),
+      ...(liveTailPaused !== undefined ? { liveTailPaused } : {}),
+      ...(showRunEventDetail !== undefined ? { showRunEventDetail } : {}),
     };
   } catch {
     return {};
@@ -1567,12 +1573,15 @@ export async function saveTerminalPreferences(path: string | null, preferences: 
   }
 }
 
-async function resolveTerminalClientConfig(config: SpecRailTerminalClientConfig): Promise<SpecRailTerminalClientConfig> {
+async function resolveTerminalClientStartup(config: SpecRailTerminalClientConfig): Promise<{ config: SpecRailTerminalClientConfig; preferences: Partial<TerminalPreferenceState> }> {
   const preferences = await loadTerminalPreferences(config.preferencePath);
   return {
-    ...config,
-    initialProjectId: preferences.selectedProjectId !== undefined ? preferences.selectedProjectId : config.initialProjectId,
-    initialRunFilter: preferences.runFilter ?? config.initialRunFilter,
+    config: {
+      ...config,
+      initialProjectId: preferences.selectedProjectId !== undefined ? preferences.selectedProjectId : config.initialProjectId,
+      initialRunFilter: preferences.runFilter ?? config.initialRunFilter,
+    },
+    preferences,
   };
 }
 
@@ -1580,9 +1589,14 @@ export async function runTerminalApp(
   config: SpecRailTerminalClientConfig = loadTerminalClientConfig(),
   io: { stdout: NodeJS.WriteStream; stdin: NodeJS.ReadStream } = { stdout: process.stdout, stdin: process.stdin },
 ): Promise<void> {
-  const effectiveConfig = await resolveTerminalClientConfig(config);
+  const startup = await resolveTerminalClientStartup(config);
+  const effectiveConfig = startup.config;
   const client = new SpecRailTerminalApiClient(effectiveConfig.apiBaseUrl);
-  let state = createEmptyTerminalState(effectiveConfig);
+  let state: TerminalAppState = {
+    ...createEmptyTerminalState(effectiveConfig),
+    runEvents: createEmptyRunEventFeedState(null, startup.preferences.liveTailPaused ?? false),
+    showRunEventDetail: startup.preferences.showRunEventDetail ?? false,
+  };
   let disposed = false;
   let monitorSerial = 0;
   let monitorAbort: AbortController | null = null;
@@ -1602,6 +1616,8 @@ export async function runTerminalApp(
     void saveTerminalPreferences(effectiveConfig.preferencePath, {
       selectedProjectId: nextState.selectedProjectId ?? null,
       runFilter: nextState.runFilter,
+      liveTailPaused: nextState.runEvents.paused,
+      showRunEventDetail: nextState.showRunEventDetail ?? false,
     });
   };
 
@@ -1972,17 +1988,20 @@ export async function runTerminalApp(
       return;
     }
 
-    updateState({
+    const nextPaused = !state.runEvents.paused;
+    const nextState: TerminalAppState = {
       ...state,
       runEvents: {
         ...state.runEvents,
         runId: state.runs.selectedId,
-        paused: !state.runEvents.paused,
-        connection: !state.runEvents.paused ? "paused" : "idle",
-        lastError: !state.runEvents.paused ? state.runEvents.lastError : null,
+        paused: nextPaused,
+        connection: nextPaused ? "paused" : "idle",
+        lastError: nextPaused ? state.runEvents.lastError : null,
       },
-      statusLine: !state.runEvents.paused ? `Paused live tail for ${state.runs.selectedId}.` : `Resumed live tail for ${state.runs.selectedId}.`,
-    });
+      statusLine: nextPaused ? `Paused live tail for ${state.runs.selectedId}.` : `Resumed live tail for ${state.runs.selectedId}.`,
+    };
+    updateState(nextState);
+    persistPreferences(nextState);
   };
 
   const editExecutionPrompt = (updater: (value: string) => string) => {
@@ -2409,11 +2428,13 @@ export async function runTerminalApp(
       }
 
       if (key.name === "d") {
-        updateState({
+        const nextState = {
           ...state,
           showRunEventDetail: !(state.showRunEventDetail ?? false),
           statusLine: state.showRunEventDetail ? "Run event detail hidden." : "Run event detail shown for the latest cached event.",
-        });
+        };
+        updateState(nextState);
+        persistPreferences(nextState);
         return;
       }
 
