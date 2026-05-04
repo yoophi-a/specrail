@@ -320,6 +320,8 @@ Operator environment:
 - `SPECRAIL_API_BASE_URL` default `http://127.0.0.1:4000`
 - `SPECRAIL_TERMINAL_REFRESH_MS` default `5000`
 - `SPECRAIL_TERMINAL_INITIAL_SCREEN` one of `home`, `tracks`, `runs`, `settings`
+- `SPECRAIL_TERMINAL_INITIAL_PROJECT_ID` optional project id for the initial track/run scope
+- `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER` one of `all`, `active`, `terminal`; defaults to `all`
 
 Run it locally:
 

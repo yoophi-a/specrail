@@ -11,10 +11,14 @@ export interface SpecRailConfig {
 
 export type SpecRailExecutionWorkspaceMode = "directory" | "git_worktree";
 
+export type SpecRailTerminalInitialRunFilter = "all" | "active" | "terminal";
+
 export interface SpecRailTerminalClientConfig {
   apiBaseUrl: string;
   refreshIntervalMs: number;
   initialScreen: "home" | "tracks" | "runs" | "settings";
+  initialProjectId: string | null;
+  initialRunFilter: SpecRailTerminalInitialRunFilter;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): SpecRailConfig {
@@ -44,11 +48,19 @@ function parseExecutionWorkspaceMode(value: string | undefined): SpecRailExecuti
 
 export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): SpecRailTerminalClientConfig {
   const initialScreen = env.SPECRAIL_TERMINAL_INITIAL_SCREEN;
+  const initialRunFilter = parseTerminalInitialRunFilter(env.SPECRAIL_TERMINAL_INITIAL_RUN_FILTER);
+  const initialProjectId = env.SPECRAIL_TERMINAL_INITIAL_PROJECT_ID?.trim() || null;
 
   return {
     apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
     refreshIntervalMs: Number(env.SPECRAIL_TERMINAL_REFRESH_MS ?? 5000),
     initialScreen:
       initialScreen === "tracks" || initialScreen === "runs" || initialScreen === "settings" ? initialScreen : "home",
+    initialProjectId,
+    initialRunFilter,
   };
+}
+
+function parseTerminalInitialRunFilter(value: string | undefined): SpecRailTerminalInitialRunFilter {
+  return value === "active" || value === "terminal" ? value : "all";
 }

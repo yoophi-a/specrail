@@ -291,9 +291,12 @@ test("bootstrapTerminalState initializes detail selections for tracks and runs",
       apiBaseUrl: "http://127.0.0.1:4000",
       refreshIntervalMs: 5000,
       initialScreen: "home",
+      initialProjectId: "project-1",
+      initialRunFilter: "active",
     },
     {
-      async loadSummary() {
+      async loadSummary(projectId) {
+        assert.equal(projectId, "project-1");
         return {
           tracks: [{ id: "track-1", title: "Terminal shell", status: "ready", priority: "high" }],
           runs: [{ id: "run-1", trackId: "track-1", status: "running", backend: "codex" }],
@@ -317,9 +320,10 @@ test("bootstrapTerminalState initializes detail selections for tracks and runs",
 
   assert.equal(state.screen, "home");
   assert.match(state.statusLine, /Loaded 1 tracks and 1 runs/);
+  assert.equal(state.selectedProjectId, "project-1");
   assert.equal(state.tracks.selectedId, "track-1");
   assert.equal(state.runs.selectedId, "run-1");
-  assert.equal(state.runFilter, "all");
+  assert.equal(state.runFilter, "active");
   assert.equal(state.runEvents.runId, "run-1");
 });
 
@@ -912,7 +916,7 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
   const stdin = new FakeTerminalStdin();
   const stdout = new FakeTerminalStdout();
   const app = runTerminalApp(
-    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "runs" },
+    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "runs", initialProjectId: null, initialRunFilter: "all" },
     { stdin, stdout } as never,
   );
 
