@@ -46,6 +46,7 @@ The run detail pane also highlights:
 - planning-context staleness and last planning-context update timestamp
 - operator actions for starting runs from tracks, resuming terminal runs, cancelling active runs, and guarded workspace cleanup
 - contextual keyboard help for the active screen or currently open multi-step composer
+- startup defaults for initial project scope and run filter, plus optional local persistence for interactive preference changes
 
 ## Planning and approval workflow support
 
@@ -72,4 +73,4 @@ This is intentionally still lightweight:
 Good next steps after the live monitor baseline:
 - richer planning interaction beyond the current focused revision selector and lightweight proposal authoring
 - provider-specific detail panes for large structured payloads that should not fit in the compact activity tail
-- persisted terminal preferences for project scope, filters, and refresh/tail settings
+- optional persistence for refresh interval and live-tail pause behavior if operators need those to survive restarts
