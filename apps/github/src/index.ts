@@ -98,10 +98,15 @@ export interface GitHubIssueCommentPort {
   createIssueComment(input: { repositoryFullName: string; issueNumber: number; body: string }): Promise<{ id?: string | number; url?: string }>;
 }
 
+export interface GitHubBackgroundTaskScheduler {
+  schedule(task: () => Promise<void>): void;
+}
+
 export interface GitHubWebhookAppDeps {
   config: GitHubAppConfig;
   specRail: GitHubSpecRailPort;
   github?: GitHubIssueCommentPort;
+  scheduler?: GitHubBackgroundTaskScheduler;
 }
 
 export interface GitHubTerminalOutcomeCommentInput {
@@ -119,6 +124,8 @@ export type GitHubTerminalOutcomeCommentResult =
 export type GitHubRunEventRelayResult =
   | { posted: true; status: "completed" | "failed" | "cancelled"; body: string; comment: { id?: string | number; url?: string } }
   | { posted: false; reason: "no_terminal_event" | "stream_not_available" };
+
+export type GitHubRunEventRelayScheduleResult = { scheduled: true } | { scheduled: false; reason: "disabled" | "missing_github_client" };
 
 export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig {
   return {
@@ -279,10 +286,21 @@ export function createSpecRailHttpClient(apiBaseUrl: string): GitHubSpecRailPort
   };
 }
 
-export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRail?: GitHubSpecRailPort } = {}): http.Server {
+export const defaultGitHubBackgroundTaskScheduler: GitHubBackgroundTaskScheduler = {
+  schedule(task) {
+    setTimeout(() => {
+      task().catch((error: unknown) => {
+        console.error("GitHub background task failed", error);
+      });
+    }, 0);
+  },
+};
+
+export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRail?: GitHubSpecRailPort; github?: GitHubIssueCommentPort } = {}): http.Server {
   const config = input.config ?? loadGitHubAppConfig();
   const specRail = input.specRail ?? createSpecRailHttpClient(config.apiBaseUrl);
-  const server = createGitHubWebhookHttpServer({ config, specRail });
+  const github = input.github ?? (config.githubToken ? createGitHubRestIssueCommentClient({ token: config.githubToken, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
+  const server = createGitHubWebhookHttpServer({ config, specRail, github, scheduler: defaultGitHubBackgroundTaskScheduler });
   server.listen(config.port, () => {
     console.log(`SpecRail GitHub webhook listening on ${normalizeWebhookPath(config.webhookPath)} at port ${config.port}`);
   });
@@ -396,6 +414,45 @@ export async function postGitHubTerminalOutcomeComment(input: {
   });
 
   return { posted: true, body, comment };
+}
+
+export function scheduleGitHubRunTerminalOutcomeRelay(input: {
+  enabled: boolean;
+  scheduler: GitHubBackgroundTaskScheduler;
+  specRail: Pick<GitHubSpecRailPort, "streamRunEvents">;
+  github?: GitHubIssueCommentPort;
+  repositoryFullName: string;
+  issueNumber: number;
+  runId: string;
+  reportUrl?: string;
+  onError?: (error: unknown) => void;
+}): GitHubRunEventRelayScheduleResult {
+  if (!input.enabled) {
+    return { scheduled: false, reason: "disabled" };
+  }
+  if (!input.github) {
+    return { scheduled: false, reason: "missing_github_client" };
+  }
+
+  input.scheduler.schedule(async () => {
+    try {
+      await relayGitHubRunTerminalOutcome({
+        specRail: input.specRail,
+        github: input.github as GitHubIssueCommentPort,
+        repositoryFullName: input.repositoryFullName,
+        issueNumber: input.issueNumber,
+        runId: input.runId,
+        reportUrl: input.reportUrl,
+      });
+    } catch (error) {
+      input.onError?.(error);
+      if (!input.onError) {
+        throw error;
+      }
+    }
+  });
+
+  return { scheduled: true };
 }
 
 export async function relayGitHubRunTerminalOutcome(input: {
@@ -558,17 +615,24 @@ export async function handleGitHubWebhookHttpRequest(
       specRail: deps.specRail,
       apiBaseUrl: deps.config.apiBaseUrl,
     });
-    const relay = deps.github && deps.config.followTerminalEvents
-      ? await relayGitHubRunTerminalOutcome({
-          specRail: deps.specRail,
-          github: deps.github,
-          repositoryFullName: command.repositoryFullName,
-          issueNumber: command.issueNumber,
-          runId: outcome.runId,
-          reportUrl: outcome.reportUrl,
-        })
-      : undefined;
-    sendJson(response, 202, relay ? { accepted: true, outcome, relay } : { accepted: true, outcome });
+    let relay: GitHubRunEventRelayScheduleResult | undefined;
+    try {
+      relay = scheduleGitHubRunTerminalOutcomeRelay({
+        enabled: deps.config.followTerminalEvents,
+        scheduler: deps.scheduler ?? defaultGitHubBackgroundTaskScheduler,
+        specRail: deps.specRail,
+        github: deps.github,
+        repositoryFullName: command.repositoryFullName,
+        issueNumber: command.issueNumber,
+        runId: outcome.runId,
+        reportUrl: outcome.reportUrl,
+        onError: (error) => console.error("GitHub terminal outcome relay failed", error),
+      });
+    } catch (error) {
+      sendJson(response, 502, { error: "github_relay_enqueue_failed", message: error instanceof Error ? error.message : String(error), outcome });
+      return;
+    }
+    sendJson(response, 202, relay?.scheduled ? { accepted: true, outcome, relay } : { accepted: true, outcome });
   } catch (error) {
     sendJson(response, 502, { error: "specrail_request_failed", message: error instanceof Error ? error.message : String(error) });
   }
