@@ -72,6 +72,24 @@ export interface GitHubRunCommandOutcome {
   reportUrl?: string;
 }
 
+export type GitHubRunOutcomeStatus = "queued" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
+
+export interface GitHubIssueCommentPort {
+  createIssueComment(input: { repositoryFullName: string; issueNumber: number; body: string }): Promise<{ id?: string | number; url?: string }>;
+}
+
+export interface GitHubTerminalOutcomeCommentInput {
+  repositoryFullName: string;
+  issueNumber: number;
+  runId: string;
+  status: GitHubRunOutcomeStatus;
+  reportUrl?: string;
+}
+
+export type GitHubTerminalOutcomeCommentResult =
+  | { posted: true; body: string; comment: { id?: string | number; url?: string } }
+  | { posted: false; reason: "non_terminal_status" };
+
 export function buildGitHubSignature256(secret: string, payload: string | Buffer): string {
   const digest = createHmac("sha256", secret).update(payload).digest("hex");
   return `sha256=${digest}`;
@@ -125,6 +143,41 @@ function buildGitHubDescription(context: GitHubAcceptedRunCommandContext): strin
 
 export function buildGitHubRunReportUrl(apiBaseUrl: string, runId: string): string {
   return new URL(`/runs/${encodeURIComponent(runId)}/report.md`, apiBaseUrl).toString();
+}
+
+function isTerminalGitHubRunStatus(status: GitHubRunOutcomeStatus): status is "completed" | "failed" | "cancelled" {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+export function formatGitHubTerminalOutcomeComment(input: GitHubTerminalOutcomeCommentInput): string | undefined {
+  if (!isTerminalGitHubRunStatus(input.status)) {
+    return undefined;
+  }
+
+  const statusLabel = input.status === "completed" ? "completed" : input.status === "failed" ? "failed" : "cancelled";
+  const lines = [`SpecRail run ${input.runId} ${statusLabel}.`];
+  if (input.reportUrl) {
+    lines.push(`Report: ${input.reportUrl}`);
+  }
+  return lines.join("\n");
+}
+
+export async function postGitHubTerminalOutcomeComment(input: {
+  github: GitHubIssueCommentPort;
+  outcome: GitHubTerminalOutcomeCommentInput;
+}): Promise<GitHubTerminalOutcomeCommentResult> {
+  const body = formatGitHubTerminalOutcomeComment(input.outcome);
+  if (!body) {
+    return { posted: false, reason: "non_terminal_status" };
+  }
+
+  const comment = await input.github.createIssueComment({
+    repositoryFullName: input.outcome.repositoryFullName,
+    issueNumber: input.outcome.issueNumber,
+    body,
+  });
+
+  return { posted: true, body, comment };
 }
 
 export async function executeGitHubRunCommand(input: {

@@ -3,8 +3,10 @@ import { test } from "node:test";
 import {
   buildGitHubSignature256,
   executeGitHubRunCommand,
+  formatGitHubTerminalOutcomeComment,
   handleGitHubWebhookCommand,
   parseSpecRailIssueCommentCommand,
+  postGitHubTerminalOutcomeComment,
   verifyGitHubSignature256,
   type GitHubAcceptedRunCommandContext,
   type GitHubSpecRailPort,
@@ -194,4 +196,71 @@ test("executeGitHubRunCommand propagates SpecRail failures", async () => {
     }),
     /run start failed/u,
   );
+});
+
+test("formatGitHubTerminalOutcomeComment formats terminal outcomes with optional report links", () => {
+  assert.equal(
+    formatGitHubTerminalOutcomeComment({
+      repositoryFullName: "yoophi-a/specrail",
+      issueNumber: 123,
+      runId: "run-1",
+      status: "completed",
+      reportUrl: "https://specrail.example.test/runs/run-1/report.md",
+    }),
+    "SpecRail run run-1 completed.\nReport: https://specrail.example.test/runs/run-1/report.md",
+  );
+  assert.equal(
+    formatGitHubTerminalOutcomeComment({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-2", status: "failed" }),
+    "SpecRail run run-2 failed.",
+  );
+  assert.equal(
+    formatGitHubTerminalOutcomeComment({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-3", status: "cancelled" }),
+    "SpecRail run run-3 cancelled.",
+  );
+  assert.equal(
+    formatGitHubTerminalOutcomeComment({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-4", status: "running" }),
+    undefined,
+  );
+});
+
+test("postGitHubTerminalOutcomeComment posts terminal comments and ignores progress statuses", async () => {
+  const calls: Array<{ repositoryFullName: string; issueNumber: number; body: string }> = [];
+  const github = {
+    async createIssueComment(input: { repositoryFullName: string; issueNumber: number; body: string }) {
+      calls.push(input);
+      return { id: 1001, url: `https://github.com/${input.repositoryFullName}/issues/${input.issueNumber}#issuecomment-1001` };
+    },
+  };
+
+  const posted = await postGitHubTerminalOutcomeComment({
+    github,
+    outcome: {
+      repositoryFullName: "yoophi-a/specrail",
+      issueNumber: 123,
+      runId: "run-1",
+      status: "completed",
+      reportUrl: "https://specrail.example.test/runs/run-1/report.md",
+    },
+  });
+
+  assert.equal(posted.posted, true);
+  if (!posted.posted) {
+    return;
+  }
+  assert.equal(posted.comment.id, 1001);
+  assert.deepEqual(calls, [
+    {
+      repositoryFullName: "yoophi-a/specrail",
+      issueNumber: 123,
+      body: "SpecRail run run-1 completed.\nReport: https://specrail.example.test/runs/run-1/report.md",
+    },
+  ]);
+
+  const ignored = await postGitHubTerminalOutcomeComment({
+    github,
+    outcome: { repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-2", status: "waiting_approval" },
+  });
+
+  assert.deepEqual(ignored, { posted: false, reason: "non_terminal_status" });
+  assert.equal(calls.length, 1);
 });
