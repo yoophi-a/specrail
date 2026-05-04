@@ -549,6 +549,9 @@ test("renderAppShell renders run event monitor details", () => {
   assert.match(rendered, /event detail:/);
   assert.match(rendered, /id: evt-1/);
   assert.match(rendered, /type: task_status_changed/);
+  assert.match(rendered, /highlights:/);
+  assert.match(rendered, /status: failed/);
+  assert.match(rendered, /exit code: 1/);
   assert.match(rendered, /"exitCode": 1/);
 });
 
@@ -953,6 +956,7 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
 
   try {
     await waitFor(() => stdout.output.includes("run-cleanup-a"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     stdin.key("d");
     stdin.key(" ", "space");
