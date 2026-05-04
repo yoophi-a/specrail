@@ -322,6 +322,7 @@ Operator environment:
 - `SPECRAIL_TERMINAL_INITIAL_SCREEN` one of `home`, `tracks`, `runs`, `settings`
 - `SPECRAIL_TERMINAL_INITIAL_PROJECT_ID` optional project id for the initial track/run scope
 - `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER` one of `all`, `active`, `terminal`; defaults to `all`
+- `SPECRAIL_TERMINAL_PREFERENCES_PATH` optional local JSON file for persisting project scope and run filter changes
 
 Run it locally:
 

@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { emitKeypressEvents } from "node:readline";
 import process from "node:process";
 import { loadTerminalClientConfig, type SpecRailTerminalClientConfig } from "@specrail/config";
@@ -240,6 +242,11 @@ export interface PendingWorkspaceCleanupActionState {
   phase: "preview" | "confirmation_ready" | "applying" | "done";
   submitting: boolean;
   message: string | null;
+}
+
+export interface TerminalPreferenceState {
+  selectedProjectId: string | null;
+  runFilter: RunFilterMode;
 }
 
 export interface TerminalAppState {
@@ -1483,12 +1490,59 @@ function previewText(value: string, maxLength = 80): string {
   return `${compact.slice(0, maxLength - 3)}...`;
 }
 
+export async function loadTerminalPreferences(path: string | null): Promise<Partial<TerminalPreferenceState>> {
+  if (!path) {
+    return {};
+  }
+
+  try {
+    const raw = await readFile(path, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const selectedProjectId = typeof parsed.selectedProjectId === "string" && parsed.selectedProjectId.trim().length > 0
+      ? parsed.selectedProjectId
+      : parsed.selectedProjectId === null
+        ? null
+        : undefined;
+    const runFilter = parsed.runFilter === "active" || parsed.runFilter === "terminal" || parsed.runFilter === "all" ? parsed.runFilter : undefined;
+
+    return {
+      ...(selectedProjectId !== undefined ? { selectedProjectId } : {}),
+      ...(runFilter ? { runFilter } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+export async function saveTerminalPreferences(path: string | null, preferences: TerminalPreferenceState): Promise<void> {
+  if (!path) {
+    return;
+  }
+
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, `${JSON.stringify(preferences, null, 2)}\n`, "utf8");
+  } catch {
+    // Best-effort local UI preferences must never break operator workflows.
+  }
+}
+
+async function resolveTerminalClientConfig(config: SpecRailTerminalClientConfig): Promise<SpecRailTerminalClientConfig> {
+  const preferences = await loadTerminalPreferences(config.preferencePath);
+  return {
+    ...config,
+    initialProjectId: preferences.selectedProjectId !== undefined ? preferences.selectedProjectId : config.initialProjectId,
+    initialRunFilter: preferences.runFilter ?? config.initialRunFilter,
+  };
+}
+
 export async function runTerminalApp(
   config: SpecRailTerminalClientConfig = loadTerminalClientConfig(),
   io: { stdout: NodeJS.WriteStream; stdin: NodeJS.ReadStream } = { stdout: process.stdout, stdin: process.stdin },
 ): Promise<void> {
-  const client = new SpecRailTerminalApiClient(config.apiBaseUrl);
-  let state = createEmptyTerminalState(config);
+  const effectiveConfig = await resolveTerminalClientConfig(config);
+  const client = new SpecRailTerminalApiClient(effectiveConfig.apiBaseUrl);
+  let state = createEmptyTerminalState(effectiveConfig);
   let disposed = false;
   let monitorSerial = 0;
   let monitorAbort: AbortController | null = null;
@@ -1502,6 +1556,13 @@ export async function runTerminalApp(
     state = nextState;
     render();
     syncRunMonitor();
+  };
+
+  const persistPreferences = (nextState: TerminalAppState) => {
+    void saveTerminalPreferences(effectiveConfig.preferencePath, {
+      selectedProjectId: nextState.selectedProjectId ?? null,
+      runFilter: nextState.runFilter,
+    });
   };
 
   const patchRunFeed = (patch: Partial<RunEventFeedState>) => {
@@ -1627,7 +1688,7 @@ export async function runTerminalApp(
     render();
 
     try {
-      updateState(state.summary ? await refreshTerminalState(state, client) : await bootstrapTerminalState(config, client));
+      updateState(state.summary ? await refreshTerminalState(state, client) : await bootstrapTerminalState(effectiveConfig, client));
     } catch (error) {
       updateState({
         ...state,
@@ -2308,13 +2369,18 @@ export async function runTerminalApp(
       }
 
       if (key.name === "f") {
-        updateState(setRunFilter(state, cycleRunFilterMode(state.runFilter)));
+        const nextState = setRunFilter(state, cycleRunFilterMode(state.runFilter));
+        updateState(nextState);
+        persistPreferences(nextState);
         return;
       }
 
       if (input === "P") {
         void cycleProjectScope(state, client)
-          .then(updateState)
+          .then((nextState) => {
+            updateState(nextState);
+            persistPreferences(nextState);
+          })
           .catch((error) => updateState({
             ...state,
             error: error instanceof Error ? error.message : "Failed to cycle project scope.",
