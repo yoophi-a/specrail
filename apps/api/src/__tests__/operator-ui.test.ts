@@ -483,3 +483,13 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
     assertContainsAll(body, patterns);
   }
 });
+
+test("operator UI client opens run detail from runId query parameter", async () => {
+  const { calls, detail, loadInitialState } = createHostedUiClientHarness({ search: "?runId=run%2Flinked" });
+  await loadInitialState();
+  await flushClientPromises();
+
+  assert.ok(calls.some((call) => call.path === "/runs/run%2Flinked" && call.method === "GET"));
+  assert.ok(calls.some((call) => call.path === "/runs/run%2Flinked/events" && call.method === "GET"));
+  assert.match(detail.innerHTML, /Run run\/linked/);
+});

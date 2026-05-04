@@ -138,7 +138,7 @@ export class FakeEventSource {
   }
 }
 
-export function createHostedUiClientHarness() {
+export function createHostedUiClientHarness(input: { search?: string } = {}) {
   const selectors = [
     "#project-scope",
     "#status",
@@ -306,6 +306,8 @@ export function createHostedUiClientHarness() {
       }
     },
     EventSource,
+    URLSearchParams,
+    window: { location: { search: input.search ?? "" } },
   });
 
   const detail = elements.get("#detail")!;

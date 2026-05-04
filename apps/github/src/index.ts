@@ -13,6 +13,7 @@ export interface GitHubRunCommand {
 
 export interface GitHubAppConfig {
   apiBaseUrl: string;
+  operatorBaseUrl?: string;
   port: number;
   webhookPath: string;
   webhookSecret: string;
@@ -107,6 +108,7 @@ export interface GitHubRunCommandOutcome {
   planningSessionId?: string;
   runId: string;
   reportUrl?: string;
+  operatorUrl?: string;
 }
 
 export type GitHubRunOutcomeStatus = "queued" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
@@ -143,6 +145,7 @@ export interface GitHubTerminalRelayJob {
   issueNumber: number;
   runId: string;
   reportUrl?: string;
+  operatorUrl?: string;
   status: "pending" | "running" | "completed" | "failed";
   attempts: number;
   createdAt: string;
@@ -152,7 +155,7 @@ export interface GitHubTerminalRelayJob {
 }
 
 export interface GitHubRelayJobQueue {
-  enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string }): Promise<GitHubTerminalRelayJob>;
+  enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string; operatorUrl?: string }): Promise<GitHubTerminalRelayJob>;
   claimNext(now?: Date): Promise<GitHubTerminalRelayJob | undefined>;
   complete(jobId: string, now?: Date): Promise<void>;
   fail(jobId: string, error: unknown, now?: Date): Promise<void>;
@@ -165,6 +168,7 @@ export interface GitHubTerminalOutcomeCommentInput {
   runId: string;
   status: GitHubRunOutcomeStatus;
   reportUrl?: string;
+  operatorUrl?: string;
 }
 
 export type GitHubTerminalOutcomeCommentResult =
@@ -273,6 +277,7 @@ export async function authorizeGitHubActor(input: {
 export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig {
   return {
     apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
+    operatorBaseUrl: env.SPECRAIL_OPERATOR_BASE_URL,
     port: Number(env.GITHUB_APP_PORT ?? 4200),
     webhookPath: env.GITHUB_WEBHOOK_PATH ?? "/github/webhook",
     webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",
@@ -636,6 +641,12 @@ export function buildGitHubRunReportUrl(apiBaseUrl: string, runId: string): stri
   return new URL(`/runs/${encodeURIComponent(runId)}/report.md`, apiBaseUrl).toString();
 }
 
+export function buildGitHubOperatorRunUrl(operatorBaseUrl: string, runId: string): string {
+  const url = new URL("/operator", operatorBaseUrl);
+  url.searchParams.set("runId", runId);
+  return url.toString();
+}
+
 function isTerminalGitHubRunStatus(status: GitHubRunOutcomeStatus): status is "completed" | "failed" | "cancelled" {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
@@ -669,6 +680,9 @@ export function formatGitHubTerminalOutcomeComment(input: GitHubTerminalOutcomeC
   if (input.reportUrl) {
     lines.push(`Report: ${input.reportUrl}`);
   }
+  if (input.operatorUrl) {
+    lines.push(`Operator: ${input.operatorUrl}`);
+  }
   return lines.join("\n");
 }
 
@@ -699,6 +713,7 @@ export function scheduleGitHubRunTerminalOutcomeRelay(input: {
   issueNumber: number;
   runId: string;
   reportUrl?: string;
+  operatorUrl?: string;
   onError?: (error: unknown) => void;
 }): GitHubRunEventRelayScheduleResult {
   if (!input.enabled) {
@@ -717,6 +732,7 @@ export function scheduleGitHubRunTerminalOutcomeRelay(input: {
         issueNumber: input.issueNumber,
         runId: input.runId,
         reportUrl: input.reportUrl,
+        operatorUrl: input.operatorUrl,
       });
     } catch (error) {
       input.onError?.(error);
@@ -736,6 +752,7 @@ export async function relayGitHubRunTerminalOutcome(input: {
   issueNumber: number;
   runId: string;
   reportUrl?: string;
+  operatorUrl?: string;
 }): Promise<GitHubRunEventRelayResult> {
   if (!input.specRail.streamRunEvents) {
     return { posted: false, reason: "stream_not_available" };
@@ -755,6 +772,7 @@ export async function relayGitHubRunTerminalOutcome(input: {
         runId: input.runId,
         status,
         reportUrl: input.reportUrl,
+        operatorUrl: input.operatorUrl,
       },
     });
 
@@ -774,7 +792,7 @@ function createRelayJobId(input: { repositoryFullName: string; issueNumber: numb
 export class JsonFileGitHubRelayJobQueue implements GitHubRelayJobQueue {
   constructor(private readonly filePath: string) {}
 
-  async enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string }): Promise<GitHubTerminalRelayJob> {
+  async enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string; operatorUrl?: string }): Promise<GitHubTerminalRelayJob> {
     const now = new Date();
     const jobs = await this.readJobs();
     const job: GitHubTerminalRelayJob = {
@@ -782,7 +800,8 @@ export class JsonFileGitHubRelayJobQueue implements GitHubRelayJobQueue {
       repositoryFullName: input.repositoryFullName,
       issueNumber: input.issueNumber,
       runId: input.runId,
-      reportUrl: input.reportUrl,
+      ...(input.reportUrl ? { reportUrl: input.reportUrl } : {}),
+      ...(input.operatorUrl ? { operatorUrl: input.operatorUrl } : {}),
       status: "pending",
       attempts: 0,
       createdAt: now.toISOString(),
@@ -873,6 +892,7 @@ export async function processGitHubRelayQueue(input: {
       issueNumber: job.issueNumber,
       runId: job.runId,
       reportUrl: job.reportUrl,
+      operatorUrl: job.operatorUrl,
     });
     await input.queue.complete(job.id, input.now);
     return { processed: true, jobId: job.id, result };
@@ -1022,6 +1042,7 @@ export async function handleGitHubWebhookHttpRequest(
       apiBaseUrl: deps.config.apiBaseUrl,
     });
     let relay: GitHubRunEventRelayScheduleResult | undefined;
+    const operatorUrl = deps.config.operatorBaseUrl ? buildGitHubOperatorRunUrl(deps.config.operatorBaseUrl, outcome.runId) : undefined;
     try {
       if (deps.config.followTerminalEvents && deps.github && deps.relayQueue) {
         await deps.relayQueue.enqueue({
@@ -1029,6 +1050,7 @@ export async function handleGitHubWebhookHttpRequest(
           issueNumber: command.issueNumber,
           runId: outcome.runId,
           reportUrl: outcome.reportUrl,
+          operatorUrl,
         });
         relay = { scheduled: true };
       } else {
@@ -1041,6 +1063,7 @@ export async function handleGitHubWebhookHttpRequest(
           issueNumber: command.issueNumber,
           runId: outcome.runId,
           reportUrl: outcome.reportUrl,
+          operatorUrl,
           onError: (error) => console.error("GitHub terminal outcome relay failed", error),
         });
       }
