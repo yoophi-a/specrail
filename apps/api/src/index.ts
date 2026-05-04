@@ -44,6 +44,7 @@ import {
   type ExecutionEvent,
   type ApprovalStatus,
   type ArtifactKind,
+  type ChannelType,
   type PlanningMessage,
   type PlanningMessageKind,
   type PlanningSystem,
@@ -140,7 +141,7 @@ interface ApplyWorkspaceCleanupRequestBody {
 
 interface BindChannelRequestBody {
   projectId: string;
-  channelType: "telegram";
+  channelType: ChannelType;
   externalChatId: string;
   externalThreadId?: string;
   externalUserId?: string;
@@ -1310,15 +1311,15 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const externalChatId = searchParams.get("externalChatId");
         const externalThreadId = searchParams.get("externalThreadId") ?? undefined;
 
-        if (!channelType || !externalChatId || !CHANNEL_TYPES.includes(channelType as "telegram")) {
+        if (!channelType || !externalChatId || !CHANNEL_TYPES.includes(channelType as ChannelType)) {
           throw new RequestValidationError("request validation failed", [
             { field: "channelType", message: `must be one of: ${CHANNEL_TYPES.join(", ")}` },
             { field: "externalChatId", message: "must not be empty" },
-          ].filter((detail, index) => (index === 0 ? !channelType || !CHANNEL_TYPES.includes(channelType as "telegram") : !externalChatId)));
+          ].filter((detail, index) => (index === 0 ? !channelType || !CHANNEL_TYPES.includes(channelType as ChannelType) : !externalChatId)));
         }
 
         const binding = await deps.service.findChannelBindingByExternalRef({
-          channelType: channelType as "telegram",
+          channelType: channelType as ChannelType,
           externalChatId,
           externalThreadId,
         });
