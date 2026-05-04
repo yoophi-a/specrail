@@ -265,6 +265,7 @@ export interface TerminalAppState {
   runFilter: RunFilterMode;
   runEvents: RunEventFeedState;
   showRunEventDetail?: boolean;
+  runEventDetailIndex?: number | null;
   pendingTrackAction: PendingTrackActionState | null;
   pendingExecutionAction: PendingExecutionActionState | null;
   pendingProposalAction: PendingProposalActionState | null;
@@ -606,6 +607,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     runFilter: config.initialRunFilter,
     runEvents: createEmptyRunEventFeedState(),
     showRunEventDetail: false,
+    runEventDetailIndex: null,
     pendingTrackAction: null,
     pendingExecutionAction: null,
     pendingProposalAction: null,
@@ -687,6 +689,7 @@ export async function bootstrapTerminalState(
     runFilter: config.initialRunFilter,
     runEvents: createEmptyRunEventFeedState(runs.selectedId),
     showRunEventDetail: false,
+    runEventDetailIndex: null,
     pendingTrackAction: null,
     pendingExecutionAction: null,
     pendingProposalAction: null,
@@ -854,6 +857,7 @@ export function syncRunEventSelection(state: TerminalAppState): TerminalAppState
   return {
     ...state,
     runEvents: createEmptyRunEventFeedState(selectedId, state.runEvents.paused),
+    runEventDetailIndex: null,
   };
 }
 
@@ -949,7 +953,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "runs":
       return [
         ...lines,
-        "Help: runs — f cycles filters, Space pauses live tail, d toggles event detail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup.",
+        "Help: runs — f cycles filters, Space pauses live tail, d toggles event detail, p/n selects event detail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup.",
       ];
     case "settings":
       return [
@@ -1134,7 +1138,7 @@ function renderRunsScreen(state: TerminalAppState): string[] {
     ),
     "",
     "Run detail",
-    ...renderRunDetail(detail, state.runs, selectedRun?.id ?? null, state.runEvents, state.showRunEventDetail ?? false),
+    ...renderRunDetail(detail, state.runs, selectedRun?.id ?? null, state.runEvents, state.showRunEventDetail ?? false, state.runEventDetailIndex ?? null),
   ];
 }
 
@@ -1292,6 +1296,7 @@ function renderRunDetail(
   selectedId: string | null,
   feed: RunEventFeedState,
   showEventDetail: boolean,
+  eventDetailIndex: number | null,
 ): string[] {
   if (!selectedId) {
     return ["- No run selected."];
@@ -1308,6 +1313,8 @@ function renderRunDetail(
   const run = detail.run;
   const terminal = isTerminalRunStatus(run.status);
   const lastEvent = feed.runId === run.id ? feed.items.at(-1) ?? null : null;
+  const detailEventIndex = showEventDetail && feed.runId === run.id ? resolveRunEventDetailIndex(feed.items, eventDetailIndex) : null;
+  const detailEvent = detailEventIndex !== null ? feed.items[detailEventIndex] ?? null : null;
   const recentFailure = feed.runId === run.id ? [...feed.items].reverse().find((event) => isFailureEvent(event)) ?? null : null;
 
   return [
@@ -1332,17 +1339,25 @@ function renderRunDetail(
     `- operator actions: ${formatRunOperatorActions(run, feed)}`,
     "- recent activity:",
     ...renderRecentRunEvents(feed, run.id),
-    ...renderRunEventDetailLines(showEventDetail ? lastEvent : null),
-  ];
+    ...renderRunEventDetailLines(detailEvent, detailEventIndex, feed.items.length),
+   ];
 }
 
-function renderRunEventDetailLines(event: ExecutionEvent | null): string[] {
-  if (!event) {
+function resolveRunEventDetailIndex(events: ExecutionEvent[], requestedIndex: number | null): number | null {
+  if (events.length === 0) {
+    return null;
+  }
+
+  return requestedIndex === null ? events.length - 1 : clampIndex(requestedIndex, events.length);
+}
+
+function renderRunEventDetailLines(event: ExecutionEvent | null, eventIndex: number | null, eventCount: number): string[] {
+  if (!event || eventIndex === null) {
     return [];
   }
 
   return [
-    "- event detail:",
+    `- event detail (${eventIndex + 1}/${eventCount}):`,
     `  - id: ${event.id}`,
     `  - type: ${event.type}${event.subtype ? ` / ${event.subtype}` : ""}`,
     `  - source: ${event.source}`,
@@ -2038,6 +2053,29 @@ export async function runTerminalApp(
     }
   };
 
+  const moveRunEventDetailSelection = (delta: number) => {
+    if (state.screen !== "runs") {
+      updateState({ ...state, statusLine: "Switch to the runs screen to select event detail." });
+      return;
+    }
+
+    const eventCount = state.runEvents.items.length;
+    if (eventCount === 0) {
+      updateState({ ...state, statusLine: "No cached run events to inspect yet." });
+      return;
+    }
+
+    const currentIndex = resolveRunEventDetailIndex(state.runEvents.items, state.runEventDetailIndex ?? null) ?? eventCount - 1;
+    const nextIndex = clampIndex(currentIndex + delta, eventCount);
+    const event = state.runEvents.items[nextIndex];
+    updateState({
+      ...state,
+      showRunEventDetail: true,
+      runEventDetailIndex: nextIndex,
+      statusLine: event ? `Selected event detail ${nextIndex + 1}/${eventCount}: ${event.type}.` : `Selected event detail ${nextIndex + 1}/${eventCount}.`,
+    });
+  };
+
   const toggleRunTailPause = () => {
     if (state.screen !== "runs") {
       updateState({ ...state, statusLine: "Switch to the runs screen to control the live tail." });
@@ -2492,10 +2530,21 @@ export async function runTerminalApp(
         const nextState = {
           ...state,
           showRunEventDetail: !(state.showRunEventDetail ?? false),
+          runEventDetailIndex: null,
           statusLine: state.showRunEventDetail ? "Run event detail hidden." : "Run event detail shown for the latest cached event.",
         };
         updateState(nextState);
         persistPreferences(nextState);
+        return;
+      }
+
+      if (key.name === "p") {
+        moveRunEventDetailSelection(-1);
+        return;
+      }
+
+      if (key.name === "n") {
+        moveRunEventDetailSelection(1);
         return;
       }
 
