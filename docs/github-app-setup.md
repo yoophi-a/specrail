@@ -82,11 +82,12 @@ The webhook endpoint returns JSON responses:
 
 - `202 { accepted: true, outcome }` when a `/specrail run` command starts orchestration.
 - `202 { accepted: true, outcome, relay: { scheduled: true } }` when terminal outcome relay is enabled and successfully scheduled.
-- `202 { accepted: false, reason }` for ignored events, unsupported actions, unsupported commands, missing context, unsupported repositories, or unauthorized actors.
+- `202 { accepted: false, reason }` for ignored events, unsupported actions, unsupported commands, missing context, unsupported repositories, or unauthorized actors. Unsupported repositories and unauthorized actors also emit safe internal diagnostics.
 - `401 { accepted: false, reason: "invalid_signature" }` for signature failures.
 - `400 { error: "invalid_json" }` for malformed JSON payloads.
 - `502 { error: "specrail_request_failed", message }` when the SpecRail API call fails.
 - `502 { error: "github_relay_enqueue_failed", message, outcome }` when run creation succeeds but the terminal relay scheduler rejects the background task.
+- `502 { error: "github_authorization_failed", message }` when GitHub org/team membership checks fail before run creation. This also emits a safe internal diagnostic.
 
 ## Current limitations
 
@@ -101,5 +102,5 @@ The webhook endpoint returns JSON responses:
 ## Recommended follow-ups
 
 1. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
-2. Add admin-facing diagnostics for denied GitHub `/specrail` commands.
-3. Add deployment documentation for publishing the hosted operator UI behind auth.
+2. Add deployment documentation for publishing the hosted operator UI behind auth.
+3. Add metrics counters for GitHub command accept/deny outcomes.
