@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { once } from "node:events";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { test } from "node:test";
 import {
   buildGitHubSignature256,
+  createGitHubAppInstallationTokenProvider,
+  createGitHubAppJwt,
   createGitHubRestIssueCommentClient,
   createGitHubWebhookHttpServer,
   createSpecRailHttpClient,
@@ -869,4 +872,87 @@ test("GitHub webhook HTTP app authorizes allowed actors and rejects unauthorized
     assert.deepEqual(await response.json(), { accepted: false, reason: "unauthorized_actor" });
   }, { allowedActors: ["hubot"] });
   assert.deepEqual(rejected.calls, []);
+});
+
+function decodeJwtPart(token: string, index: number): unknown {
+  const part = token.split(".")[index];
+  assert.ok(part);
+  return JSON.parse(Buffer.from(part, "base64url").toString("utf8")) as unknown;
+}
+
+test("createGitHubAppJwt signs GitHub App JWT claims", () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const jwt = createGitHubAppJwt({ appId: "12345", privateKey: privateKeyPem, now: () => 1_700_000_000_000 });
+
+  assert.equal(jwt.split(".").length, 3);
+  assert.deepEqual(decodeJwtPart(jwt, 0), { alg: "RS256", typ: "JWT" });
+  assert.deepEqual(decodeJwtPart(jwt, 1), { iat: 1_699_999_940, exp: 1_700_000_540, iss: "12345" });
+});
+
+test("createGitHubAppInstallationTokenProvider exchanges, caches, and refreshes installation tokens", async () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  let nowMs = 1_700_000_000_000;
+  const requests: Array<{ url: string; method?: string; authorization?: string }> = [];
+  const tokens = ["installation-token-1", "installation-token-2"];
+  const fetchFn: typeof fetch = async (url, init) => {
+    requests.push({
+      url: url.toString(),
+      method: init?.method,
+      authorization: init?.headers instanceof Headers ? init.headers.get("authorization") ?? undefined : (init?.headers as Record<string, string> | undefined)?.authorization,
+    });
+    const token = tokens.shift();
+    assert.ok(token);
+    return new Response(JSON.stringify({ token, expires_at: new Date(nowMs + 3_600_000).toISOString() }), {
+      status: 201,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const provider = createGitHubAppInstallationTokenProvider({
+    appId: "12345",
+    installationId: "67890",
+    privateKey: privateKeyPem,
+    apiBaseUrl: "https://api.github.example.test",
+    fetchFn,
+    now: () => nowMs,
+  });
+
+  assert.equal(await provider.getToken(), "installation-token-1");
+  assert.equal(await provider.getToken(), "installation-token-1");
+  nowMs += 3_550_000;
+  assert.equal(await provider.getToken(), "installation-token-2");
+
+  assert.equal(requests.length, 2);
+  assert.deepEqual(
+    requests.map((request) => ({ url: request.url, method: request.method })),
+    [
+      { url: "https://api.github.example.test/app/installations/67890/access_tokens", method: "POST" },
+      { url: "https://api.github.example.test/app/installations/67890/access_tokens", method: "POST" },
+    ],
+  );
+  assert.ok(requests[0]?.authorization?.startsWith("Bearer "));
+});
+
+test("createGitHubRestIssueCommentClient accepts token providers", async () => {
+  const requests: Array<{ authorization: string }> = [];
+  await withJsonServer((request, response) => {
+    requests.push({ authorization: request.headers.authorization ?? "" });
+    response.statusCode = 201;
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ id: 1001 }));
+  }, async (baseUrl) => {
+    const client = createGitHubRestIssueCommentClient({
+      apiBaseUrl: baseUrl,
+      tokenProvider: {
+        async getToken() {
+          return "provider-token";
+        },
+      },
+    });
+    assert.deepEqual(await client.createIssueComment({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, body: "hello" }), { id: 1001 });
+  });
+
+  assert.deepEqual(requests, [{ authorization: "Bearer provider-token" }]);
 });

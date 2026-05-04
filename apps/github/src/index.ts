@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, createSign, timingSafeEqual } from "node:crypto";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 
@@ -17,6 +17,9 @@ export interface GitHubAppConfig {
   projectId: string;
   githubApiBaseUrl: string;
   githubToken?: string;
+  githubAppId?: string;
+  githubInstallationId?: string;
+  githubPrivateKey?: string;
   followTerminalEvents: boolean;
   repositoryProjects: Record<string, string>;
   allowedActors: string[];
@@ -107,6 +110,10 @@ export interface GitHubIssueCommentPort {
   createIssueComment(input: { repositoryFullName: string; issueNumber: number; body: string }): Promise<{ id?: string | number; url?: string }>;
 }
 
+export interface GitHubTokenProvider {
+  getToken(): Promise<string>;
+}
+
 export interface GitHubBackgroundTaskScheduler {
   schedule(task: () => Promise<void>): void;
 }
@@ -166,6 +173,13 @@ function parseCsvList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function normalizePrivateKey(value: string | undefined): string | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  return value.replace(/\\n/g, "\n");
+}
+
 export function resolveGitHubProjectId(config: Pick<GitHubAppConfig, "projectId" | "repositoryProjects">, repositoryFullName: string): string | undefined {
   const configuredProject = config.repositoryProjects[repositoryFullName];
   if (configuredProject) {
@@ -193,18 +207,23 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     projectId: env.SPECRAIL_GITHUB_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID ?? "project-default",
     githubApiBaseUrl: env.GITHUB_API_BASE_URL ?? "https://api.github.com",
     githubToken: env.GITHUB_TOKEN ?? env.GITHUB_INSTALLATION_TOKEN,
+    githubAppId: env.GITHUB_APP_ID,
+    githubInstallationId: env.GITHUB_INSTALLATION_ID,
+    githubPrivateKey: normalizePrivateKey(env.GITHUB_PRIVATE_KEY),
     followTerminalEvents: env.GITHUB_FOLLOW_TERMINAL_EVENTS === "true",
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
   };
 }
 
+type FetchLike = typeof fetch;
+
 function encodeGitHubPathSegment(value: string | number): string {
   return encodeURIComponent(String(value));
 }
 
-async function githubJsonRequest<T>(baseUrl: string, path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(new URL(path, baseUrl), {
+async function githubJsonRequest<T>(baseUrl: string, path: string, init: RequestInit = {}, fetchFn: FetchLike = fetch): Promise<T> {
+  const response = await fetchFn(new URL(path, baseUrl), {
     ...init,
     headers: {
       accept: "application/vnd.github+json",
@@ -223,8 +242,79 @@ async function githubJsonRequest<T>(baseUrl: string, path: string, init: Request
   return (responseText ? JSON.parse(responseText) : {}) as T;
 }
 
-export function createGitHubRestIssueCommentClient(input: { token: string; apiBaseUrl?: string }): GitHubIssueCommentPort {
+function base64UrlJson(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+export function createStaticGitHubTokenProvider(token: string): GitHubTokenProvider {
+  return {
+    async getToken() {
+      return token;
+    },
+  };
+}
+
+export function createGitHubAppJwt(input: { appId: string; privateKey: string; now?: () => number }): string {
+  const nowSeconds = Math.floor((input.now?.() ?? Date.now()) / 1000);
+  const header = base64UrlJson({ alg: "RS256", typ: "JWT" });
+  const payload = base64UrlJson({ iat: nowSeconds - 60, exp: nowSeconds + 540, iss: input.appId });
+  const unsigned = `${header}.${payload}`;
+  const signer = createSign("RSA-SHA256");
+  signer.update(unsigned);
+  signer.end();
+  return `${unsigned}.${signer.sign(input.privateKey).toString("base64url")}`;
+}
+
+export function createGitHubAppInstallationTokenProvider(input: {
+  appId: string;
+  installationId: string;
+  privateKey: string;
+  apiBaseUrl?: string;
+  fetchFn?: FetchLike;
+  now?: () => number;
+}): GitHubTokenProvider {
   const apiBaseUrl = input.apiBaseUrl ?? "https://api.github.com";
+  const fetchFn = input.fetchFn ?? fetch;
+  const now = input.now ?? Date.now;
+  let cached: { token: string; expiresAtMs: number } | undefined;
+
+  return {
+    async getToken() {
+      if (cached && now() < cached.expiresAtMs - 60_000) {
+        return cached.token;
+      }
+
+      const jwt = createGitHubAppJwt({ appId: input.appId, privateKey: input.privateKey, now });
+      const response = await githubJsonRequest<{ token: string; expires_at: string }>(
+        apiBaseUrl,
+        `/app/installations/${encodeGitHubPathSegment(input.installationId)}/access_tokens`,
+        { method: "POST", headers: { authorization: `Bearer ${jwt}` } },
+        fetchFn,
+      );
+      cached = { token: response.token, expiresAtMs: Date.parse(response.expires_at) };
+      return cached.token;
+    },
+  };
+}
+
+function createGitHubTokenProviderFromConfig(config: GitHubAppConfig): GitHubTokenProvider | undefined {
+  if (config.githubAppId && config.githubInstallationId && config.githubPrivateKey) {
+    return createGitHubAppInstallationTokenProvider({
+      appId: config.githubAppId,
+      installationId: config.githubInstallationId,
+      privateKey: config.githubPrivateKey,
+      apiBaseUrl: config.githubApiBaseUrl,
+    });
+  }
+  return config.githubToken ? createStaticGitHubTokenProvider(config.githubToken) : undefined;
+}
+
+export function createGitHubRestIssueCommentClient(input: { token?: string; tokenProvider?: GitHubTokenProvider; apiBaseUrl?: string; fetchFn?: FetchLike }): GitHubIssueCommentPort {
+  const apiBaseUrl = input.apiBaseUrl ?? "https://api.github.com";
+  const tokenProvider = input.tokenProvider ?? (input.token ? createStaticGitHubTokenProvider(input.token) : undefined);
+  if (!tokenProvider) {
+    throw new Error("GitHub issue comment client requires a token or token provider");
+  }
   return {
     async createIssueComment(commentInput) {
       const [owner, repo] = commentInput.repositoryFullName.split("/");
@@ -232,11 +322,12 @@ export function createGitHubRestIssueCommentClient(input: { token: string; apiBa
         throw new Error(`invalid GitHub repository full name: ${commentInput.repositoryFullName}`);
       }
 
+      const token = await tokenProvider.getToken();
       return githubJsonRequest(apiBaseUrl, `/repos/${encodeGitHubPathSegment(owner)}/${encodeGitHubPathSegment(repo)}/issues/${commentInput.issueNumber}/comments`, {
         method: "POST",
-        headers: { authorization: `Bearer ${input.token}` },
+        headers: { authorization: `Bearer ${token}` },
         body: JSON.stringify({ body: commentInput.body }),
-      });
+      }, input.fetchFn);
     },
   };
 }
@@ -358,7 +449,8 @@ export const defaultGitHubBackgroundTaskScheduler: GitHubBackgroundTaskScheduler
 export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRail?: GitHubSpecRailPort; github?: GitHubIssueCommentPort } = {}): http.Server {
   const config = input.config ?? loadGitHubAppConfig();
   const specRail = input.specRail ?? createSpecRailHttpClient(config.apiBaseUrl);
-  const github = input.github ?? (config.githubToken ? createGitHubRestIssueCommentClient({ token: config.githubToken, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
+  const tokenProvider = createGitHubTokenProviderFromConfig(config);
+  const github = input.github ?? (tokenProvider ? createGitHubRestIssueCommentClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
   const server = createGitHubWebhookHttpServer({ config, specRail, github, scheduler: defaultGitHubBackgroundTaskScheduler });
   server.listen(config.port, () => {
     console.log(`SpecRail GitHub webhook listening on ${normalizeWebhookPath(config.webhookPath)} at port ${config.port}`);
