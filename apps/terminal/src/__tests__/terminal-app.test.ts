@@ -455,6 +455,15 @@ test("renderAppShell renders run event monitor details", () => {
       },
       [
         {
+          id: "evt-0",
+          executionId: "run-1",
+          type: "message",
+          timestamp: "2026-04-10T12:03:00.000Z",
+          source: "claude_code",
+          summary: "STDERR run-1-claude",
+          payload: { stream: "stderr", text: "first line\nsecond line with detailed provider output that should stay bounded in the terminal tail" },
+        },
+        {
           id: "evt-1",
           executionId: "run-1",
           type: "task_status_changed",
@@ -475,13 +484,14 @@ test("renderAppShell renders run event monitor details", () => {
     },
   });
 
-  assert.match(rendered, /event summary: 1 event, last at 2026-04-10T12:04:00.000Z/);
+  assert.match(rendered, /event summary: 2 events, last at 2026-04-10T12:04:00.000Z/);
   assert.match(rendered, /failure focus: Failed Claude Code session run-1-claude \(exit 1\)/);
   assert.match(rendered, /Runs \(1\/1, filter=terminal\)/);
   assert.match(rendered, /stream: reconnecting \(attempt 2\)/);
   assert.match(rendered, /report: \/runs\/run-1\/report\.md/);
   assert.match(rendered, /operator actions: press e to resume this run, w to preview workspace cleanup, Space to pause tail/);
   assert.match(rendered, /recent activity:/);
+  assert.match(rendered, /message \| stream=stderr \| STDERR run-1-claude — first line second line with detailed provider output/);
   assert.match(rendered, /task_status_changed \| status=failed \| Failed Claude Code session run-1-claude/);
 });
 
