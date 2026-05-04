@@ -31,6 +31,7 @@ The runs screen now does more than snapshot inspection:
 - keeps the selected run detail panel in sync with periodic refreshes
 - opens an SSE stream against `/runs/:id/events/stream` for the selected run
 - caches the most recent run events in-memory for a tail-style activity view
+- surfaces provider `stdout`/`stderr` stream labels and bounded text previews when run events include stream payloads
 - lets operators pause and resume the live tail without changing selection
 - deduplicates replayed events after reconnect because the API replays prior history on each SSE connection
 - retries dropped streams with bounded backoff for non-terminal runs
@@ -42,6 +43,7 @@ The run detail pane also highlights:
 - the latest event summary
 - failure focus, including exit code or signal when present in event payloads
 - planning-context staleness and last planning-context update timestamp
+- operator actions for starting runs from tracks, resuming terminal runs, cancelling active runs, and guarded workspace cleanup
 
 ## Planning and approval workflow support
 
@@ -66,6 +68,6 @@ This is intentionally still lightweight:
 ## Follow-up direction
 
 Good next steps after the live monitor baseline:
-- richer provider-specific event formatting for long stdout/stderr payloads
 - richer planning interaction beyond the current focused revision selector and lightweight proposal authoring
-- operator actions from the terminal surface, such as resume/cancel shortcuts
+- deeper provider-specific rendering for structured tool calls, permission requests, and result payloads
+- broader keyboard help and discoverability for multi-step operator workflows
