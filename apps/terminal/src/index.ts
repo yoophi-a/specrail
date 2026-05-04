@@ -1343,6 +1343,7 @@ function formatEventLine(event: ExecutionEvent): string {
   const status = readEventStatus(event);
   const stream = readEventStream(event);
   const text = readEventText(event);
+  const details = formatStructuredEventDetails(event);
   const parts = [event.timestamp, event.type];
   if (event.subtype) {
     parts.push(event.subtype);
@@ -1353,8 +1354,34 @@ function formatEventLine(event: ExecutionEvent): string {
   if (stream) {
     parts.push(`stream=${stream}`);
   }
-  const summary = previewText(event.summary, text ? 72 : 120);
-  return text ? `${parts.join(" | ")} | ${summary} — ${previewText(text, 96)}` : `${parts.join(" | ")} | ${summary}`;
+  const hasExtra = Boolean(text || details);
+  const summary = previewText(event.summary, hasExtra ? 72 : 120);
+  const suffix = [details, text ? previewText(text, 96) : null].filter(Boolean).join("; ");
+  return suffix ? `${parts.join(" | ")} | ${summary} — ${suffix}` : `${parts.join(" | ")} | ${summary}`;
+}
+
+function formatStructuredEventDetails(event: ExecutionEvent): string | null {
+  if (event.type === "tool_call") {
+    const toolName = readPayloadString(event, "toolName") ?? "unknown";
+    const toolUseId = readPayloadString(event, "toolUseId");
+    const toolInput = previewPayloadValue(event.payload?.toolInput, 72);
+    return [`tool=${toolName}`, toolUseId ? `id=${toolUseId}` : null, toolInput ? `input=${toolInput}` : null].filter(Boolean).join(", ");
+  }
+
+  if (event.type === "tool_result") {
+    const toolUseId = readPayloadString(event, "toolUseId");
+    const content = previewPayloadValue(event.payload?.content, 96);
+    return [toolUseId ? `id=${toolUseId}` : null, content ? `result=${content}` : null].filter(Boolean).join(", ") || null;
+  }
+
+  if (event.type === "approval_requested" || event.type === "approval_resolved") {
+    const requestId = readPayloadString(event, "requestId");
+    const outcome = readPayloadString(event, "outcome");
+    const toolName = readPayloadString(event, "toolName");
+    return [requestId ? `request=${requestId}` : null, outcome ? `outcome=${outcome}` : null, toolName ? `tool=${toolName}` : null].filter(Boolean).join(", ") || null;
+  }
+
+  return null;
 }
 
 function readEventStream(event: ExecutionEvent): string | null {
@@ -1365,6 +1392,20 @@ function readEventStream(event: ExecutionEvent): string | null {
 function readEventText(event: ExecutionEvent): string | null {
   const text = event.payload?.text;
   return typeof text === "string" && text.trim().length > 0 ? text : null;
+}
+
+function readPayloadString(event: ExecutionEvent, key: string): string | null {
+  const value = event.payload?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function previewPayloadValue(value: unknown, maxLength: number): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const raw = typeof value === "string" ? value : JSON.stringify(value);
+  return raw && raw.trim().length > 0 ? previewText(raw, maxLength) : null;
 }
 
 function readEventStatus(event: ExecutionEvent): string | null {
