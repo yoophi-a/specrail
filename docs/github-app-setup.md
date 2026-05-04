@@ -45,6 +45,7 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub REST API base URL for issue-comment posting. |
 | `GITHUB_TOKEN` | unset | Token used by the REST issue-comment client. |
 | `GITHUB_INSTALLATION_TOKEN` | unset | Fallback token when `GITHUB_TOKEN` is not set. |
+| `GITHUB_FOLLOW_TERMINAL_EVENTS` | `false` | When `true` and a GitHub comment client is supplied, follow the created run event stream and post one terminal outcome comment. |
 
 ## Running locally
 
@@ -78,7 +79,7 @@ The webhook endpoint returns JSON responses:
 ## Current limitations
 
 - A REST issue-comment client exists for token-backed comment creation, but production GitHub App installation-token refresh is not implemented yet.
-- The terminal outcome comment formatter/port exists, but SSE-driven live terminal outcome delivery remains a follow-up.
+- Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`, but the webhook response waits for the followed run to reach a terminal state in the current implementation.
 - Repository/project allowlists and actor/team authorization are not implemented yet.
 - Non-terminal progress is intentionally not posted to GitHub; use the operator UI, terminal, Telegram, or SSE surfaces for detailed progress.
 - GitHub is not a canonical artifact or run-history store. Completed-run reports remain derived read-only exports at `GET /runs/:runId/report.md`.
@@ -86,5 +87,5 @@ The webhook endpoint returns JSON responses:
 ## Recommended follow-ups
 
 1. Add GitHub App private-key authentication and installation-token refresh.
-2. Wire terminal run events from SpecRail SSE to the GitHub terminal outcome comment relay.
+2. Move terminal run following to a background worker/queue so webhook responses never wait on long-running jobs.
 3. Add repository-to-project allowlist and actor authorization for `/specrail` commands.
