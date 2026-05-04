@@ -103,4 +103,4 @@ The webhook endpoint returns JSON responses:
 ## Recommended follow-ups
 
 1. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
-2. Add deployment-specific manifests for concrete platforms such as Docker Compose or Kubernetes.
+2. Add deployment-specific manifests for Kubernetes or other production orchestration targets.
