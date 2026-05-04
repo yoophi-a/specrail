@@ -39,15 +39,28 @@ The initial adapter keeps the ACP surface intentionally narrow.
 ## Event mapping
 
 The adapter now keeps the raw SpecRail event payload in `_meta.specrail.executionEvent`, but it also adds a few ACP-facing projections so clients can render session state with less guesswork.
+Known event families additionally include `_meta.specrail.eventProjection`, a compact stable summary intended for display logic. Unknown event types still include the raw execution event and readable message chunk without a projection.
 
 ### Session update mapping
 
 | SpecRail signal | ACP projection | Notes |
 | --- | --- | --- |
 | `task_status_changed` with `payload.status` | `session/update` with `session_info_update` | Mirrors the current run status into `_meta.specrail.status`. |
-| any persisted execution event | `session/update` with `agent_message_chunk` | Still emits a readable text chunk like `[tool_call] ...` and includes the full event in `_meta`. |
+| any persisted execution event | `session/update` with `agent_message_chunk` | Still emits a readable text chunk like `[tool_call] ...` and includes the full event in `_meta`. Known event families also include `_meta.specrail.eventProjection`. |
 | `approval_requested` | `session/update` + `session/request_permission` | Session status is promoted to `waiting_approval`, and the permission request carries request/tool metadata when present. |
 | `approval_resolved` | `session/update` with `session_info_update` + `agent_message_chunk` | Clears the pending permission marker and surfaces the resolution outcome back to ACP clients. |
+
+### Event projection shape
+
+`_meta.specrail.eventProjection` is intentionally compact and additive. Current projections cover:
+
+- `tool_call`: `kind`, `toolName`, `toolUseId`
+- `tool_result`: `kind`, `toolName`, `toolUseId`, `exitCode`, `status`
+- `approval_requested`: `kind`, `requestId`, `toolName`, `toolUseId`
+- `approval_resolved`: `kind`, `requestId`, `outcome`, `decidedBy`
+- `task_status_changed`: `kind`, `status`
+
+Clients should use these fields for common rendering, and fall back to `_meta.specrail.executionEvent` when they need provider-specific or not-yet-projected payload details.
 
 ### Permission round-trip
 
@@ -98,7 +111,7 @@ This is intentionally an initial bridge, not a full ACP implementation.
 1. `session/new` currently requires SpecRail-specific metadata, especially `_meta.specrail.trackId`.
 2. Planning artifacts, approvals, channel bindings, and attachment flows stay in the existing REST API.
 3. Runtime permission requests are translated into ACP-friendly updates; decisions are persisted through the core approval path and delivered to executors that implement `resolveRuntimeApproval`.
-4. Event updates are richer than the initial bridge, but the mapping still collapses many provider-specific details into `session/update` plus `_meta` rather than a full ACP-native event taxonomy.
+4. Event updates include compact projections for common SpecRail event families, but many provider-specific details still remain in `session/update` plus raw `_meta` rather than a full ACP-native event taxonomy.
 5. The adapter stores ACP session records locally, but run state still lives in the normal SpecRail repositories.
 6. Terminal and filesystem ACP capabilities are not exposed yet; future versions must apply the workspace ownership rules above before granting scoped access.
 7. `approval_resolved` records the operator decision. Callback delivery may additionally append handled, unsupported, or failed callback events depending on the selected executor.
@@ -114,7 +127,7 @@ This follows the ACP fit analysis in `docs/research/acp-fit-for-specrail.md`:
 
 Good next steps from the current bridge:
 - replace approved-permission resume fallbacks with narrower provider-native permission continuation when Codex or Claude Code expose a usable primitive
-- expand the ACP-facing event taxonomy beyond readable `agent_message_chunk` fallbacks for provider-specific details that clients need to render natively
+- expand ACP-facing projections for provider-specific details that clients need to render natively
 - design the scoped ACP filesystem/terminal capability shape that applies the documented workspace ownership rules
 - build an ACP-aware terminal or editor client spike against this adapter to validate the session/update and permission request shapes with a real client
 - decide which planning/admin flows, if any, should become ACP-native versus staying in the REST API
