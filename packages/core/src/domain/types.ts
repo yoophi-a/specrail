@@ -133,9 +133,9 @@ export interface PlanningMessage {
   createdAt: string;
 }
 
-export const CHANNEL_TYPES = ["telegram"] as const;
+export const CHANNEL_TYPES = ["telegram", "github"] as const;
 
-export type ChannelType = "telegram";
+export type ChannelType = (typeof CHANNEL_TYPES)[number];
 
 export interface ChannelBinding {
   id: string;

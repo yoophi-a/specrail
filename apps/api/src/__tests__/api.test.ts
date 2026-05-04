@@ -500,6 +500,29 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const getBindingPayload = (await getBindingResponse.json()) as { binding: { id: string } };
     assert.equal(getBindingPayload.binding.id, bindPayload.binding.id);
 
+    const githubBindResponse = await fetch(`${baseUrl}/channel-bindings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "project-default",
+        channelType: "github",
+        externalChatId: "yoophi-a/specrail",
+        externalThreadId: "123",
+        externalUserId: "octocat",
+        trackId: trackPayload.track.id,
+      }),
+    });
+    assert.equal(githubBindResponse.status, 201);
+    const githubBindPayload = (await githubBindResponse.json()) as { binding: { id: string; channelType: string } };
+    assert.equal(githubBindPayload.binding.channelType, "github");
+
+    const getGithubBindingResponse = await fetch(
+      `${baseUrl}/channel-bindings?channelType=github&externalChatId=${encodeURIComponent("yoophi-a/specrail")}&externalThreadId=123`,
+    );
+    assert.equal(getGithubBindingResponse.status, 200);
+    const getGithubBindingPayload = (await getGithubBindingResponse.json()) as { binding: { id: string } };
+    assert.equal(getGithubBindingPayload.binding.id, githubBindPayload.binding.id);
+
     const attachmentResponse = await fetch(`${baseUrl}/attachments`, {
       method: "POST",
       headers: { "content-type": "application/json" },

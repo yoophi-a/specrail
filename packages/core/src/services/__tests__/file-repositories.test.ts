@@ -225,6 +225,26 @@ test("channel binding and attachment repositories persist thin-frontend referenc
     }))?.id,
     "binding-1",
   );
+
+  await channelBindingRepository.create({
+    id: "binding-github-1",
+    projectId: "project-1",
+    channelType: "github",
+    externalChatId: "yoophi-a/specrail",
+    externalThreadId: "123",
+    externalUserId: "octocat",
+    trackId: "track-1",
+    createdAt: "2026-04-10T10:10:00.000Z",
+    updatedAt: "2026-04-10T10:10:00.000Z",
+  });
+  assert.equal(
+    (await channelBindingRepository.findByExternalRef({
+      channelType: "github",
+      externalChatId: "yoophi-a/specrail",
+      externalThreadId: "123",
+    }))?.id,
+    "binding-github-1",
+  );
   assert.deepEqual(
     (await attachmentReferenceRepository.listByTarget({ planningSessionId: "planning-1" })).map((attachment) => attachment.id),
     ["attachment-1"],
