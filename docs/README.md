@@ -21,6 +21,7 @@ Use this index to find the right reference before changing SpecRail's core servi
 
 ## Execution and adapters
 
+- [Validation workflow](./validation-workflow.md) — GitHub Actions validation gates, docs-only PR fast path, and local verification commands.
 - [ACP server edge adapter](./acp-server-edge-adapter.md) — ACP boundary, session mapping, event projections, permission round-trip, and limitations.
 - [Claude Code operations](./claude-code-operations.md) — Claude Code setup, runtime behavior, smoke tests, and operational recovery.
 - [Agent invocation analysis](./agent-invocation-analysis.md) — agent invocation behavior and design observations.
