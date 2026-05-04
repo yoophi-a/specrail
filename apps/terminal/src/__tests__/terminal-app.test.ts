@@ -455,6 +455,26 @@ test("renderAppShell renders run event monitor details", () => {
       },
       [
         {
+          id: "evt-tool",
+          executionId: "run-1",
+          type: "tool_call",
+          subtype: "claude_tool_call",
+          timestamp: "2026-04-10T12:02:30.000Z",
+          source: "claude_code",
+          summary: "Claude requested tool Bash",
+          payload: { toolName: "Bash", toolUseId: "toolu-1", toolInput: { command: "pnpm test -- --runInBand" } },
+        },
+        {
+          id: "evt-approval",
+          executionId: "run-1",
+          type: "approval_requested",
+          subtype: "claude_permission_denial",
+          timestamp: "2026-04-10T12:02:45.000Z",
+          source: "claude_code",
+          summary: "Claude requested approval for Bash",
+          payload: { requestId: "approval-1", toolName: "Bash" },
+        },
+        {
           id: "evt-0",
           executionId: "run-1",
           type: "message",
@@ -484,13 +504,15 @@ test("renderAppShell renders run event monitor details", () => {
     },
   });
 
-  assert.match(rendered, /event summary: 2 events, last at 2026-04-10T12:04:00.000Z/);
+  assert.match(rendered, /event summary: 4 events, last at 2026-04-10T12:04:00.000Z/);
   assert.match(rendered, /failure focus: Failed Claude Code session run-1-claude \(exit 1\)/);
   assert.match(rendered, /Runs \(1\/1, filter=terminal\)/);
   assert.match(rendered, /stream: reconnecting \(attempt 2\)/);
   assert.match(rendered, /report: \/runs\/run-1\/report\.md/);
   assert.match(rendered, /operator actions: press e to resume this run, w to preview workspace cleanup, Space to pause tail/);
   assert.match(rendered, /recent activity:/);
+  assert.match(rendered, /tool_call \| claude_tool_call \| Claude requested tool Bash — tool=Bash, id=toolu-1, input=\{\"command\":\"pnpm test -- --runInBand\"\}/);
+  assert.match(rendered, /approval_requested \| claude_permission_denial \| Claude requested approval for Bash — request=approval-1, tool=Bash/);
   assert.match(rendered, /message \| stream=stderr \| STDERR run-1-claude — first line second line with detailed provider output/);
   assert.match(rendered, /task_status_changed \| status=failed \| Failed Claude Code session run-1-claude/);
 });
