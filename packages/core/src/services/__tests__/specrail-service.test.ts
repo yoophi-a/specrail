@@ -208,20 +208,16 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(resumedRun.command?.resumeSessionRef, "session:run-run-a");
   assert.equal(resumedRun.command?.prompt, "Continue with verification");
   assert.equal(resumedRun.status, "running");
-  assert.deepEqual(resumedRun.summary, {
-    eventCount: 3,
-    lastEventSummary: "Run resumed",
-    lastEventAt: "2026-04-09T03:05:00.000Z",
-  });
+  assert.ok((resumedRun.summary?.eventCount ?? 0) >= (run.summary?.eventCount ?? 0) + 1);
+  assert.equal(resumedRun.summary?.lastEventSummary, "Run resumed");
+  assert.equal(resumedRun.summary?.lastEventAt, "2026-04-09T03:05:00.000Z");
 
   const cancelledRun = await service.cancelRun({ runId: run.id });
   assert.equal(cancelledRun.status, "cancelled");
   assert.equal(cancelledRun.finishedAt, "2026-04-09T03:10:00.000Z");
-  assert.deepEqual(cancelledRun.summary, {
-    eventCount: 4,
-    lastEventSummary: "Run cancelled",
-    lastEventAt: "2026-04-09T03:10:00.000Z",
-  });
+  assert.ok((cancelledRun.summary?.eventCount ?? 0) >= (resumedRun.summary?.eventCount ?? 0) + 1);
+  assert.equal(cancelledRun.summary?.lastEventSummary, "Run cancelled");
+  assert.equal(cancelledRun.summary?.lastEventAt, "2026-04-09T03:10:00.000Z");
 
   const persistedRun = await service.getRun(run.id);
   assert.deepEqual(persistedRun, cancelledRun);
@@ -231,11 +227,10 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(blockedTrack?.updatedAt, "2026-04-09T03:10:00.000Z");
 
   const events = await service.listRunEvents(run.id);
-  assert.equal(events.length, 4);
-  assert.deepEqual(
-    events.map((event) => event.summary),
-    ["Run started", "Prepared Codex command", "Run resumed", "Run cancelled"],
-  );
+  assert.ok(events.length >= 4);
+  assert.deepEqual(events.slice(0, 2).map((event) => event.summary), ["Run started", "Prepared Codex command"]);
+  assert.ok(events.some((event) => event.summary === "Run resumed"));
+  assert.ok(events.some((event) => event.summary === "Run cancelled"));
 
   const binding = await service.bindChannel({
     projectId: "project-default",
@@ -453,6 +448,145 @@ test("SpecRailService routes run start and resume through the selected backend a
     () => service.resumeRun({ runId: run.id, prompt: "Switch backend", backend: "codex" }),
     /Run .* is backed by claude_code, not codex/,
   );
+});
+
+
+test("SpecRailService keeps run lifecycle summaries semantic instead of exact-count bound", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-lifecycle-contract-"));
+  const stateDir = path.join(rootDir, "state");
+  const workspaceRoot = path.join(rootDir, "workspaces");
+
+  const service = new SpecRailService({
+    projectRepository: new FileProjectRepository(stateDir),
+    trackRepository: new FileTrackRepository(stateDir),
+    planningSessionRepository: new FilePlanningSessionRepository(stateDir),
+    planningMessageStore: new JsonlPlanningMessageStore(stateDir),
+    artifactRevisionRepository: new FileArtifactRevisionRepository(stateDir),
+    approvalRequestRepository: new FileApprovalRequestRepository(stateDir),
+    channelBindingRepository: new FileChannelBindingRepository(stateDir),
+    attachmentReferenceRepository: new FileAttachmentReferenceRepository(stateDir),
+    executionRepository: new FileExecutionRepository(stateDir),
+    eventStore: new JsonlEventStore(stateDir),
+    artifactWriter: { async write() {}, async writeApprovedArtifact() {} },
+    executor: {
+      name: "codex",
+      async spawn(input) {
+        return {
+          sessionRef: `session:${input.executionId}`,
+          command: {
+            command: "codex",
+            args: ["exec", input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+          },
+          events: [
+            {
+              id: `${input.executionId}:started`,
+              executionId: input.executionId,
+              type: "task_status_changed" as const,
+              timestamp: "2026-05-03T01:00:00.000Z",
+              source: "codex",
+              summary: "Run started",
+              payload: { status: "running" },
+            },
+            {
+              id: `${input.executionId}:spawn-telemetry`,
+              executionId: input.executionId,
+              type: "summary" as const,
+              timestamp: "2026-05-03T01:00:01.000Z",
+              source: "codex",
+              summary: "Spawn telemetry recorded",
+              payload: { phase: "spawn" },
+            },
+          ],
+        };
+      },
+      async resume(input) {
+        return {
+          sessionRef: input.sessionRef,
+          command: {
+            command: "codex",
+            args: ["exec", "resume", input.sessionRef, input.prompt],
+            cwd: input.workspacePath,
+            prompt: input.prompt,
+            resumeSessionRef: input.sessionRef,
+          },
+          events: [
+            {
+              id: `${input.executionId}:resumed`,
+              executionId: input.executionId ?? "unknown",
+              type: "task_status_changed" as const,
+              timestamp: "2026-05-03T01:05:00.000Z",
+              source: "codex",
+              summary: "Run resumed",
+              payload: { status: "running", sessionRef: input.sessionRef },
+            },
+            {
+              id: `${input.executionId}:resume-telemetry`,
+              executionId: input.executionId ?? "unknown",
+              type: "summary" as const,
+              timestamp: "2026-05-03T01:05:01.000Z",
+              source: "codex",
+              summary: "Resume telemetry recorded",
+              payload: { phase: "resume" },
+            },
+          ],
+        };
+      },
+      async cancel(input) {
+        return {
+          id: `${input.executionId}:cancelled`,
+          executionId: input.executionId ?? "unknown",
+          type: "task_status_changed" as const,
+          timestamp: "2026-05-03T01:10:00.000Z",
+          source: "codex",
+          summary: "Run cancelled",
+          payload: { status: "cancelled", sessionRef: input.sessionRef },
+        };
+      },
+    },
+    defaultProject: { id: "project-default", name: "SpecRail" },
+    workspaceRoot,
+    now: (() => {
+      const values = [
+        "2026-05-03T01:00:00.000Z",
+        "2026-05-03T01:00:00.000Z",
+        "2026-05-03T01:10:00.000Z",
+      ];
+      return () => values.shift() ?? "2026-05-03T01:10:00.000Z";
+    })(),
+    idGenerator: (() => {
+      const values = ["track-a", "run-a"];
+      return () => values.shift() ?? "extra";
+    })(),
+  });
+
+  const track = await service.createTrack({
+    title: "Lifecycle contract",
+    description: "Verify semantic run summary assertions.",
+  });
+  const run = await service.startRun({ trackId: track.id, prompt: "Start" });
+  const startEventCount = run.summary?.eventCount ?? 0;
+
+  const resumedRun = await service.resumeRun({ runId: run.id, prompt: "Continue" });
+  assert.equal(resumedRun.id, run.id);
+  assert.equal(resumedRun.status, "running");
+  assert.equal(resumedRun.command?.prompt, "Continue");
+  assert.equal(resumedRun.command?.resumeSessionRef, "session:run-run-a");
+  assert.ok((resumedRun.summary?.eventCount ?? 0) >= startEventCount + 1);
+  assert.equal(resumedRun.summary?.lastEventSummary, "Resume telemetry recorded");
+
+  const resumedEventCount = resumedRun.summary?.eventCount ?? 0;
+  const cancelledRun = await service.cancelRun({ runId: run.id });
+  assert.equal(cancelledRun.status, "cancelled");
+  assert.ok(cancelledRun.finishedAt);
+  assert.ok((cancelledRun.summary?.eventCount ?? 0) >= resumedEventCount + 1);
+  assert.equal(cancelledRun.summary?.lastEventSummary, "Run cancelled");
+
+  const events = await service.listRunEvents(run.id);
+  assert.ok(events.some((event) => event.summary === "Run resumed"));
+  assert.ok(events.some((event) => event.summary === "Run cancelled"));
+  assert.ok(events.some((event) => event.summary === "Resume telemetry recorded"));
 });
 
 test("SpecRailService applies explicit sorting and pagination for track and run listings", async () => {
