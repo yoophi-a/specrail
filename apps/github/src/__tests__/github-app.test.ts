@@ -11,9 +11,12 @@ import {
   formatGitHubTerminalOutcomeComment,
   getTerminalStatusFromRunEvent,
   handleGitHubWebhookCommand,
+  isGitHubActorAuthorized,
+  loadGitHubAppConfig,
   parseSpecRailIssueCommentCommand,
   postGitHubTerminalOutcomeComment,
   relayGitHubRunTerminalOutcome,
+  resolveGitHubProjectId,
   startGitHubWebhookApp,
   verifyGitHubSignature256,
   type GitHubAcceptedRunCommandContext,
@@ -276,6 +279,7 @@ test("postGitHubTerminalOutcomeComment posts terminal comments and ignores progr
 async function withGitHubWebhookServer(
   specRail: GitHubSpecRailPort,
   fn: (baseUrl: string) => Promise<void>,
+  configOverrides: Partial<ReturnType<typeof loadGitHubAppConfig>> = {},
 ): Promise<void> {
   const server = createGitHubWebhookHttpServer({
     config: {
@@ -286,6 +290,9 @@ async function withGitHubWebhookServer(
       projectId: "project-default",
       githubApiBaseUrl: "https://api.github.example.test",
       followTerminalEvents: false,
+      repositoryProjects: {},
+      allowedActors: [],
+      ...configOverrides,
     },
     specRail,
   });
@@ -498,6 +505,8 @@ test("startGitHubWebhookApp starts the webhook server with injected config and p
       projectId: "project-default",
       githubApiBaseUrl: "https://api.github.example.test",
       followTerminalEvents: false,
+      repositoryProjects: {},
+      allowedActors: [],
     },
     specRail: port,
   });
@@ -700,6 +709,8 @@ test("GitHub webhook HTTP app schedules terminal relay without waiting for termi
       projectId: "project-default",
       githubApiBaseUrl: "https://api.github.example.test",
       followTerminalEvents: true,
+      repositoryProjects: {},
+      allowedActors: [],
     },
     specRail: port,
     github: {
@@ -752,6 +763,8 @@ test("GitHub webhook HTTP app surfaces terminal relay enqueue failures", async (
       projectId: "project-default",
       githubApiBaseUrl: "https://api.github.example.test",
       followTerminalEvents: true,
+      repositoryProjects: {},
+      allowedActors: [],
     },
     specRail: port,
     github: {
@@ -789,4 +802,71 @@ test("GitHub webhook HTTP app surfaces terminal relay enqueue failures", async (
     server.close();
     await once(server, "close");
   }
+});
+
+test("loadGitHubAppConfig parses repository project mappings and actor allowlists", () => {
+  const config = loadGitHubAppConfig({
+    SPECRAIL_API_BASE_URL: "https://specrail.example.test",
+    SPECRAIL_GITHUB_PROJECT_ID: "project-default",
+    GITHUB_WEBHOOK_SECRET: "secret",
+    SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "yoophi-a/specrail=project-specrail, other/repo = project-other",
+    GITHUB_ALLOWED_ACTORS: "octocat,@hubot",
+  });
+
+  assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project-specrail", "other/repo": "project-other" });
+  assert.deepEqual(config.allowedActors, ["octocat", "@hubot"]);
+  assert.equal(resolveGitHubProjectId(config, "yoophi-a/specrail"), "project-specrail");
+  assert.equal(resolveGitHubProjectId(config, "missing/repo"), undefined);
+  assert.equal(isGitHubActorAuthorized(config, "octocat"), true);
+  assert.equal(isGitHubActorAuthorized(config, "hubot"), true);
+  assert.equal(isGitHubActorAuthorized(config, "mallory"), false);
+});
+
+test("GitHub webhook HTTP app uses mapped repository project ids", async () => {
+  const { port, calls } = createSpecRailPort();
+  await withGitHubWebhookServer(port, async (baseUrl) => {
+    const body = JSON.stringify(payload("/specrail run mapped"));
+    const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 202);
+    assert.equal(((await response.json()) as { accepted: boolean }).accepted, true);
+  }, { repositoryProjects: { "yoophi-a/specrail": "project-mapped" } });
+
+  assert.deepEqual(calls[1]?.input, {
+    projectId: "project-mapped",
+    title: "GitHub issue #123: Implement GitHub entrypoint",
+    description: "Created from GitHub issue yoophi-a/specrail#123 by @octocat.",
+    priority: "medium",
+  });
+});
+
+test("GitHub webhook HTTP app rejects unmapped repositories when repository allowlist is configured", async () => {
+  const { port, calls } = createSpecRailPort();
+  await withGitHubWebhookServer(port, async (baseUrl) => {
+    const body = JSON.stringify(payload("/specrail run unmapped"));
+    const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), { accepted: false, reason: "unsupported_repository" });
+  }, { repositoryProjects: { "other/repo": "project-other" } });
+
+  assert.deepEqual(calls, []);
+});
+
+test("GitHub webhook HTTP app authorizes allowed actors and rejects unauthorized actors", async () => {
+  const allowed = createSpecRailPort();
+  await withGitHubWebhookServer(allowed.port, async (baseUrl) => {
+    const body = JSON.stringify(payload("/specrail run authorized"));
+    const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 202);
+    assert.equal(((await response.json()) as { accepted: boolean }).accepted, true);
+  }, { allowedActors: ["octocat"] });
+  assert.notDeepEqual(allowed.calls, []);
+
+  const rejected = createSpecRailPort();
+  await withGitHubWebhookServer(rejected.port, async (baseUrl) => {
+    const body = JSON.stringify(payload("/specrail run unauthorized"));
+    const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), { accepted: false, reason: "unauthorized_actor" });
+  }, { allowedActors: ["hubot"] });
+  assert.deepEqual(rejected.calls, []);
 });
