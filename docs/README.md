@@ -16,6 +16,7 @@ Use this index to find the right reference before changing SpecRail's core servi
 - [Next steps from 2026-04-09](./architecture/next-steps-2026-04-09.md) — earlier planning notes for follow-up work.
 - [Interactive planning layer](./architecture/interactive-planning-layer.md) — planning workflow direction.
 - [Telegram bot interface strategy](./architecture/telegram-bot-interface-strategy.md) — Telegram-facing product and integration strategy.
+- [GitHub entrypoint architecture slice](./architecture/github-entrypoint-slice.md) — minimal GitHub issue/PR command and webhook design over existing SpecRail APIs.
 - [GitHub Speckit/OpenSpec integration plan](./architecture/github-speckit-openspec-integration-plan.md) — integration strategy for GitHub, Speckit, and OpenSpec.
 
 ## Execution and adapters

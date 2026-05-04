@@ -46,7 +46,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - production auth system
 - production deployment manifests
 - worktree/git branch orchestration beyond metadata
-- hosted GitHub app/webhook automation
+- hosted GitHub app/webhook automation implementation
 - web UI
 
 ## Next milestone candidates
@@ -88,6 +88,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted operator UI can select project scope for track listings via the same HTTP contract
 
 ### Milestone E — Hosted operator UI / GitHub entrypoints
+- minimal GitHub issue-comment command/webhook architecture is defined as a thin frontend over existing project, track, planning, run, event, and report APIs
 - first hosted operator UI slice is served from `GET /operator` with HTML/script helpers isolated in `apps/api/src/operator-ui.ts`
 - hosted UI loads project, track, and run summary state from the existing HTTP API
 - hosted UI can create/update projects through existing project APIs
@@ -126,6 +127,6 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
    - audit Codex and Claude Code payload fields that still leak provider-specific structure into first-class UI decisions.
    - promote stable fields into shared event summaries/status metadata while preserving provider details in `payload` for debugging.
 
-3. **Define the hosted GitHub entrypoint slice**
-   - document the smallest GitHub webhook/app flow that should create or update tracks using existing project, track, planning, approval, and run APIs.
-   - avoid parallel state or artifact workflows; GitHub should remain another thin frontend over the same HTTP/SSE contracts.
+3. **Implement the minimal GitHub issue-comment entrypoint**
+   - add the `github` binding/source support and an `apps/github` webhook frontend from the architecture slice.
+   - validate webhook signatures, authorize `/specrail run`, reuse/create track bindings, start runs, and post terminal outcome comments with report links.
