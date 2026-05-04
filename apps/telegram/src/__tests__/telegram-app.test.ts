@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleTelegramUpdate, parseAttachmentReferences, SpecRailApiClient } from "../index.js";
+import { buildRunReportUrl, handleTelegramUpdate, parseAttachmentReferences, SpecRailApiClient } from "../index.js";
 
 test("parseAttachmentReferences extracts document and photo references", () => {
   assert.deepEqual(
@@ -88,6 +88,61 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
     "7:Run run-1 is running.",
     "7:[run-1] Run started",
     "7:[run-1] Run completed",
+  ]);
+});
+
+test("buildRunReportUrl encodes run ids against the configured API base", () => {
+  assert.equal(buildRunReportUrl("http://127.0.0.1:4000", "run/1"), "http://127.0.0.1:4000/runs/run%2F1/report.md");
+});
+
+test("handleTelegramUpdate adds report links only to terminal run notifications", async () => {
+  const telegramMessages: string[] = [];
+
+  await handleTelegramUpdate(
+    {
+      update_id: 2,
+      message: {
+        message_id: 200,
+        text: "Run with report link",
+        chat: { id: 88, type: "private" },
+      },
+    },
+    {
+      specRail: {
+        async findChannelBinding() {
+          return { id: "binding-1", trackId: "track-9" };
+        },
+        async createTrack() {
+          throw new Error("should not create a new track");
+        },
+        async bindChannel() {
+          throw new Error("should not rebind");
+        },
+        async registerAttachment() {
+          return { attachment: { id: "attachment-1" } };
+        },
+        async startRun() {
+          return { run: { id: "run-2", status: "running" } };
+        },
+        async *streamRunEvents() {
+          yield { type: "task_status_changed", summary: "Run started" };
+          yield { type: "task_status_changed", summary: "Run failed" };
+        },
+      },
+      telegram: {
+        async sendMessage(input) {
+          telegramMessages.push(input.text);
+        },
+      },
+      runReportBaseUrl: "http://127.0.0.1:4000",
+    },
+  );
+
+  assert.deepEqual(telegramMessages, [
+    "Using existing SpecRail track track-9. Starting a new run.",
+    "Run run-2 is running.",
+    "[run-2] Run started",
+    "[run-2] Run failed\nReport: http://127.0.0.1:4000/runs/run-2/report.md",
   ]);
 });
 

@@ -113,6 +113,23 @@ function getPromptFromMessage(message: TelegramMessage): string {
   return text || "Please inspect the linked Telegram attachments and continue the existing SpecRail context.";
 }
 
+export function buildRunReportUrl(apiBaseUrl: string, runId: string): string {
+  return new URL(`/runs/${encodeURIComponent(runId)}/report.md`, apiBaseUrl).toString();
+}
+
+function isTerminalRunSummary(summary: string): boolean {
+  return ["completed", "failed", "cancelled"].includes(summary.toLowerCase().replace(/^run /u, ""));
+}
+
+function formatRunEventTelegramMessage(runId: string, summary: string, reportBaseUrl?: string): string {
+  const baseMessage = `[${runId}] ${summary}`;
+  if (!reportBaseUrl || !isTerminalRunSummary(summary)) {
+    return baseMessage;
+  }
+
+  return `${baseMessage}\nReport: ${buildRunReportUrl(reportBaseUrl, runId)}`;
+}
+
 export function parseAttachmentReferences(message: TelegramMessage): Array<{
   sourceType: "telegram";
   externalFileId: string;
@@ -318,6 +335,7 @@ export interface TelegramFrontendDeps {
   >;
   telegram: Pick<TelegramBotClient, "sendMessage">;
   projectId?: string;
+  runReportBaseUrl?: string;
 }
 
 export async function handleTelegramUpdate(update: TelegramUpdate, deps: TelegramFrontendDeps): Promise<void> {
@@ -401,10 +419,10 @@ export async function handleTelegramUpdate(update: TelegramUpdate, deps: Telegra
     await deps.telegram.sendMessage({
       chatId: refs.chatId,
       messageThreadId: refs.threadId,
-      text: `[${run.run.id}] ${event.summary}`,
+      text: formatRunEventTelegramMessage(run.run.id, event.summary, deps.runReportBaseUrl),
     });
 
-    if (["completed", "failed", "cancelled"].includes(event.summary.toLowerCase().replace(/^run /u, ""))) {
+    if (isTerminalRunSummary(event.summary)) {
       break;
     }
   }
@@ -438,7 +456,12 @@ export function createTelegramWebhookServer(config: TelegramAppConfig, deps: Tel
 export function createDefaultTelegramServer(config: TelegramAppConfig = loadTelegramAppConfig()): http.Server {
   const specRail = new SpecRailApiClient(config.apiBaseUrl);
   const telegram = new TelegramBotClient(config.telegramBotToken);
-  return createTelegramWebhookServer(config, { specRail, telegram, projectId: config.projectId });
+  return createTelegramWebhookServer(config, {
+    specRail,
+    telegram,
+    projectId: config.projectId,
+    runReportBaseUrl: config.apiBaseUrl,
+  });
 }
 
 const isMainModule = process.argv[1] ? pathToFileURL(process.argv[1]).href === import.meta.url : false;
