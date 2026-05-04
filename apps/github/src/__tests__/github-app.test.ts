@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { test } from "node:test";
 import {
   buildGitHubSignature256,
+  createGitHubWebhookHttpServer,
   executeGitHubRunCommand,
   formatGitHubTerminalOutcomeComment,
   handleGitHubWebhookCommand,
@@ -263,4 +265,97 @@ test("postGitHubTerminalOutcomeComment posts terminal comments and ignores progr
 
   assert.deepEqual(ignored, { posted: false, reason: "non_terminal_status" });
   assert.equal(calls.length, 1);
+});
+
+async function withGitHubWebhookServer(
+  specRail: GitHubSpecRailPort,
+  fn: (baseUrl: string) => Promise<void>,
+): Promise<void> {
+  const server = createGitHubWebhookHttpServer({
+    config: {
+      apiBaseUrl: "https://specrail.example.test",
+      port: 0,
+      webhookPath: "/github/webhook",
+      webhookSecret: secret,
+      projectId: "project-default",
+    },
+    specRail,
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  try {
+    await fn(`http://127.0.0.1:${address.port}`);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+}
+
+function signedWebhookInit(body: string, signature = buildGitHubSignature256(secret, body)): RequestInit {
+  return {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-github-event": "issue_comment",
+      "x-hub-signature-256": signature,
+    },
+    body,
+  };
+}
+
+test("GitHub webhook HTTP app accepts run commands and invokes orchestration", async () => {
+  const { port, calls } = createSpecRailPort();
+  await withGitHubWebhookServer(port, async (baseUrl) => {
+    const body = JSON.stringify(payload("/specrail run from http"));
+    const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 202);
+    const responseBody = (await response.json()) as { accepted: boolean; outcome: { runId: string; reportUrl: string } };
+    assert.equal(responseBody.accepted, true);
+    assert.equal(responseBody.outcome.runId, "run-created");
+    assert.equal(responseBody.outcome.reportUrl, "https://specrail.example.test/runs/run-created/report.md");
+    assert.deepEqual(calls.map((call) => call.name), ["findChannelBinding", "createTrack", "bindChannel", "startRun"]);
+  });
+});
+
+test("GitHub webhook HTTP app ignores non-command comments without starting runs", async () => {
+  const { port, calls } = createSpecRailPort();
+  await withGitHubWebhookServer(port, async (baseUrl) => {
+    const body = JSON.stringify(payload("Looks good"));
+    const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), { accepted: false, reason: "unsupported_command" });
+    assert.deepEqual(calls, []);
+  });
+});
+
+test("GitHub webhook HTTP app rejects invalid signatures and bad JSON", async () => {
+  const { port, calls } = createSpecRailPort();
+  await withGitHubWebhookServer(port, async (baseUrl) => {
+    const body = JSON.stringify(payload("/specrail run"));
+    const invalidSignatureResponse = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body, "sha256=bad"));
+    assert.equal(invalidSignatureResponse.status, 401);
+    assert.deepEqual(await invalidSignatureResponse.json(), { accepted: false, reason: "invalid_signature" });
+
+    const badJsonResponse = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit("{"));
+    assert.equal(badJsonResponse.status, 400);
+    assert.deepEqual(await badJsonResponse.json(), { error: "invalid_json" });
+    assert.deepEqual(calls, []);
+  });
+});
+
+test("GitHub webhook HTTP app surfaces orchestration failures", async () => {
+  const { port } = createSpecRailPort({
+    async startRun() {
+      throw new Error("SpecRail unavailable");
+    },
+  });
+
+  await withGitHubWebhookServer(port, async (baseUrl) => {
+    const body = JSON.stringify(payload("/specrail run"));
+    const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), { error: "specrail_request_failed", message: "SpecRail unavailable" });
+  });
 });
