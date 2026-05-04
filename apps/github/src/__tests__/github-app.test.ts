@@ -9,9 +9,11 @@ import {
   createSpecRailHttpClient,
   executeGitHubRunCommand,
   formatGitHubTerminalOutcomeComment,
+  getTerminalStatusFromRunEvent,
   handleGitHubWebhookCommand,
   parseSpecRailIssueCommentCommand,
   postGitHubTerminalOutcomeComment,
+  relayGitHubRunTerminalOutcome,
   startGitHubWebhookApp,
   verifyGitHubSignature256,
   type GitHubAcceptedRunCommandContext,
@@ -283,6 +285,7 @@ async function withGitHubWebhookServer(
       webhookSecret: secret,
       projectId: "project-default",
       githubApiBaseUrl: "https://api.github.example.test",
+      followTerminalEvents: false,
     },
     specRail,
   });
@@ -494,6 +497,7 @@ test("startGitHubWebhookApp starts the webhook server with injected config and p
       webhookSecret: secret,
       projectId: "project-default",
       githubApiBaseUrl: "https://api.github.example.test",
+      followTerminalEvents: false,
     },
     specRail: port,
   });
@@ -571,4 +575,163 @@ test("createGitHubRestIssueCommentClient rejects invalid repository names and pr
       /GitHub API POST \/repos\/yoophi-a\/specrail\/issues\/123\/comments failed with 403.*Resource not accessible/u,
     );
   });
+});
+
+test("getTerminalStatusFromRunEvent derives terminal status from payloads and summaries", () => {
+  assert.equal(getTerminalStatusFromRunEvent({ type: "task_status_changed", payload: { status: "completed" } }), "completed");
+  assert.equal(getTerminalStatusFromRunEvent({ type: "task_status_changed", payload: { status: "failed" } }), "failed");
+  assert.equal(getTerminalStatusFromRunEvent({ type: "task_status_changed", summary: "Run cancelled" }), "cancelled");
+  assert.equal(getTerminalStatusFromRunEvent({ type: "task_status_changed", summary: "Run is still running" }), undefined);
+});
+
+test("relayGitHubRunTerminalOutcome posts exactly one terminal outcome comment", async () => {
+  const comments: Array<{ repositoryFullName: string; issueNumber: number; body: string }> = [];
+  const result = await relayGitHubRunTerminalOutcome({
+    specRail: {
+      async *streamRunEvents() {
+        yield { type: "task_status_changed", summary: "Run is running" };
+        yield { type: "task_status_changed", payload: { status: "completed" } };
+        yield { type: "task_status_changed", payload: { status: "failed" } };
+      },
+    },
+    github: {
+      async createIssueComment(input: { repositoryFullName: string; issueNumber: number; body: string }) {
+        comments.push(input);
+        return { id: 1001, url: "https://github.com/yoophi-a/specrail/issues/123#issuecomment-1001" };
+      },
+    },
+    repositoryFullName: "yoophi-a/specrail",
+    issueNumber: 123,
+    runId: "run-1",
+    reportUrl: "https://specrail.example.test/runs/run-1/report.md",
+  });
+
+  assert.deepEqual(result, {
+    posted: true,
+    status: "completed",
+    body: "SpecRail run run-1 completed.\nReport: https://specrail.example.test/runs/run-1/report.md",
+    comment: { id: 1001, url: "https://github.com/yoophi-a/specrail/issues/123#issuecomment-1001" },
+  });
+  assert.deepEqual(comments, [
+    {
+      repositoryFullName: "yoophi-a/specrail",
+      issueNumber: 123,
+      body: "SpecRail run run-1 completed.\nReport: https://specrail.example.test/runs/run-1/report.md",
+    },
+  ]);
+});
+
+test("relayGitHubRunTerminalOutcome no-ops when no terminal event or stream is unavailable", async () => {
+  const github = {
+    async createIssueComment() {
+      throw new Error("should not post");
+    },
+  };
+
+  assert.deepEqual(
+    await relayGitHubRunTerminalOutcome({
+      specRail: {},
+      github,
+      repositoryFullName: "yoophi-a/specrail",
+      issueNumber: 123,
+      runId: "run-1",
+    }),
+    { posted: false, reason: "stream_not_available" },
+  );
+
+  assert.deepEqual(
+    await relayGitHubRunTerminalOutcome({
+      specRail: {
+        async *streamRunEvents() {
+          yield { type: "task_status_changed", summary: "Run is running" };
+        },
+      },
+      github,
+      repositoryFullName: "yoophi-a/specrail",
+      issueNumber: 123,
+      runId: "run-1",
+    }),
+    { posted: false, reason: "no_terminal_event" },
+  );
+});
+
+test("createSpecRailHttpClient streams run events and preserves SSE failures", async () => {
+  await withJsonServer((request, response) => {
+    if (request.url === "/runs/run-1/events/stream") {
+      response.statusCode = 200;
+      response.setHeader("content-type", "text/event-stream");
+      response.end('event: message\ndata: {"type":"task_status_changed","summary":"Run completed","payload":{"status":"completed"}}\n\n');
+      return;
+    }
+    response.statusCode = 500;
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ error: "stream failed" }));
+  }, async (baseUrl) => {
+    const client = createSpecRailHttpClient(baseUrl);
+    const events = [];
+    for await (const event of client.streamRunEvents?.("run-1") ?? []) {
+      events.push(event);
+    }
+    assert.deepEqual(events, [{ type: "task_status_changed", summary: "Run completed", payload: { status: "completed" } }]);
+
+    await assert.rejects(async () => {
+      for await (const _event of client.streamRunEvents?.("run-2") ?? []) {
+        // consume stream
+      }
+    }, /SpecRail API GET \/runs\/run-2\/events\/stream failed with 500.*stream failed/u);
+  });
+});
+
+test("GitHub webhook HTTP app optionally follows terminal events and returns relay result", async () => {
+  const comments: Array<{ repositoryFullName: string; issueNumber: number; body: string }> = [];
+  const { port } = createSpecRailPort({
+    async *streamRunEvents() {
+      yield { type: "task_status_changed", payload: { status: "failed" } };
+    },
+  });
+
+  const server = createGitHubWebhookHttpServer({
+    config: {
+      apiBaseUrl: "https://specrail.example.test",
+      port: 0,
+      webhookPath: "/github/webhook",
+      webhookSecret: secret,
+      projectId: "project-default",
+      githubApiBaseUrl: "https://api.github.example.test",
+      followTerminalEvents: true,
+    },
+    specRail: port,
+    github: {
+      async createIssueComment(input: { repositoryFullName: string; issueNumber: number; body: string }) {
+        comments.push(input);
+        return { id: 1001 };
+      },
+    },
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  try {
+    const body = JSON.stringify(payload("/specrail run"));
+    const response = await fetch(`http://127.0.0.1:${address.port}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 202);
+    const responseBody = (await response.json()) as { relay: { posted: boolean; status: string } };
+    assert.deepEqual(responseBody.relay, {
+      posted: true,
+      status: "failed",
+      body: "SpecRail run run-created failed.\nReport: https://specrail.example.test/runs/run-created/report.md",
+      comment: { id: 1001 },
+    });
+    assert.deepEqual(comments, [
+      {
+        repositoryFullName: "yoophi-a/specrail",
+        issueNumber: 123,
+        body: "SpecRail run run-created failed.\nReport: https://specrail.example.test/runs/run-created/report.md",
+      },
+    ]);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
 });

@@ -17,6 +17,7 @@ export interface GitHubAppConfig {
   projectId: string;
   githubApiBaseUrl: string;
   githubToken?: string;
+  followTerminalEvents: boolean;
 }
 
 export interface GitHubIssueCommentCommandEvent {
@@ -73,6 +74,13 @@ export interface GitHubSpecRailPort {
     planningSessionId?: string;
   }): Promise<{ binding: { id: string; trackId?: string; planningSessionId?: string } }>;
   startRun(input: { trackId: string; planningSessionId?: string; prompt: string }): Promise<{ run: { id: string; status: string } }>;
+  streamRunEvents?(runId: string): AsyncGenerator<GitHubRunEvent>;
+}
+
+export interface GitHubRunEvent {
+  type: string;
+  summary?: string;
+  payload?: { status?: string };
 }
 
 export interface GitHubRunCommandOutcome {
@@ -108,6 +116,10 @@ export type GitHubTerminalOutcomeCommentResult =
   | { posted: true; body: string; comment: { id?: string | number; url?: string } }
   | { posted: false; reason: "non_terminal_status" };
 
+export type GitHubRunEventRelayResult =
+  | { posted: true; status: "completed" | "failed" | "cancelled"; body: string; comment: { id?: string | number; url?: string } }
+  | { posted: false; reason: "no_terminal_event" | "stream_not_available" };
+
 export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig {
   return {
     apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
@@ -117,6 +129,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     projectId: env.SPECRAIL_GITHUB_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID ?? "project-default",
     githubApiBaseUrl: env.GITHUB_API_BASE_URL ?? "https://api.github.com",
     githubToken: env.GITHUB_TOKEN ?? env.GITHUB_INSTALLATION_TOKEN,
+    followTerminalEvents: env.GITHUB_FOLLOW_TERMINAL_EVENTS === "true",
   };
 }
 
@@ -160,6 +173,44 @@ export function createGitHubRestIssueCommentClient(input: { token: string; apiBa
       });
     },
   };
+}
+
+async function* parseSpecRailSseStream<T>(response: Response): AsyncGenerator<T> {
+  if (!response.body) {
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const chunk = await reader.read();
+    if (chunk.done) {
+      break;
+    }
+
+    buffer += decoder.decode(chunk.value, { stream: true });
+
+    while (true) {
+      const separatorIndex = buffer.indexOf("\n\n");
+      if (separatorIndex === -1) {
+        break;
+      }
+
+      const frame = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      const dataLine = frame
+        .split("\n")
+        .find((line) => line.startsWith("data:"))
+        ?.slice(5)
+        .trim();
+
+      if (dataLine) {
+        yield JSON.parse(dataLine) as T;
+      }
+    }
+  }
 }
 
 async function specRailJsonRequest<T>(baseUrl: string, path: string, init: RequestInit = {}): Promise<T> {
@@ -213,6 +264,17 @@ export function createSpecRailHttpClient(apiBaseUrl: string): GitHubSpecRailPort
     },
     async startRun(input) {
       return specRailJsonRequest(apiBaseUrl, "/runs", { method: "POST", body: JSON.stringify(input) });
+    },
+    async *streamRunEvents(runId) {
+      const path = `/runs/${encodeURIComponent(runId)}/events/stream`;
+      const response = await fetch(new URL(path, apiBaseUrl), { headers: { accept: "text/event-stream" } });
+      if (!response.ok || !response.body) {
+        const responseText = await response.text();
+        const bodySuffix = responseText ? `: ${responseText}` : "";
+        throw new Error(`SpecRail API GET ${path} failed with ${response.status}${bodySuffix}`);
+      }
+
+      yield* parseSpecRailSseStream<GitHubRunEvent>(response);
     },
   };
 }
@@ -286,6 +348,25 @@ function isTerminalGitHubRunStatus(status: GitHubRunOutcomeStatus): status is "c
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
+export function getTerminalStatusFromRunEvent(event: GitHubRunEvent): "completed" | "failed" | "cancelled" | undefined {
+  const payloadStatus = event.payload?.status;
+  if (payloadStatus === "completed" || payloadStatus === "failed" || payloadStatus === "cancelled") {
+    return payloadStatus;
+  }
+
+  const summary = event.summary?.toLowerCase() ?? "";
+  if (/\bcompleted\b|\brun completed\b/u.test(summary)) {
+    return "completed";
+  }
+  if (/\bfailed\b|\brun failed\b/u.test(summary)) {
+    return "failed";
+  }
+  if (/\bcancelled\b|\bcanceled\b|\brun cancelled\b|\brun canceled\b/u.test(summary)) {
+    return "cancelled";
+  }
+  return undefined;
+}
+
 export function formatGitHubTerminalOutcomeComment(input: GitHubTerminalOutcomeCommentInput): string | undefined {
   if (!isTerminalGitHubRunStatus(input.status)) {
     return undefined;
@@ -315,6 +396,44 @@ export async function postGitHubTerminalOutcomeComment(input: {
   });
 
   return { posted: true, body, comment };
+}
+
+export async function relayGitHubRunTerminalOutcome(input: {
+  specRail: Pick<GitHubSpecRailPort, "streamRunEvents">;
+  github: GitHubIssueCommentPort;
+  repositoryFullName: string;
+  issueNumber: number;
+  runId: string;
+  reportUrl?: string;
+}): Promise<GitHubRunEventRelayResult> {
+  if (!input.specRail.streamRunEvents) {
+    return { posted: false, reason: "stream_not_available" };
+  }
+
+  for await (const event of input.specRail.streamRunEvents(input.runId)) {
+    const status = getTerminalStatusFromRunEvent(event);
+    if (!status) {
+      continue;
+    }
+
+    const result = await postGitHubTerminalOutcomeComment({
+      github: input.github,
+      outcome: {
+        repositoryFullName: input.repositoryFullName,
+        issueNumber: input.issueNumber,
+        runId: input.runId,
+        status,
+        reportUrl: input.reportUrl,
+      },
+    });
+
+    if (!result.posted) {
+      return { posted: false, reason: "no_terminal_event" };
+    }
+    return { posted: true, status, body: result.body, comment: result.comment };
+  }
+
+  return { posted: false, reason: "no_terminal_event" };
 }
 
 export async function executeGitHubRunCommand(input: {
@@ -439,7 +558,17 @@ export async function handleGitHubWebhookHttpRequest(
       specRail: deps.specRail,
       apiBaseUrl: deps.config.apiBaseUrl,
     });
-    sendJson(response, 202, { accepted: true, outcome });
+    const relay = deps.github && deps.config.followTerminalEvents
+      ? await relayGitHubRunTerminalOutcome({
+          specRail: deps.specRail,
+          github: deps.github,
+          repositoryFullName: command.repositoryFullName,
+          issueNumber: command.issueNumber,
+          runId: outcome.runId,
+          reportUrl: outcome.reportUrl,
+        })
+      : undefined;
+    sendJson(response, 202, relay ? { accepted: true, outcome, relay } : { accepted: true, outcome });
   } catch (error) {
     sendJson(response, 502, { error: "specrail_request_failed", message: error instanceof Error ? error.message : String(error) });
   }
