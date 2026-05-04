@@ -479,6 +479,7 @@ test("renderAppShell renders run event monitor details", () => {
   assert.match(rendered, /failure focus: Failed Claude Code session run-1-claude \(exit 1\)/);
   assert.match(rendered, /Runs \(1\/1, filter=terminal\)/);
   assert.match(rendered, /stream: reconnecting \(attempt 2\)/);
+  assert.match(rendered, /report: \/runs\/run-1\/report\.md/);
   assert.match(rendered, /operator actions: press e to resume this run, w to preview workspace cleanup, Space to pause tail/);
   assert.match(rendered, /recent activity:/);
   assert.match(rendered, /task_status_changed \| status=failed \| Failed Claude Code session run-1-claude/);

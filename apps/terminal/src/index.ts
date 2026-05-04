@@ -1260,6 +1260,7 @@ function renderRunDetail(
     `- finished: ${run.finishedAt ?? "not finished"}`,
     `- event summary: ${formatEventSummary(run, feed)}`,
     `- last event: ${lastEvent ? formatEventLine(lastEvent) : run.summary?.lastEventSummary ?? "none"}`,
+    `- report: ${formatRunReportUrl(run.id)}`,
     `- failure focus: ${recentFailure ? formatFailureFocus(recentFailure) : terminal && run.status === "failed" ? "run failed, inspect recent provider events" : "none"}`,
     `- stream: ${formatStreamStatus(feed, terminal)}`,
     `- operator actions: ${formatRunOperatorActions(run, feed)}`,
@@ -1272,6 +1273,10 @@ function nextProfileOption(backend: string, currentProfile: string): string {
   const options = EXECUTION_PROFILE_OPTIONS[backend] ?? ["default"];
   const currentIndex = options.findIndex((option) => option === currentProfile);
   return options[(currentIndex + 1 + options.length) % options.length] ?? currentProfile;
+}
+
+function formatRunReportUrl(runId: string): string {
+  return `/runs/${encodeURIComponent(runId)}/report.md`;
 }
 
 function formatRunOperatorActions(run: RunListItem, feed: RunEventFeedState): string {
