@@ -18,6 +18,8 @@ export interface GitHubAppConfig {
   githubApiBaseUrl: string;
   githubToken?: string;
   followTerminalEvents: boolean;
+  repositoryProjects: Record<string, string>;
+  allowedActors: string[];
 }
 
 export interface GitHubIssueCommentCommandEvent {
@@ -43,7 +45,14 @@ export type GitHubWebhookCommandResult =
   | GitHubAcceptedRunCommandContext
   | {
       accepted: false;
-      reason: "invalid_signature" | "unsupported_event" | "unsupported_action" | "unsupported_command" | "missing_context";
+      reason:
+        | "invalid_signature"
+        | "unsupported_event"
+        | "unsupported_action"
+        | "unsupported_command"
+        | "missing_context"
+        | "unsupported_repository"
+        | "unauthorized_actor";
     };
 
 export interface GitHubAcceptedRunCommandContext {
@@ -127,6 +136,54 @@ export type GitHubRunEventRelayResult =
 
 export type GitHubRunEventRelayScheduleResult = { scheduled: true } | { scheduled: false; reason: "disabled" | "missing_github_client" };
 
+function parseRepositoryProjectMap(value: string | undefined): Record<string, string> {
+  if (!value?.trim()) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const [repositoryFullName, projectId] = entry.split("=").map((part) => part.trim());
+        if (!repositoryFullName || !projectId) {
+          throw new Error(`invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: ${entry}`);
+        }
+        return [repositoryFullName, projectId];
+      }),
+  );
+}
+
+function parseCsvList(value: string | undefined): string[] {
+  if (!value?.trim()) {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+export function resolveGitHubProjectId(config: Pick<GitHubAppConfig, "projectId" | "repositoryProjects">, repositoryFullName: string): string | undefined {
+  const configuredProject = config.repositoryProjects[repositoryFullName];
+  if (configuredProject) {
+    return configuredProject;
+  }
+  return Object.keys(config.repositoryProjects).length > 0 ? undefined : config.projectId;
+}
+
+export function isGitHubActorAuthorized(config: Pick<GitHubAppConfig, "allowedActors">, senderLogin?: string): boolean {
+  if (config.allowedActors.length === 0) {
+    return true;
+  }
+  if (!senderLogin) {
+    return false;
+  }
+  return config.allowedActors.includes(senderLogin) || config.allowedActors.includes(`@${senderLogin}`);
+}
+
 export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig {
   return {
     apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
@@ -137,6 +194,8 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubApiBaseUrl: env.GITHUB_API_BASE_URL ?? "https://api.github.com",
     githubToken: env.GITHUB_TOKEN ?? env.GITHUB_INSTALLATION_TOKEN,
     followTerminalEvents: env.GITHUB_FOLLOW_TERMINAL_EVENTS === "true",
+    repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
+    allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
   };
 }
 
@@ -609,8 +668,18 @@ export async function handleGitHubWebhookHttpRequest(
   }
 
   try {
+    const projectId = resolveGitHubProjectId(deps.config, command.repositoryFullName);
+    if (!projectId) {
+      sendJson(response, 202, { accepted: false, reason: "unsupported_repository" });
+      return;
+    }
+    if (!isGitHubActorAuthorized(deps.config, command.senderLogin)) {
+      sendJson(response, 202, { accepted: false, reason: "unauthorized_actor" });
+      return;
+    }
+
     const outcome = await executeGitHubRunCommand({
-      projectId: deps.config.projectId,
+      projectId,
       context: command,
       specRail: deps.specRail,
       apiBaseUrl: deps.config.apiBaseUrl,
