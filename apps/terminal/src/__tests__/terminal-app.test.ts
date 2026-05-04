@@ -408,6 +408,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
   assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, h\/l artifact, \[\/\] revision, v propose, f run filter, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, v proposes, a\/x approves or rejects pending revisions, s starts a run\./);
 });
 
 test("renderAppShell renders run event monitor details", () => {
@@ -510,6 +511,7 @@ test("renderAppShell renders run event monitor details", () => {
   assert.match(rendered, /stream: reconnecting \(attempt 2\)/);
   assert.match(rendered, /report: \/runs\/run-1\/report\.md/);
   assert.match(rendered, /operator actions: press e to resume this run, w to preview workspace cleanup, Space to pause tail/);
+  assert.match(rendered, /Help: runs — f cycles filters, Space pauses live tail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup\./);
   assert.match(rendered, /recent activity:/);
   assert.match(rendered, /tool_call \| claude_tool_call \| Claude requested tool Bash — tool=Bash, id=toolu-1, input=\{\"command\":\"pnpm test -- --runInBand\"\}/);
   assert.match(rendered, /approval_requested \| claude_permission_denial \| Claude requested approval for Bash — request=approval-1, tool=Bash/);
@@ -582,6 +584,7 @@ test("renderAppShell renders guarded workspace cleanup preview and confirmation 
   assert.match(rendered, /server confirmation: apply workspace cleanup for run-cleanup-a/);
   assert.match(rendered, /result: refused/);
   assert.match(rendered, /Press Enter again to apply cleanup with that exact phrase/);
+  assert.match(rendered, /Help: workspace cleanup — Enter requests confirmation\/applies when ready, Esc aborts, r refreshes selected run\./);
 });
 
 test("selectNextItem advances run selection on runs screen", () => {

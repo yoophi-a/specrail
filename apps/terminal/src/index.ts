@@ -894,10 +894,63 @@ export function renderAppShell(state: TerminalAppState): string {
     "",
     `Status: ${state.statusLine}`,
     `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, h/l artifact, [/] revision, v propose, f run filter, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    ...renderContextualHelp(state),
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
     ...renderWorkspaceCleanupComposer(state.pendingWorkspaceCleanupAction ?? null),
   ].join("\n");
+}
+
+function renderContextualHelp(state: TerminalAppState): string[] {
+  const lines = [""];
+
+  if (state.pendingWorkspaceCleanupAction) {
+    return [
+      ...lines,
+      "Help: workspace cleanup — Enter requests confirmation/applies when ready, Esc aborts, r refreshes selected run.",
+    ];
+  }
+
+  if (state.pendingProposalAction) {
+    return [
+      ...lines,
+      "Help: proposal composer — type edits the active field, Tab switches summary/content, g cycles author, Enter submits, Esc aborts.",
+    ];
+  }
+
+  if (state.pendingExecutionAction) {
+    const promptHelp = state.pendingExecutionAction.kind === "cancel"
+      ? "Enter confirms cancellation, Esc aborts."
+      : "type edits prompt, p cycles profile, b cycles backend when unlocked, Enter submits, Esc aborts.";
+    return [
+      ...lines,
+      `Help: ${state.pendingExecutionAction.kind} composer — ${promptHelp}`,
+    ];
+  }
+
+  switch (state.screen) {
+    case "tracks":
+      return [
+        ...lines,
+        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, v proposes, a/x approves or rejects pending revisions, s starts a run.",
+      ];
+    case "runs":
+      return [
+        ...lines,
+        "Help: runs — f cycles filters, Space pauses live tail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup.",
+      ];
+    case "settings":
+      return [
+        ...lines,
+        "Help: settings — review API/refresh configuration, use 1/2/3 to jump back to active work, r refreshes data.",
+      ];
+    case "home":
+    default:
+      return [
+        ...lines,
+        "Help: home — use 2 for tracks, 3 for runs, P to narrow project scope, r to refresh the snapshot.",
+      ];
+  }
 }
 
 function renderWorkspaceCleanupComposer(action: PendingWorkspaceCleanupActionState | null): string[] {
