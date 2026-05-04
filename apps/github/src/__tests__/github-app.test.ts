@@ -682,8 +682,9 @@ test("createSpecRailHttpClient streams run events and preserves SSE failures", a
   });
 });
 
-test("GitHub webhook HTTP app optionally follows terminal events and returns relay result", async () => {
+test("GitHub webhook HTTP app schedules terminal relay without waiting for terminal events", async () => {
   const comments: Array<{ repositoryFullName: string; issueNumber: number; body: string }> = [];
+  const tasks: Array<() => Promise<void>> = [];
   const { port } = createSpecRailPort({
     async *streamRunEvents() {
       yield { type: "task_status_changed", payload: { status: "failed" } };
@@ -707,6 +708,11 @@ test("GitHub webhook HTTP app optionally follows terminal events and returns rel
         return { id: 1001 };
       },
     },
+    scheduler: {
+      schedule(task) {
+        tasks.push(task);
+      },
+    },
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -716,13 +722,12 @@ test("GitHub webhook HTTP app optionally follows terminal events and returns rel
     const body = JSON.stringify(payload("/specrail run"));
     const response = await fetch(`http://127.0.0.1:${address.port}/github/webhook`, signedWebhookInit(body));
     assert.equal(response.status, 202);
-    const responseBody = (await response.json()) as { relay: { posted: boolean; status: string } };
-    assert.deepEqual(responseBody.relay, {
-      posted: true,
-      status: "failed",
-      body: "SpecRail run run-created failed.\nReport: https://specrail.example.test/runs/run-created/report.md",
-      comment: { id: 1001 },
-    });
+    const responseBody = (await response.json()) as { relay: { scheduled: boolean } };
+    assert.deepEqual(responseBody.relay, { scheduled: true });
+    assert.deepEqual(comments, []);
+    assert.equal(tasks.length, 1);
+
+    await tasks[0]?.();
     assert.deepEqual(comments, [
       {
         repositoryFullName: "yoophi-a/specrail",
@@ -730,6 +735,56 @@ test("GitHub webhook HTTP app optionally follows terminal events and returns rel
         body: "SpecRail run run-created failed.\nReport: https://specrail.example.test/runs/run-created/report.md",
       },
     ]);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
+
+test("GitHub webhook HTTP app surfaces terminal relay enqueue failures", async () => {
+  const { port } = createSpecRailPort();
+  const server = createGitHubWebhookHttpServer({
+    config: {
+      apiBaseUrl: "https://specrail.example.test",
+      port: 0,
+      webhookPath: "/github/webhook",
+      webhookSecret: secret,
+      projectId: "project-default",
+      githubApiBaseUrl: "https://api.github.example.test",
+      followTerminalEvents: true,
+    },
+    specRail: port,
+    github: {
+      async createIssueComment() {
+        return { id: 1001 };
+      },
+    },
+    scheduler: {
+      schedule() {
+        throw new Error("queue unavailable");
+      },
+    },
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  try {
+    const body = JSON.stringify(payload("/specrail run"));
+    const response = await fetch(`http://127.0.0.1:${address.port}/github/webhook`, signedWebhookInit(body));
+    assert.equal(response.status, 502);
+    const responseBody = (await response.json()) as { error: string; message: string; outcome: { runId: string } };
+    assert.deepEqual(responseBody, {
+      error: "github_relay_enqueue_failed",
+      message: "queue unavailable",
+      outcome: {
+        bindingCreated: true,
+        bindingId: "binding-created",
+        trackId: "track-created",
+        runId: "run-created",
+        reportUrl: "https://specrail.example.test/runs/run-created/report.md",
+      },
+    });
   } finally {
     server.close();
     await once(server, "close");

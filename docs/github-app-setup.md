@@ -18,6 +18,7 @@ When accepted, the app:
 4. Creates a track and GitHub channel binding when no binding exists.
 5. Starts a SpecRail run with either the opaque optional prompt or a default prompt derived from the issue/PR.
 6. Returns structured JSON containing the run outcome data, including the derived report URL when configured.
+7. When `GITHUB_FOLLOW_TERMINAL_EVENTS=true` and a GitHub token is configured, schedules a background terminal-outcome relay that posts one completed/failed/cancelled comment.
 
 ## Binding semantics
 
@@ -45,7 +46,7 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub REST API base URL for issue-comment posting. |
 | `GITHUB_TOKEN` | unset | Token used by the REST issue-comment client. |
 | `GITHUB_INSTALLATION_TOKEN` | unset | Fallback token when `GITHUB_TOKEN` is not set. |
-| `GITHUB_FOLLOW_TERMINAL_EVENTS` | `false` | When `true` and a GitHub comment client is supplied, follow the created run event stream and post one terminal outcome comment. |
+| `GITHUB_FOLLOW_TERMINAL_EVENTS` | `false` | When `true` and a GitHub comment client is supplied, schedule background following of the created run event stream and post one terminal outcome comment. |
 
 ## Running locally
 
@@ -71,15 +72,17 @@ For local development, expose the app through a tunnel and use the same `GITHUB_
 The webhook endpoint returns JSON responses:
 
 - `202 { accepted: true, outcome }` when a `/specrail run` command starts orchestration.
+- `202 { accepted: true, outcome, relay: { scheduled: true } }` when terminal outcome relay is enabled and successfully scheduled.
 - `202 { accepted: false, reason }` for ignored events, unsupported actions, unsupported commands, or missing context.
 - `401 { accepted: false, reason: "invalid_signature" }` for signature failures.
 - `400 { error: "invalid_json" }` for malformed JSON payloads.
 - `502 { error: "specrail_request_failed", message }` when the SpecRail API call fails.
+- `502 { error: "github_relay_enqueue_failed", message, outcome }` when run creation succeeds but the terminal relay scheduler rejects the background task.
 
 ## Current limitations
 
 - A REST issue-comment client exists for token-backed comment creation, but production GitHub App installation-token refresh is not implemented yet.
-- Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`, but the webhook response waits for the followed run to reach a terminal state in the current implementation.
+- Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling, not for the run to reach a terminal state.
 - Repository/project allowlists and actor/team authorization are not implemented yet.
 - Non-terminal progress is intentionally not posted to GitHub; use the operator UI, terminal, Telegram, or SSE surfaces for detailed progress.
 - GitHub is not a canonical artifact or run-history store. Completed-run reports remain derived read-only exports at `GET /runs/:runId/report.md`.
@@ -87,5 +90,5 @@ The webhook endpoint returns JSON responses:
 ## Recommended follow-ups
 
 1. Add GitHub App private-key authentication and installation-token refresh.
-2. Move terminal run following to a background worker/queue so webhook responses never wait on long-running jobs.
+2. Replace the in-process background scheduler with a durable worker/queue for production deployments.
 3. Add repository-to-project allowlist and actor authorization for `/specrail` commands.
