@@ -262,6 +262,7 @@ export interface TerminalAppState {
   runs: DetailPanelState<RunDetailSnapshot>;
   runFilter: RunFilterMode;
   runEvents: RunEventFeedState;
+  showRunEventDetail?: boolean;
   pendingTrackAction: PendingTrackActionState | null;
   pendingExecutionAction: PendingExecutionActionState | null;
   pendingProposalAction: PendingProposalActionState | null;
@@ -602,6 +603,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     runs: createEmptyDetailState<RunDetailSnapshot>(),
     runFilter: config.initialRunFilter,
     runEvents: createEmptyRunEventFeedState(),
+    showRunEventDetail: false,
     pendingTrackAction: null,
     pendingExecutionAction: null,
     pendingProposalAction: null,
@@ -682,6 +684,7 @@ export async function bootstrapTerminalState(
     runs,
     runFilter: config.initialRunFilter,
     runEvents: createEmptyRunEventFeedState(runs.selectedId),
+    showRunEventDetail: false,
     pendingTrackAction: null,
     pendingExecutionAction: null,
     pendingProposalAction: null,
@@ -900,7 +903,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, h/l artifact, [/] revision, v propose, f run filter, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, h/l artifact, [/] revision, v propose, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderContextualHelp(state),
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
@@ -944,7 +947,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "runs":
       return [
         ...lines,
-        "Help: runs — f cycles filters, Space pauses live tail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup.",
+        "Help: runs — f cycles filters, Space pauses live tail, d toggles event detail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup.",
       ];
     case "settings":
       return [
@@ -1129,7 +1132,7 @@ function renderRunsScreen(state: TerminalAppState): string[] {
     ),
     "",
     "Run detail",
-    ...renderRunDetail(detail, state.runs, selectedRun?.id ?? null, state.runEvents),
+    ...renderRunDetail(detail, state.runs, selectedRun?.id ?? null, state.runEvents, state.showRunEventDetail ?? false),
   ];
 }
 
@@ -1286,6 +1289,7 @@ function renderRunDetail(
   panel: DetailPanelState<RunDetailSnapshot>,
   selectedId: string | null,
   feed: RunEventFeedState,
+  showEventDetail: boolean,
 ): string[] {
   if (!selectedId) {
     return ["- No run selected."];
@@ -1326,7 +1330,34 @@ function renderRunDetail(
     `- operator actions: ${formatRunOperatorActions(run, feed)}`,
     "- recent activity:",
     ...renderRecentRunEvents(feed, run.id),
+    ...renderRunEventDetailLines(showEventDetail ? lastEvent : null),
   ];
+}
+
+function renderRunEventDetailLines(event: ExecutionEvent | null): string[] {
+  if (!event) {
+    return [];
+  }
+
+  return [
+    "- event detail:",
+    `  - id: ${event.id}`,
+    `  - type: ${event.type}${event.subtype ? ` / ${event.subtype}` : ""}`,
+    `  - source: ${event.source}`,
+    `  - timestamp: ${event.timestamp}`,
+    `  - summary: ${previewText(event.summary, 160)}`,
+    "  - payload:",
+    ...formatEventPayloadPreview(event.payload),
+  ];
+}
+
+function formatEventPayloadPreview(payload: Record<string, unknown> | undefined): string[] {
+  if (!payload || Object.keys(payload).length === 0) {
+    return ["    - none"];
+  }
+
+  const preview = previewMultilineText(JSON.stringify(payload, null, 2), 900);
+  return preview.split("\n").map((line) => `    ${line}`);
 }
 
 function nextProfileOption(backend: string, currentProfile: string): string {
@@ -1488,6 +1519,15 @@ function previewText(value: string, maxLength = 80): string {
   }
 
   return `${compact.slice(0, maxLength - 3)}...`;
+}
+
+function previewMultilineText(value: string, maxLength = 900): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, maxLength - 3)}...`;
 }
 
 export async function loadTerminalPreferences(path: string | null): Promise<Partial<TerminalPreferenceState>> {
@@ -2365,6 +2405,15 @@ export async function runTerminalApp(
 
       if (key.name === "space") {
         toggleRunTailPause();
+        return;
+      }
+
+      if (key.name === "d") {
+        updateState({
+          ...state,
+          showRunEventDetail: !(state.showRunEventDetail ?? false),
+          statusLine: state.showRunEventDetail ? "Run event detail hidden." : "Run event detail shown for the latest cached event.",
+        });
         return;
       }
 
