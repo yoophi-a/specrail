@@ -514,6 +514,46 @@ export class SpecRailAcpServer {
     };
   }
 
+  private toEventProjection(event: ExecutionEvent): Record<string, unknown> | undefined {
+    switch (event.type) {
+      case "tool_call":
+        return {
+          kind: "tool_call",
+          toolName: this.readString(event.payload?.toolName),
+          toolUseId: this.readString(event.payload?.toolUseId),
+        };
+      case "tool_result":
+        return {
+          kind: "tool_result",
+          toolName: this.readString(event.payload?.toolName),
+          toolUseId: this.readString(event.payload?.toolUseId),
+          exitCode: this.readNumber(event.payload?.exitCode),
+          status: this.readString(event.payload?.status),
+        };
+      case "approval_requested":
+        return {
+          kind: "approval_requested",
+          requestId: event.id,
+          toolName: this.readString(event.payload?.toolName),
+          toolUseId: this.readString(event.payload?.toolUseId),
+        };
+      case "approval_resolved":
+        return {
+          kind: "approval_resolved",
+          requestId: this.readString(event.payload?.requestId),
+          outcome: this.readString(event.payload?.outcome),
+          decidedBy: this.readString(event.payload?.decidedBy),
+        };
+      case "task_status_changed":
+        return {
+          kind: "task_status_changed",
+          status: this.readString(event.payload?.status),
+        };
+      default:
+        return undefined;
+    }
+  }
+
   private toSessionUpdate(sessionId: string, event: ExecutionEvent): Record<string, unknown> {
     return {
       jsonrpc: "2.0",
@@ -529,6 +569,7 @@ export class SpecRailAcpServer {
           _meta: {
             specrail: {
               executionEvent: event,
+              eventProjection: this.toEventProjection(event),
             },
           },
         },
@@ -585,6 +626,10 @@ export class SpecRailAcpServer {
 
   private readString(value: unknown): string | undefined {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
+  private readNumber(value: unknown): number | undefined {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
   }
 
   private readSessionStatus(event: ExecutionEvent): Execution["status"] | null {

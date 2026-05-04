@@ -84,6 +84,22 @@ function createFakeService() {
         summary: `Started ${runId}`,
         payload: { status: "running" },
       });
+      pushEvent(runId, {
+        executionId: runId,
+        type: "tool_call",
+        timestamp: "2026-04-13T00:00:00.500Z",
+        source: "executor",
+        summary: `Running tests for ${runId}`,
+        payload: { toolName: "shell", toolUseId: `tool-call-${runId}` },
+      });
+      pushEvent(runId, {
+        executionId: runId,
+        type: "tool_result",
+        timestamp: "2026-04-13T00:00:00.750Z",
+        source: "executor",
+        summary: `Tests passed for ${runId}`,
+        payload: { toolName: "shell", toolUseId: `tool-call-${runId}`, exitCode: 0, status: "completed" },
+      });
       if (requiresApproval) {
         pushEvent(runId, {
           id: `${runId}-approval-request`,
@@ -285,6 +301,9 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   assert.ok(
     notifications.some((payload) => JSON.stringify(payload).includes("Completed run-1")),
   );
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"task_status_changed","status":"running"}'));
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"tool_call","toolName":"shell","toolUseId":"tool-call-run-1"}'));
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"tool_result","toolName":"shell","toolUseId":"tool-call-run-1","exitCode":0,"status":"completed"}'));
 
   const listResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 4, method: "session/list", params: { cwd: "/tmp/specrail" } },
@@ -411,6 +430,7 @@ test("ACP server emits richer permission request and resolution updates", async 
 
   const infoUpdates = startNotifications.filter((payload) => payload.method === "session/update");
   assert.ok(infoUpdates.some((payload) => JSON.stringify(payload).includes('"status":"waiting_approval"')));
+  assert.ok(JSON.stringify(startNotifications).includes('"eventProjection":{"kind":"approval_requested","requestId":"run-1-approval-request","toolName":"Bash","toolUseId":"tool-run-1"}'));
 
   const permissionRequest = startNotifications.find((payload) => payload.method === "session/request_permission") as
     | { params?: { toolName?: string; requestId?: string } }
@@ -446,6 +466,7 @@ test("ACP server emits richer permission request and resolution updates", async 
 
   assert.deepEqual(resumeResponse?.result, { stopReason: "end_turn" });
   assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes("approval_resolved")));
+  assert.ok(JSON.stringify(resumeNotifications).includes('"eventProjection":{"kind":"approval_resolved","requestId":"run-1-approval-request","outcome":"approved","decidedBy":"user"}'));
   assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes('"status":"running"')));
   assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes('"status":"completed"')));
 });
