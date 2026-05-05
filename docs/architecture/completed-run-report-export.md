@@ -139,8 +139,10 @@ This report is a derived snapshot and does not replace canonical run history.
 ```http
 HTTP/1.1 200 OK
 Content-Type: text/markdown; charset=utf-8
-Content-Disposition: inline; filename="specrail-run-<runId>-report.md"
+Content-Disposition: attachment; filename="specrail-run-<runId>-report.md"
 ```
+
+The endpoint is still read-only, but the implemented response uses `attachment` so browsers and thin clients treat the Markdown as an explicit download/export with a stable filename hint.
 
 ### Errors
 
@@ -165,8 +167,5 @@ Renderer는 malformed event payload 때문에 실패하지 않아야 한다. sum
 
 ## 후속 작업
 
-1. `CompletedRunReportRenderer` 구현
-2. `GET /runs/:runId/report.md` API 추가
-3. Terminal/Hosted UI에서 report download link 노출
-4. 필요한 경우 CLI/admin wrapper 추가
-5. 긴 run을 위한 filter/limit/verbose 옵션 검토
+1. 필요한 경우 CLI/admin wrapper 추가
+2. 긴 run을 위한 filter/limit/verbose 옵션 검토
