@@ -107,6 +107,23 @@ export function renderOperatorUiStyleCss(): string {
     .detail-grid dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 0.75rem; margin: 0; }
     .detail-grid dt { font-weight: 700; }
     .artifact-preview { max-height: 12rem; overflow: auto; padding: 0.65rem; border-radius: 0.5rem; background: color-mix(in srgb, Canvas 88%, CanvasText 12%); white-space: pre-wrap; }
+    .pk-system-message { border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-left: 0.3rem solid color-mix(in srgb, Highlight 70%, CanvasText 10%); border-radius: 0.75rem; padding: 0.75rem; background: color-mix(in srgb, Canvas 88%, Highlight 12%); }
+    .pk-system-message.warning { border-left-color: color-mix(in srgb, orange 75%, CanvasText 15%); background: color-mix(in srgb, Canvas 88%, orange 12%); }
+    .pk-prompt-input { display: grid; gap: 0.6rem; padding: 0.75rem; border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 0.85rem; background: color-mix(in srgb, Canvas 92%, CanvasText 8%); }
+    .pk-prompt-input textarea { min-height: 6rem; border: 0; padding: 0; background: transparent; outline: none; }
+    .pk-prompt-actions { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .pk-action-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .pk-chat-container { display: grid; gap: 0.65rem; max-height: 18rem; overflow: auto; padding: 0.25rem; }
+    .pk-message { display: grid; gap: 0.25rem; padding: 0.7rem; border-radius: 0.8rem; border: 1px solid color-mix(in srgb, CanvasText 12%, transparent); background: color-mix(in srgb, Canvas 91%, CanvasText 9%); }
+    .pk-message-header { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
+    .pk-message-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .pk-source { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.5rem; border-radius: 999px; background: color-mix(in srgb, Highlight 14%, Canvas); text-decoration: none; }
+    .pk-steps { display: grid; gap: 0.5rem; }
+    .pk-step { position: relative; padding: 0.65rem 0.65rem 0.65rem 2rem; border-radius: 0.75rem; background: color-mix(in srgb, Canvas 91%, CanvasText 9%); }
+    .pk-step::before { content: ''; position: absolute; left: 0.7rem; top: 0.9rem; width: 0.55rem; height: 0.55rem; border-radius: 999px; background: color-mix(in srgb, Highlight 70%, CanvasText 20%); }
+    .pk-tool { display: grid; gap: 0.3rem; padding: 0.65rem; border-radius: 0.75rem; border: 1px solid color-mix(in srgb, CanvasText 14%, transparent); background: color-mix(in srgb, Canvas 88%, CanvasText 12%); }
+    .pk-tool-header { display: flex; gap: 0.5rem; justify-content: space-between; align-items: center; }
+    .pk-tool pre { margin: 0; padding: 0.55rem; border-radius: 0.5rem; background: color-mix(in srgb, Canvas 82%, CanvasText 18%); }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 `;
 }
@@ -203,6 +220,32 @@ export function renderOperatorUiClientScript(): string {
       return '<h3>' + escapeHtml(label) + '</h3><div class="artifact-preview">' + escapeHtml(String(value).slice(0, 2000)) + '</div>';
     }
 
+    function systemMessage(textValue, tone) {
+      return '<div class="pk-system-message' + (tone ? ' ' + escapeHtml(tone) : '') + '">' + escapeHtml(textValue) + '</div>';
+    }
+
+    function promptInput(label, textareaId, defaultValue, actionHtml, hint) {
+      return '<label class="pk-prompt-input">' + escapeHtml(label) + '<textarea id="' + escapeHtml(textareaId) + '">' + escapeHtml(defaultValue ?? '') + '</textarea><span class="pk-prompt-actions"><span class="muted">' + escapeHtml(hint ?? 'Prompt is sent unchanged to the selected SpecRail API action.') + '</span><span class="pk-action-row">' + actionHtml + '</span></span></label>';
+    }
+
+    function renderPlanningContextMessages(planning) {
+      const rows = [
+        ['system', 'Planning context', 'Spec ' + text(planning.specRevisionId) + ' · Plan ' + text(planning.planRevisionId) + ' · Tasks ' + text(planning.tasksRevisionId)],
+        [planning.hasPendingChanges ? 'system' : 'agent', planning.hasPendingChanges ? 'Approval needed' : 'Execution context', planning.hasPendingChanges ? 'New planning changes are pending approval before new runs should start.' : 'Latest approved context is ready for run start.'],
+      ];
+      return '<h3>Planning conversation</h3><div class="pk-chat-container" data-control-group="planning-conversation">' + rows.map(([role, title, body]) => '<article class="pk-message" data-message-role="' + escapeHtml(role) + '"><div class="pk-message-header"><strong>' + escapeHtml(title) + '</strong><span class="pill">' + escapeHtml(role) + '</span></div><div class="pk-message-body">' + escapeHtml(body) + '</div></article>').join('') + '</div>';
+    }
+
+    function renderRunEventCard(event) {
+      const subtype = event.subtype ? ' / ' + event.subtype : '';
+      const payload = event.payload ? JSON.stringify(event.payload).slice(0, 600) : '';
+      const isTool = event.type === 'tool_call' || event.type === 'tool_result' || /tool/i.test(event.subtype ?? '');
+      if (isTool) {
+        return '<li class="pk-tool" data-event-type="' + escapeHtml(event.type) + '"><div class="pk-tool-header"><strong>' + escapeHtml(event.type + subtype) + '</strong><span class="pill">' + escapeHtml(event.timestamp) + '</span></div><div>' + escapeHtml(event.summary) + '</div>' + (payload ? '<pre>' + escapeHtml(payload) + '</pre>' : '') + '</li>';
+      }
+      return '<li class="pk-step" data-event-type="' + escapeHtml(event.type) + '"><strong>' + escapeHtml(event.type + subtype) + '</strong> — ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>';
+    }
+
     function option(value, label, selectedValue) {
       return '<option value="' + escapeHtml(value) + '"' + (value === selectedValue ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
     }
@@ -231,7 +274,7 @@ export function renderOperatorUiClientScript(): string {
       if (pending.length === 0) {
         return '<h3>Approval actions</h3><p class="muted">No pending artifact approvals.</p>';
       }
-      return '<h3>Approval actions</h3><ul>' + pending.map((request) => '<li><strong>' + escapeHtml(request.artifact) + ' approval</strong><br><span class="muted">' + escapeHtml(request.id) + '</span><br><button data-approval-id="' + escapeHtml(request.id) + '" data-decision="approve">Approve</button> <button data-approval-id="' + escapeHtml(request.id) + '" data-decision="reject">Reject</button></li>').join('') + '</ul>';
+      return '<h3>Approval actions</h3><ul class="pk-steps">' + pending.map((request) => '<li class="pk-step"><strong>' + escapeHtml(request.artifact) + ' approval</strong><br><span class="muted">' + escapeHtml(request.id) + '</span><br><span class="pk-action-row"><button data-approval-id="' + escapeHtml(request.id) + '" data-decision="approve">Approve</button> <button data-approval-id="' + escapeHtml(request.id) + '" data-decision="reject">Reject</button></span></li>').join('') + '</ul>';
     }
 
     function closeEventStream() {
@@ -258,10 +301,12 @@ export function renderOperatorUiClientScript(): string {
           ['Pending planning changes', planning.hasPendingChanges ? 'yes' : 'no'],
           ['Updated', track.updatedAt],
         ])
+        + systemMessage(planning.hasPendingChanges ? 'This track has pending planning changes. Approve or reject revisions before starting a new run.' : 'This track can use the current approved planning context for a new run.', planning.hasPendingChanges ? 'warning' : '')
+        + renderPlanningContextMessages(planning)
         + '<h3>Track workflow</h3><div class="form-grid" data-control-group="track-workflow"><label>Status <select id="track-workflow-status">' + ['new', 'planned', 'ready', 'in_progress', 'blocked', 'review', 'done', 'failed'].map((value) => option(value, value, track.status ?? 'new')).join('') + '</select></label><label>Spec approval <select id="track-workflow-spec-status">' + ['draft', 'pending', 'approved', 'rejected'].map((value) => option(value, value, track.specStatus ?? 'draft')).join('') + '</select></label><label>Plan approval <select id="track-workflow-plan-status">' + ['draft', 'pending', 'approved', 'rejected'].map((value) => option(value, value, track.planStatus ?? 'draft')).join('') + '</select></label><p><button data-track-update="workflow">Update track workflow</button></p></div>'
-        + '<h3>Planning</h3><div class="form-grid" data-control-group="track-planning"><label>Session status <select id="planning-session-status"><option value="active">active</option><option value="waiting_user">waiting_user</option><option value="waiting_agent">waiting_agent</option><option value="approved">approved</option><option value="archived">archived</option></select></label><p><button data-planning-session-create="' + escapeHtml(track.id) + '">Create planning session</button></p><label>Author <select id="planning-message-author"><option value="user">user</option><option value="agent">agent</option><option value="system">system</option></select></label><label>Kind <select id="planning-message-kind"><option value="message">message</option><option value="question">question</option><option value="decision">decision</option><option value="note">note</option></select></label><label>Related artifact <select id="planning-message-artifact"><option value="">none</option><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label><label>Message <textarea id="planning-message-body" placeholder="Planning message"></textarea></label><p><button data-planning-message-append="' + escapeHtml(planning.planningSessionId ?? '') + '">Append planning message</button></p></div>'
-        + '<h3>Artifact proposals</h3><div class="form-grid" data-control-group="artifact-proposal"><label>Artifact <select id="artifact-proposal-kind"><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label><label>Summary <input id="artifact-proposal-summary" value="Proposed from hosted operator UI" /></label><label>Content <textarea id="artifact-proposal-content" placeholder="New artifact content"></textarea></label><p><button data-artifact-proposal="inline">Propose artifact</button></p></div>'
-        + '<h3>Run lifecycle</h3><div class="form-grid" data-control-group="track-run-start"><label>Run prompt <textarea id="run-start-prompt">Implement the selected track.</textarea></label><p><button data-run-start="' + escapeHtml(track.id) + '">Start run</button></p></div>'
+        + '<h3>Planning</h3><div class="form-grid" data-control-group="track-planning"><label>Session status <select id="planning-session-status"><option value="active">active</option><option value="waiting_user">waiting_user</option><option value="waiting_agent">waiting_agent</option><option value="approved">approved</option><option value="archived">archived</option></select></label><p><button data-planning-session-create="' + escapeHtml(track.id) + '">Create planning session</button></p><label>Author <select id="planning-message-author"><option value="user">user</option><option value="agent">agent</option><option value="system">system</option></select></label><label>Kind <select id="planning-message-kind"><option value="message">message</option><option value="question">question</option><option value="decision">decision</option><option value="note">note</option></select></label><label>Related artifact <select id="planning-message-artifact"><option value="">none</option><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label>' + promptInput('Message', 'planning-message-body', '', '<button data-planning-message-append="' + escapeHtml(planning.planningSessionId ?? '') + '">Append planning message</button>', 'Prompt-kit-inspired message composer for planning handoff notes.') + '</div>'
+        + '<h3>Artifact proposals</h3><div class="form-grid" data-control-group="artifact-proposal"><label>Artifact <select id="artifact-proposal-kind"><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label><label>Summary <input id="artifact-proposal-summary" value="Proposed from hosted operator UI" /></label>' + promptInput('Content', 'artifact-proposal-content', '', '<button data-artifact-proposal="inline">Propose artifact</button>', 'Use this as a structured proposal payload; approval remains explicit.') + '</div>'
+        + '<h3>Run lifecycle</h3><div data-control-group="track-run-start">' + promptInput('Run prompt', 'run-start-prompt', 'Implement the selected track.', '<button data-run-start="' + escapeHtml(track.id) + '">Start run</button>', 'Prompt is passed to the selected coding-agent backend for this track.') + '</div>'
         + artifactApprovalActions(artifactPayloads)
         + preview('Spec preview', payload.artifacts?.spec)
         + preview('Plan preview', payload.artifacts?.plan)
@@ -353,7 +398,23 @@ export function renderOperatorUiClientScript(): string {
     function appendRunEvent(event) {
       const list = detail.querySelector('#run-events');
       if (!list) return;
-      list.append(item(event.type, (event.summary ?? '') + ' · ' + (event.timestamp ?? ''), () => {}));
+      const node = document.createElement('li');
+      const subtype = event.subtype ? ' / ' + event.subtype : '';
+      const isTool = event.type === 'tool_call' || event.type === 'tool_result' || /tool/i.test(event.subtype ?? '');
+      node.className = isTool ? 'pk-tool' : 'pk-step';
+      node.innerHTML = isTool
+        ? '<div class="pk-tool-header"><strong></strong><span class="pill"></span></div><div></div>'
+        : '<strong></strong> — <span></span><br><span class="muted"></span>';
+      if (isTool) {
+        node.querySelector('strong').textContent = event.type + subtype;
+        node.querySelector('.pill').textContent = event.timestamp ?? '';
+        node.querySelector('div:last-child').textContent = event.summary ?? '';
+      } else {
+        node.querySelector('strong').textContent = event.type + subtype;
+        node.querySelector('span').textContent = event.summary ?? '';
+        node.querySelector('.muted').textContent = event.timestamp ?? '';
+      }
+      list.append(node);
       while (list.children.length > 20) {
         list.firstElementChild?.remove();
       }
@@ -401,10 +462,11 @@ export function renderOperatorUiClientScript(): string {
           ['Started', run.startedAt],
           ['Finished', run.finishedAt],
         ])
-        + '<h3>Run lifecycle</h3><div class="form-grid" data-control-group="run-lifecycle"><label>Resume prompt <textarea id="run-resume-prompt">Continue with verification.</textarea></label><label>Cancel confirmation <input id="run-cancel-confirmation" autocomplete="off" placeholder="Type cancel to confirm" /></label><p><button data-run-resume="' + escapeHtml(run.id) + '">Resume run</button> <button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button></p></div>'
-        + '<h3>Run report</h3><p data-control-group="run-report"><a data-run-report="' + escapeHtml(run.id) + '" href="/runs/' + encodeURIComponent(run.id) + '/report.md" target="_blank" rel="noopener">Open Markdown run report</a></p>'
+        + systemMessage('Run events below are projected as prompt-kit-style steps and tool cards while canonical history stays in SpecRail event storage.', '')
+        + '<h3>Run lifecycle</h3><div class="form-grid" data-control-group="run-lifecycle">' + promptInput('Resume prompt', 'run-resume-prompt', 'Continue with verification.', '<button data-run-resume="' + escapeHtml(run.id) + '">Resume run</button>', 'Resume sends a new prompt to the persisted backend session.') + '<label>Cancel confirmation <input id="run-cancel-confirmation" autocomplete="off" placeholder="Type cancel to confirm" /></label><p><button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button></p></div>'
+        + '<h3>Run report</h3><p data-control-group="run-report"><a class="pk-source" data-run-report="' + escapeHtml(run.id) + '" href="/runs/' + encodeURIComponent(run.id) + '/report.md" target="_blank" rel="noopener">↗ Open Markdown run report</a></p>'
         + cleanupSection
-        + '<h3>Recent events</h3><p class="muted">Live updates use <code>GET /runs/:runId/events/stream</code> while this run is selected.</p><ul id="run-events">' + events.slice(-10).map((event) => '<li><span class="pill">' + escapeHtml(event.type) + '</span> ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>').join('') + '</ul>';
+        + '<h3>Recent events</h3><p class="muted">Live updates use <code>GET /runs/:runId/events/stream</code> while this run is selected.</p><ul id="run-events" class="pk-steps">' + events.slice(-10).map((event) => renderRunEventCard(event)).join('') + '</ul>';
       detail.querySelector('[data-run-resume]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
         const promptText = detail.querySelector('#run-resume-prompt')?.value.trim();

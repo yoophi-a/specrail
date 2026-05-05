@@ -31,6 +31,20 @@ Operator: https://specrail.example.com/operator?runId=run-123
 
 The linked page loads run details through the same protected API routes. Do not point `SPECRAIL_OPERATOR_BASE_URL` at an unauthenticated or internal-only URL that GitHub users cannot safely open.
 
+## Prompt-kit compatibility note
+
+The hosted operator UI intentionally stays dependency-light: it is served from the API package as raw HTML, CSS, and browser JavaScript instead of a React/shadcn/Tailwind application. Prompt-kit components are therefore not imported directly.
+
+SpecRail borrows the prompt-kit interaction patterns that fit this architecture:
+
+- prompt composer cards for planning messages, artifact proposals, and run start/resume prompts
+- system-message style callouts for planning/run context
+- message/chat-container style cards for the planning context summary
+- steps/tool style cards for run event timelines and live SSE updates
+- source-style links for read-only Markdown run reports
+
+If SpecRail later introduces a dedicated React operator frontend, these classes and layout sections are the migration seams for replacing the raw implementation with actual prompt-kit/shadcn components.
+
 ## Auth and routing requirements
 
 Protect at least these routes as one operator surface:
