@@ -600,8 +600,8 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, v propose, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
-  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, v proposes, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
 });
 
 test("renderAppShell renders start composer folder session discovery controls", () => {
@@ -1202,6 +1202,104 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
     await app;
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await rm(preferenceDir, { recursive: true, force: true });
+  }
+});
+
+test("runTerminalApp appends planning messages from the tracks screen", async () => {
+  const messageBodies: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (request.method === "GET" && url.pathname === "/projects") {
+      sendJson(response, { projects: [{ id: "project-default", name: "SpecRail" }] });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/tracks") {
+      sendJson(response, { tracks: [{ id: "track-msg", projectId: "project-default", title: "Planning track", status: "ready" }] });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/runs") {
+      sendJson(response, { runs: [] });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/tracks/track-msg") {
+      sendJson(response, {
+        track: { id: "track-msg", title: "Planning track", status: "ready" },
+        artifacts: { spec: "# Spec", plan: "# Plan", tasks: "# Tasks" },
+        planningContext: { planningSessionId: "plan-msg", planRevisionId: "plan-rev-1", hasPendingChanges: false },
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/tracks/track-msg/planning-sessions") {
+      sendJson(response, { planningSessions: [{ id: "plan-msg", trackId: "track-msg", status: "active", updatedAt: "2026-04-10T12:00:00.000Z" }] });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/planning-sessions/plan-msg/messages") {
+      sendJson(response, { messages: [] });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/planning-sessions/plan-msg/messages") {
+      const body = await readRequestJson(request);
+      messageBodies.push(body);
+      sendJson(response, {
+        message: {
+          id: "msg-terminal-1",
+          planningSessionId: "plan-msg",
+          authorType: "user",
+          kind: "question",
+          relatedArtifact: "plan",
+          body: "Go",
+          createdAt: "2026-04-10T12:10:00.000Z",
+        },
+      }, 201);
+      return;
+    }
+
+    if (request.method === "GET" && /^\/tracks\/track-msg\/artifacts\/(spec|plan|tasks)$/.test(url.pathname)) {
+      const artifact = url.pathname.split("/").at(-1);
+      sendJson(response, {
+        revisions: artifact === "plan" ? [{ id: "plan-rev-1", trackId: "track-msg", artifact: "plan", version: 1, createdBy: "agent", content: "# Plan", createdAt: "2026-04-10T12:00:00.000Z" }] : [],
+        approvalRequests: [],
+      });
+      return;
+    }
+
+    sendJson(response, { error: { message: `Unexpected request: ${request.method} ${url.pathname}` } }, 404);
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  assert(address);
+  const { port } = address as AddressInfo;
+
+  const stdin = new FakeTerminalStdin();
+  const stdout = new FakeTerminalStdout();
+  const app = runTerminalApp(
+    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "tracks", initialProjectId: null, initialRunFilter: "all", preferencePath: null },
+    { stdin, stdout } as never,
+  );
+
+  try {
+    await waitFor(() => stdout.output.includes("track-msg"));
+    stdin.key("m");
+    await waitFor(() => stdout.output.includes("Composing planning message for plan-msg."));
+    stdin.key("y");
+    stdin.key("G");
+    stdin.key("o");
+    stdin.key("\r", "return");
+    await waitFor(() => stdout.output.includes("Appended planning message msg-terminal-1 to plan-msg."));
+    assert.deepEqual(messageBodies, [{ authorType: "user", kind: "question", body: "Go", relatedArtifact: "plan" }]);
+  } finally {
+    stdin.key("q");
+    await app;
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
 

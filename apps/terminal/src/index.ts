@@ -255,6 +255,17 @@ export interface PendingProposalActionState {
   message: string | null;
 }
 
+export interface PendingPlanningMessageActionState {
+  trackId: string;
+  planningSessionId: string;
+  authorType: "user" | "agent" | "system";
+  kind: "message" | "question" | "decision" | "note";
+  relatedArtifact: ArtifactKind | "none";
+  body: string;
+  submitting: boolean;
+  message: string | null;
+}
+
 export interface PendingWorkspaceCleanupActionState {
   runId: string;
   preview: WorkspaceCleanupPreviewResponse;
@@ -290,6 +301,7 @@ export interface TerminalAppState {
   pendingTrackAction: PendingTrackActionState | null;
   pendingExecutionAction: PendingExecutionActionState | null;
   pendingProposalAction: PendingProposalActionState | null;
+  pendingPlanningMessageAction?: PendingPlanningMessageActionState | null;
   pendingWorkspaceCleanupAction?: PendingWorkspaceCleanupActionState | null;
 }
 
@@ -691,6 +703,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     pendingTrackAction: null,
     pendingExecutionAction: null,
     pendingProposalAction: null,
+    pendingPlanningMessageAction: null,
     pendingWorkspaceCleanupAction: null,
   };
 }
@@ -788,6 +801,7 @@ export async function bootstrapTerminalState(
     pendingTrackAction: null,
     pendingExecutionAction: null,
     pendingProposalAction: null,
+    pendingPlanningMessageAction: null,
   });
 }
 
@@ -810,6 +824,7 @@ export async function refreshTerminalState(
     pendingTrackAction: null,
     pendingExecutionAction: null,
     pendingProposalAction: null,
+    pendingPlanningMessageAction: null,
   });
 }
 
@@ -1004,10 +1019,11 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, v propose, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, v propose, m message, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderContextualHelp(state),
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
+    ...renderPlanningMessageComposer(state.pendingPlanningMessageAction ?? null),
     ...renderWorkspaceCleanupComposer(state.pendingWorkspaceCleanupAction ?? null),
   ].join("\n");
 }
@@ -1029,6 +1045,13 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     ];
   }
 
+  if (state.pendingPlanningMessageAction) {
+    return [
+      ...lines,
+      "Help: planning message composer — type edits body, g cycles author, y cycles kind, h/l cycles related artifact, Enter submits, Esc aborts.",
+    ];
+  }
+
   if (state.pendingExecutionAction) {
     const promptHelp = state.pendingExecutionAction.kind === "cancel"
       ? "Enter confirms cancellation, Esc aborts."
@@ -1045,7 +1068,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "tracks":
       return [
         ...lines,
-        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, v proposes, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
+        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
       ];
     case "runs":
       return [
@@ -1108,6 +1131,23 @@ function renderProposalActionComposer(action: PendingProposalActionState | null)
     `- content: ${action.content || "(required, Tab to edit)"}`,
     `- submit: Enter${action.submitting ? " (submitting...)" : ""}, abort: Esc, backspace deletes, Tab switches field`,
     action.message ? `- note: ${action.message}` : "- note: lightweight single-buffer authoring for review and approval handoff",
+  ];
+}
+
+function renderPlanningMessageComposer(action: PendingPlanningMessageActionState | null): string[] {
+  if (!action) {
+    return [];
+  }
+
+  return [
+    "",
+    `Planning message action: session ${action.planningSessionId} for track ${action.trackId}`,
+    `- author: ${action.authorType} (press g to cycle)`,
+    `- kind: ${action.kind} (press y to cycle)`,
+    `- related artifact: ${action.relatedArtifact} (press h/l to cycle)`,
+    `- body: ${action.body || "(required, type to edit)"}`,
+    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, abort: Esc, backspace deletes`,
+    action.message ? `- note: ${action.message}` : "- note: append a planning handoff note without leaving the terminal",
   ];
 }
 
@@ -2026,6 +2066,8 @@ export async function runTerminalApp(
     updateState({
       ...state,
       pendingExecutionAction: action,
+      pendingPlanningMessageAction: null,
+      pendingWorkspaceCleanupAction: null,
       statusLine:
         action.kind === "start"
           ? `Composing run start for ${action.trackId}.`
@@ -2145,7 +2187,46 @@ export async function runTerminalApp(
         submitting: false,
         message: null,
       },
+      pendingPlanningMessageAction: null,
       statusLine: `Composing ${artifact} revision proposal for ${detail.track.id}.`,
+    });
+  };
+
+  const openPlanningMessageComposer = () => {
+    if (state.screen !== "tracks") {
+      updateState({ ...state, statusLine: "Switch to the tracks screen to append a planning message." });
+      return;
+    }
+
+    const detail = state.tracks.data;
+    const workspace = detail?.planningWorkspace;
+    if (!detail || detail.track.id !== state.tracks.selectedId || !workspace) {
+      updateState({ ...state, statusLine: "Track detail is still loading. Press r and try again." });
+      return;
+    }
+
+    const planningSessionId = workspace.selectedPlanningSessionId;
+    if (!planningSessionId) {
+      updateState({ ...state, statusLine: `Track ${detail.track.id} has no planning session to append to.` });
+      return;
+    }
+
+    updateState({
+      ...state,
+      pendingExecutionAction: null,
+      pendingProposalAction: null,
+      pendingPlanningMessageAction: {
+        trackId: detail.track.id,
+        planningSessionId,
+        authorType: "user",
+        kind: "message",
+        relatedArtifact: workspace.selectedArtifact ?? "none",
+        body: "",
+        submitting: false,
+        message: null,
+      },
+      pendingWorkspaceCleanupAction: null,
+      statusLine: `Composing planning message for ${planningSessionId}.`,
     });
   };
 
@@ -2155,6 +2236,10 @@ export async function runTerminalApp(
 
   const updateProposalComposer = (next: PendingProposalActionState | null, statusLine = state.statusLine) => {
     updateState({ ...state, pendingProposalAction: next, statusLine });
+  };
+
+  const updatePlanningMessageComposer = (next: PendingPlanningMessageActionState | null, statusLine = state.statusLine) => {
+    updateState({ ...state, pendingPlanningMessageAction: next, statusLine });
   };
 
   const updateWorkspaceCleanupComposer = (next: PendingWorkspaceCleanupActionState | null, statusLine = state.statusLine) => {
@@ -2182,6 +2267,7 @@ export async function runTerminalApp(
       ...state,
       pendingExecutionAction: null,
       pendingProposalAction: null,
+      pendingPlanningMessageAction: null,
       pendingWorkspaceCleanupAction: null,
       statusLine: `Loading cleanup preview for ${run.id}...`,
     };
@@ -2497,6 +2583,97 @@ export async function runTerminalApp(
     }
   };
 
+  const editPlanningMessageBody = (updater: (value: string) => string) => {
+    const action = state.pendingPlanningMessageAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    updatePlanningMessageComposer({ ...action, body: updater(action.body), message: null });
+  };
+
+  const cyclePlanningMessageAuthor = () => {
+    const action = state.pendingPlanningMessageAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const authors = ["user", "agent", "system"] as const;
+    const currentIndex = authors.findIndex((author) => author === action.authorType);
+    const authorType = authors[(currentIndex + 1 + authors.length) % authors.length] ?? action.authorType;
+    updatePlanningMessageComposer({ ...action, authorType, message: `Planning message author set to ${authorType}.` }, `Planning message author set to ${authorType}.`);
+  };
+
+  const cyclePlanningMessageKind = () => {
+    const action = state.pendingPlanningMessageAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const kinds = ["message", "question", "decision", "note"] as const;
+    const currentIndex = kinds.findIndex((kind) => kind === action.kind);
+    const kind = kinds[(currentIndex + 1 + kinds.length) % kinds.length] ?? action.kind;
+    updatePlanningMessageComposer({ ...action, kind, message: `Planning message kind set to ${kind}.` }, `Planning message kind set to ${kind}.`);
+  };
+
+  const cyclePlanningMessageArtifact = (delta: number) => {
+    const action = state.pendingPlanningMessageAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const artifacts = ["none", "spec", "plan", "tasks"] as const;
+    const currentIndex = artifacts.findIndex((artifact) => artifact === action.relatedArtifact);
+    const relatedArtifact = artifacts[(currentIndex + delta + artifacts.length) % artifacts.length] ?? action.relatedArtifact;
+    updatePlanningMessageComposer({ ...action, relatedArtifact, message: `Related artifact set to ${relatedArtifact}.` }, `Related artifact set to ${relatedArtifact}.`);
+  };
+
+  const submitPlanningMessageAction = async () => {
+    const action = state.pendingPlanningMessageAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const body = action.body.trim();
+    if (body.length === 0) {
+      updatePlanningMessageComposer({ ...action, message: "Planning message body is required." }, "Planning message body is required.");
+      return;
+    }
+
+    state = {
+      ...state,
+      pendingPlanningMessageAction: { ...action, submitting: true, message: null },
+      statusLine: `Appending planning message to ${action.planningSessionId}...`,
+    };
+    render();
+
+    try {
+      const message = await client.appendPlanningMessage({
+        planningSessionId: action.planningSessionId,
+        authorType: action.authorType,
+        kind: action.kind,
+        body,
+        relatedArtifact: action.relatedArtifact === "none" ? undefined : action.relatedArtifact,
+      });
+      const refreshed = await refreshTerminalState({ ...state, pendingPlanningMessageAction: null }, client);
+      updateState({
+        ...refreshed,
+        statusLine: `Appended planning message ${message.id} to ${action.planningSessionId}.`,
+      });
+    } catch (error) {
+      updateState({
+        ...state,
+        pendingPlanningMessageAction: {
+          ...action,
+          submitting: false,
+          message: error instanceof Error ? error.message : "Failed to append planning message.",
+        },
+        error: error instanceof Error ? error.message : "Failed to append planning message.",
+        statusLine: error instanceof Error ? error.message : "Failed to append planning message.",
+      });
+    }
+  };
+
   const submitWorkspaceCleanupAction = async () => {
     const action = state.pendingWorkspaceCleanupAction;
     if (!action || action.submitting) {
@@ -2788,6 +2965,48 @@ export async function runTerminalApp(
         }
       }
 
+      if (state.pendingPlanningMessageAction) {
+        if (key.name === "escape") {
+          updateState({ ...state, pendingPlanningMessageAction: null, statusLine: "Planning message action cancelled." });
+          return;
+        }
+
+        if (key.name === "return" || key.name === "enter") {
+          void submitPlanningMessageAction();
+          return;
+        }
+
+        if (key.name === "backspace") {
+          editPlanningMessageBody((value) => value.slice(0, -1));
+          return;
+        }
+
+        if (key.name === "g") {
+          cyclePlanningMessageAuthor();
+          return;
+        }
+
+        if (key.name === "y") {
+          cyclePlanningMessageKind();
+          return;
+        }
+
+        if (key.name === "h") {
+          cyclePlanningMessageArtifact(-1);
+          return;
+        }
+
+        if (key.name === "l") {
+          cyclePlanningMessageArtifact(1);
+          return;
+        }
+
+        if (input.length === 1 && !key.ctrl) {
+          editPlanningMessageBody((value) => `${value}${input}`);
+          return;
+        }
+      }
+
       if (state.pendingWorkspaceCleanupAction) {
         if (key.name === "escape") {
           updateState({ ...state, pendingWorkspaceCleanupAction: null, statusLine: "Workspace cleanup action cancelled." });
@@ -2817,6 +3036,11 @@ export async function runTerminalApp(
 
       if (key.name === "v") {
         openProposalComposer();
+        return;
+      }
+
+      if (key.name === "m") {
+        openPlanningMessageComposer();
         return;
       }
 

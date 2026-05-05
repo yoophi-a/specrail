@@ -57,7 +57,8 @@ The tracks screen now also acts as the first planning-workspace inspector:
 
 - loads planning sessions for the selected track
 - shows the latest messages from the selected planning session
-- has typed API-client support for appending planning messages through the existing planning-session message endpoint, ready for a future terminal composer
+- has typed API-client support for appending planning messages through the existing planning-session message endpoint
+- lets operators open a lightweight planning-message composer with `m`, edit a body, cycle author/kind/related artifact, and append handoff notes without leaving the terminal
 - summarizes revision focus for `spec`, `plan`, and `tasks`
 - lets operators switch artifact focus with `h` / `l`
 - lets operators cycle revision history for the focused artifact with `[` / `]`
@@ -80,6 +81,7 @@ This is intentionally still lightweight:
 - revision proposal authoring is review-oriented for now, not a full text editor
 - proposal authoring uses a single-buffer content field plus optional summary and author selector
 - approval decisions use a minimal `decidedBy: "terminal"` payload
+- planning message authoring is intentionally lightweight: a single body buffer with cycling author/kind/artifact selectors
 - the client optimizes for browsing and unblocking runs without dropping to raw API calls
 - start-run composition defaults the folder path to the selected project's local repository path when available, then falls back to the terminal process working directory; use `Tab` to switch between prompt and folder path, `Ctrl+F` to load related sessions, `[` / `]` to change the selected folder session, `Ctrl+R` to resume it, and `Ctrl+K` to fork it. The selected session preview includes workspace and report path context when available. Pressing `Enter` from the start composer still starts a fresh run.
 
