@@ -674,6 +674,18 @@ export class SpecRailAcpServer {
   }
 
   private toProviderEventProjection(event: ExecutionEvent): Record<string, unknown> | undefined {
+    if (event.source === "codex") {
+      return {
+        kind: "codex",
+        sessionRef: this.readString(event.payload?.sessionRef),
+        stream: this.readString(event.payload?.stream),
+        lifecycleStatus: this.readString(event.payload?.status),
+        terminal: this.readBoolean(event.payload?.terminal),
+        exitCode: this.readNumber(event.payload?.exitCode),
+        signal: this.readString(event.payload?.signal),
+      };
+    }
+
     if (event.source !== "claude_code" && !event.subtype?.startsWith("claude_")) {
       return undefined;
     }

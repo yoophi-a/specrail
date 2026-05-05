@@ -135,6 +135,14 @@ function createFakeService(options: { workspaceRoot?: string } = {}) {
       });
       pushEvent(runId, {
         executionId: runId,
+        type: "message",
+        timestamp: "2026-04-13T00:00:00.970Z",
+        source: "codex",
+        summary: `STDOUT ${runId}`,
+        payload: { sessionRef: `codex-session-${runId}`, stream: "stdout" },
+      });
+      pushEvent(runId, {
+        executionId: runId,
         type: "summary",
         subtype: "claude_result_success",
         timestamp: "2026-04-13T00:00:00.980Z",
@@ -363,6 +371,7 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"file_change","path":"README.md","operation":"modified"}'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"test_result","status":"passed","passed":12,"failed":0}'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"message","subtype":"assistant_text","role":"assistant"}'));
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"message","provider":{"kind":"codex","sessionRef":"codex-session-run-1","stream":"stdout"'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"summary","subtype":"claude_result_success","status":"completed","provider":{"kind":"claude_code"'));
   assert.ok(JSON.stringify(notifications).includes('"providerSessionId":"claude-session-run-1"'));
   assert.ok(JSON.stringify(notifications).includes('"providerEventType":"result"'));
