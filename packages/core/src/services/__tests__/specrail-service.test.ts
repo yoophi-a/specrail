@@ -219,6 +219,13 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(runSession.capabilities?.supportsResume, true);
   assert.equal(runSession.capabilities?.supportsContextCopyFork, true);
 
+  const folderRuns = await service.listRunsPage({ workspacePath: path.join(workspaceRoot, "run-run-a"), pageSize: 5 });
+  assert.ok(folderRuns.items.some((item) => item.id === run.id));
+
+  const runPreview = await service.getRunSessionPreview({ runId: run.id, eventLimit: 2 });
+  assert.equal(runPreview.execution.id, run.id);
+  assert.ok(runPreview.events.length <= 2);
+
   const forkedRun = await service.forkRun({
     runId: run.id,
     prompt: "Explore this in a separate run",

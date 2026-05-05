@@ -80,6 +80,18 @@ export class FakeElement {
     if (selector === "[data-artifact-proposal]") {
       return [this.querySelector(selector)];
     }
+    if (selector === "[data-folder-run-preview]" || selector === "[data-folder-run-resume]" || selector === "[data-folder-run-fork]" || selector === "[data-folder-run-preview-panel]") {
+      const existing = this.descendantLists.get(selector);
+      if (existing) return existing;
+      const attributeName = selector.slice(1, -1);
+      const nodes = Array.from(this.innerHTML.matchAll(new RegExp(`${attributeName}="([^"]*)"`, "g"))).map((match) => {
+        const node = new FakeElement();
+        node.setAttribute(attributeName, match[1] ?? "");
+        return node;
+      });
+      this.descendantLists.set(selector, nodes);
+      return nodes;
+    }
     if (selector === "[data-approval-id]") {
       const existing = this.descendantLists.get(selector);
       if (existing) return existing;
@@ -253,8 +265,14 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     if (path === "/runs?page=1&pageSize=20" && method === "GET") {
       return { ok: true, json: async () => ({ runs }) };
     }
+    if (path.startsWith("/runs?page=1&pageSize=10&workspacePath=") && method === "GET") {
+      const workspacePath = new URLSearchParams(path.slice(path.indexOf("?") + 1)).get("workspacePath");
+      const filteredRuns = runs.filter((run) => run.workspacePath === workspacePath);
+      return { ok: true, json: async () => ({ runs: filteredRuns }) };
+    }
     if (path === "/runs" && method === "POST") {
-      const run = { id: `run-${runCounter++}`, status: "running", ...(body as Record<string, unknown>) };
+      const nextRunId = `run-${runCounter++}`;
+      const run = { id: nextRunId, status: "running", workspacePath: `/workspace/${nextRunId}`, ...(body as Record<string, unknown>) };
       runs.push(run);
       return { ok: true, json: async () => ({ run }) };
     }
@@ -265,6 +283,10 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     }
     if (/^\/runs\/[^/]+\/events$/.test(path) && method === "GET") {
       return { ok: true, json: async () => ({ events: [] }) };
+    }
+    if (/^\/runs\/[^/]+\/session-preview\?eventLimit=5$/.test(path) && method === "GET") {
+      const runId = decodeURIComponent(path.split("/")[2] ?? "");
+      return { ok: true, json: async () => ({ execution: { id: runId }, session: { sessionRef: `${runId}-codex` }, capabilities: { supportsResume: true, supportsProviderFork: false }, events: [{ timestamp: "2026-04-09T03:00:00.000Z", summary: "Run started" }] }) };
     }
     if (/^\/runs\/[^/]+\/resume$/.test(path) && method === "POST") {
       return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "running", ...(body as Record<string, unknown>) } }) };
@@ -356,7 +378,7 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     await flushClientPromises();
   }
 
-  return { calls, detail, elements, eventSources, scope, createTrack, failPath, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, selectProject, startRun };
+  return { calls, detail, elements, eventSources, runs, scope, createTrack, failPath, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, selectProject, startRun };
 }
 
 export async function flushClientPromises(): Promise<void> {

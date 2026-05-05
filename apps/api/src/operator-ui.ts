@@ -254,6 +254,59 @@ export function renderOperatorUiClientScript(): string {
       return '<li class="pk-step" data-event-type="' + escapeHtml(event.type) + '"><strong>' + escapeHtml(event.type + subtype) + '</strong> — ' + escapeHtml(event.summary) + '<br><span class="muted">' + escapeHtml(event.timestamp) + '</span></li>';
     }
 
+    async function loadFolderSessions(track, workspacePath) {
+      const results = detail.querySelector('#folder-session-results');
+      if (!results) return;
+      if (!workspacePath) {
+        results.innerHTML = systemMessage('Select or enter a folder path before looking up related sessions.', 'warning');
+        return;
+      }
+      results.innerHTML = systemMessage('Looking up sessions for ' + workspacePath + '…', '');
+      const payload = await api('/runs?page=1&pageSize=10&workspacePath=' + encodeURIComponent(workspacePath));
+      const runs = payload.runs ?? [];
+      if (runs.length === 0) {
+        results.innerHTML = systemMessage('No sessions found for this folder. Use Start fresh to create a new coding-agent session for this track.', '');
+        return;
+      }
+      results.innerHTML = '<h4>Related sessions</h4><ul class="pk-steps">' + runs.map((run) => '<li class="pk-step"><strong>' + escapeHtml(run.id) + '</strong><br><span class="muted">' + escapeHtml((run.status ?? 'unknown') + ' · ' + (run.backend ?? 'backend?') + ' · ' + (run.continuityMode ?? 'continuity?')) + '</span><br>' + escapeHtml(run.summary?.lastEventSummary ?? 'No events yet') + '<br><span class="pk-action-row"><button data-folder-run-preview="' + escapeHtml(run.id) + '">Preview</button><button data-folder-run-resume="' + escapeHtml(run.id) + '">Resume</button><button data-folder-run-fork="' + escapeHtml(run.id) + '">Fork</button></span><div class="artifact-preview" data-folder-run-preview-panel="' + escapeHtml(run.id) + '" hidden></div></li>').join('') + '</ul><p><button data-folder-start-fresh="' + escapeHtml(track.id) + '">Start fresh for this track</button></p>';
+      results.querySelectorAll('[data-folder-run-preview]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const runId = button.getAttribute('data-folder-run-preview');
+          const panel = Array.from(results.querySelectorAll('[data-folder-run-preview-panel]')).find((node) => node.getAttribute('data-folder-run-preview-panel') === runId);
+          if (!runId || !panel) return;
+          const previewPayload = await api('/runs/' + encodeURIComponent(runId) + '/session-preview?eventLimit=5');
+          panel.hidden = false;
+          panel.textContent = 'Session: ' + text(previewPayload.session?.sessionRef) + '\\nCapabilities: resume=' + text(previewPayload.capabilities?.supportsResume) + ', providerFork=' + text(previewPayload.capabilities?.supportsProviderFork) + '\\nRecent events:\\n' + (previewPayload.events ?? []).map((event) => '- ' + event.timestamp + ' ' + event.summary).join('\\n');
+        });
+      });
+      results.querySelectorAll('[data-folder-run-resume]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const runId = button.getAttribute('data-folder-run-resume');
+          const promptText = detail.querySelector('#run-start-prompt')?.value.trim() || 'Continue from selected folder session.';
+          await withAction(button, 'Resuming run ' + runId + '…', async () => {
+            await postJson('/runs/' + encodeURIComponent(runId) + '/resume', { prompt: promptText });
+            await load();
+            await loadRunDetail(runId);
+          }, 'Resumed run ' + runId + '.');
+        });
+      });
+      results.querySelectorAll('[data-folder-run-fork]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const runId = button.getAttribute('data-folder-run-fork');
+          const promptText = detail.querySelector('#run-start-prompt')?.value.trim() || 'Continue this folder work in a separate run.';
+          await withAction(button, 'Forking run ' + runId + '…', async () => {
+            const payload = await postJson('/runs/' + encodeURIComponent(runId) + '/fork', { prompt: promptText });
+            await load();
+            await loadRunDetail(payload.run.id);
+            return payload;
+          }, (payload) => 'Forked ' + runId + ' as ' + payload.run.id + '.');
+        });
+      });
+      results.querySelector('[data-folder-start-fresh]')?.addEventListener('click', async () => {
+        detail.querySelector('[data-run-start]')?.click();
+      });
+    }
+
     function option(value, label, selectedValue) {
       return '<option value="' + escapeHtml(value) + '"' + (value === selectedValue ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
     }
@@ -296,6 +349,8 @@ export function renderOperatorUiClientScript(): string {
       closeEventStream();
       const track = payload.track;
       const planning = payload.planningContext ?? {};
+      const selectedProject = projectsById.get(track.projectId) ?? {};
+      const defaultFolderPath = selectedProject.localRepoPath ?? '';
       detail.className = 'detail-grid';
       detail.innerHTML = '<h3>' + escapeHtml(track.title ?? track.id) + '</h3>'
         + metadata([
@@ -314,7 +369,7 @@ export function renderOperatorUiClientScript(): string {
         + '<h3>Track workflow</h3><div class="form-grid" data-control-group="track-workflow"><label>Status <select id="track-workflow-status">' + ['new', 'planned', 'ready', 'in_progress', 'blocked', 'review', 'done', 'failed'].map((value) => option(value, value, track.status ?? 'new')).join('') + '</select></label><label>Spec approval <select id="track-workflow-spec-status">' + ['draft', 'pending', 'approved', 'rejected'].map((value) => option(value, value, track.specStatus ?? 'draft')).join('') + '</select></label><label>Plan approval <select id="track-workflow-plan-status">' + ['draft', 'pending', 'approved', 'rejected'].map((value) => option(value, value, track.planStatus ?? 'draft')).join('') + '</select></label><p><button data-track-update="workflow">Update track workflow</button></p></div>'
         + '<h3>Planning</h3><div class="form-grid" data-control-group="track-planning"><label>Session status <select id="planning-session-status"><option value="active">active</option><option value="waiting_user">waiting_user</option><option value="waiting_agent">waiting_agent</option><option value="approved">approved</option><option value="archived">archived</option></select></label><p><button data-planning-session-create="' + escapeHtml(track.id) + '">Create planning session</button></p><label>Author <select id="planning-message-author"><option value="user">user</option><option value="agent">agent</option><option value="system">system</option></select></label><label>Kind <select id="planning-message-kind"><option value="message">message</option><option value="question">question</option><option value="decision">decision</option><option value="note">note</option></select></label><label>Related artifact <select id="planning-message-artifact"><option value="">none</option><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label>' + promptInput('Message', 'planning-message-body', '', '<button data-planning-message-append="' + escapeHtml(planning.planningSessionId ?? '') + '">Append planning message</button>', 'Prompt-kit-inspired message composer for planning handoff notes.') + '</div>'
         + '<h3>Artifact proposals</h3><div class="form-grid" data-control-group="artifact-proposal"><label>Artifact <select id="artifact-proposal-kind"><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label><label>Summary <input id="artifact-proposal-summary" value="Proposed from hosted operator UI" /></label>' + promptInput('Content', 'artifact-proposal-content', '', '<button data-artifact-proposal="inline">Propose artifact</button>', 'Use this as a structured proposal payload; approval remains explicit.') + '</div>'
-        + '<h3>Run lifecycle</h3><div data-control-group="track-run-start">' + promptInput('Run prompt', 'run-start-prompt', 'Implement the selected track.', '<button data-run-start="' + escapeHtml(track.id) + '">Start run</button>', 'Prompt is passed to the selected coding-agent backend for this track.') + '</div>'
+        + '<h3>Run lifecycle</h3><div data-control-group="track-run-start"><label>Folder path <input id="folder-session-path" autocomplete="off" value="' + escapeHtml(defaultFolderPath) + '" placeholder="/path/to/repo-or-workspace" /></label><p><button data-folder-session-search="' + escapeHtml(track.id) + '">Preview folder sessions</button></p><div id="folder-session-results" class="detail-grid"></div>' + promptInput('Run prompt', 'run-start-prompt', 'Implement the selected track.', '<button data-run-start="' + escapeHtml(track.id) + '">Start fresh</button>', 'Preview folder sessions first when you want to resume or fork existing context; Start fresh creates a new coding-agent session for this track.') + '</div>'
         + artifactApprovalActions(artifactPayloads)
         + preview('Spec preview', payload.artifacts?.spec)
         + preview('Plan preview', payload.artifacts?.plan)
@@ -390,6 +445,13 @@ export function renderOperatorUiClientScript(): string {
           await loadRunDetail(runPayload.run.id);
           return runPayload;
         }, (runPayload) => 'Started run ' + runPayload.run.id + ' for ' + track.id + '.');
+      });
+      detail.querySelector('[data-folder-session-search]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const workspacePath = detail.querySelector('#folder-session-path')?.value.trim();
+        await withAction(button, 'Loading folder sessions…', async () => {
+          await loadFolderSessions(track, workspacePath);
+        }, 'Loaded folder session preview.');
       });
       detail.querySelectorAll('[data-approval-id]').forEach((button) => {
         button.addEventListener('click', async () => {

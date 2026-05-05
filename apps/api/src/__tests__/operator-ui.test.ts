@@ -199,7 +199,7 @@ test("operator UI client harness surfaces selected-detail load failures", async 
 });
 
 test("operator UI client harness blocks invalid form submissions", async () => {
-  const { calls, createTrack, detail, elements, loadInitialState } = createHostedUiClientHarness();
+  const { calls, createTrack, detail, elements, loadInitialState, runs } = createHostedUiClientHarness();
   await loadInitialState();
 
   await elements.get("#project-create")!.click();
@@ -263,7 +263,7 @@ test("operator UI client harness surfaces failed mutating actions", async () => 
 });
 
 test("operator UI client harness submits selected-track detail actions", async () => {
-  const { calls, createTrack, detail, loadInitialState, startRun } = createHostedUiClientHarness();
+  const { calls, createTrack, detail, loadInitialState, runs, startRun } = createHostedUiClientHarness();
   await loadInitialState();
 
   await createTrack({ title: "Selected Track", description: "Exercise selected-track controls" });
@@ -331,6 +331,19 @@ test("operator UI client harness submits selected-track detail actions", async (
     decidedBy: "user",
     comment: "decided from hosted operator UI",
   });
+
+  runs.push({ id: "run-existing", trackId: "track-1", status: "running", workspacePath: "/workspace/run-existing", backend: "codex", continuityMode: "fresh", summary: { lastEventSummary: "Existing folder work" } });
+  detail.querySelector("#folder-session-path").value = "/workspace/run-existing";
+  await detail.querySelector("[data-folder-session-search]").click();
+  await flushClientPromises();
+
+  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Frun-existing"), true);
+  assert.match(detail.querySelector("#folder-session-results").innerHTML, /data-folder-run-preview/);
+
+  await detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview]")[0]?.click();
+  await flushClientPromises();
+
+  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run-existing/session-preview?eventLimit=5"), true);
 
   await startRun("Implement selected track now.");
 
@@ -474,7 +487,7 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
     track: [/data-control-group="track-form"/, /id="track-create"/, /id="track-title"/, /id="track-priority"/, /data-track-update/, /data-control-group="track-workflow"/, /id="track-workflow-status"/, /id="track-workflow-spec-status"/],
     planning: [/data-control-group="track-planning"/, /data-planning-session-create/, /id="planning-session-status"/, /data-planning-message-append/, /planning-message-body/, /id="planning-message-author"/],
     artifacts: [/data-approval-id/, /data-control-group="artifact-proposal"/, /data-artifact-proposal/, /id="artifact-proposal-kind"/, /artifact-proposal-content/, /Propose artifact/, /createdBy: 'user'/],
-    runs: [/data-control-group="track-run-start"/, /data-run-start/, /run-start-prompt/, /data-control-group="run-lifecycle"/, /data-run-resume/, /run-resume-prompt/, /data-run-fork/, /run-fork-prompt/, /id="run-cancel-confirmation"/, /data-run-cancel/],
+    runs: [/data-control-group="track-run-start"/, /folder-session-path/, /data-folder-session-search/, /data-run-start/, /run-start-prompt/, /data-control-group="run-lifecycle"/, /data-run-resume/, /run-resume-prompt/, /data-run-fork/, /run-fork-prompt/, /id="run-cancel-confirmation"/, /data-run-cancel/],
     cleanup: [/workspace-cleanup\/preview/, /data-cleanup-request/, /data-control-group="cleanup-confirmation"/, /id="cleanup-confirmation"/, /workspace-cleanup\/apply/, /Refresh failed:/],
     streamsAndActions: [/new EventSource/, /events\/stream/, /async function withAction/, /function errorMessage/, /button.disabled = true/, /button.isConnected/, /function renderRunEventCard/, /function promptInput/, /function renderPlanningContextMessages/],
   };

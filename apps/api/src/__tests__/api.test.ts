@@ -750,7 +750,7 @@ test("API supports resuming and cancelling a run", async () => {
         prompt: "Start the work",
       }),
     });
-    const runPayload = (await createRunResponse.json()) as { run: { id: string; status: string } };
+    const runPayload = (await createRunResponse.json()) as { run: { id: string; status: string; workspacePath: string } };
 
     const resumeResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/resume`, {
       method: "POST",
@@ -784,6 +784,17 @@ test("API supports resuming and cancelling a run", async () => {
     assert.ok(sessionPayload.session?.resumeSessionRef ?? sessionPayload.session?.providerSessionId ?? sessionPayload.session?.codexSessionId);
     assert.equal(sessionPayload.capabilities?.supportsResume, true);
     assert.equal(sessionPayload.capabilities?.supportsContextCopyFork, true);
+
+    const folderRunsResponse = await fetch(`${baseUrl}/runs?workspacePath=${encodeURIComponent(runPayload.run.workspacePath)}`);
+    await assertJsonResponseStatus(folderRunsResponse, 200);
+    const folderRunsPayload = (await folderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
+    assert.ok(folderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
+
+    const sessionPreviewResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/session-preview?eventLimit=2`);
+    await assertJsonResponseStatus(sessionPreviewResponse, 200);
+    const sessionPreviewPayload = (await sessionPreviewResponse.json()) as { events: Array<{ summary: string }>; reportPath?: string };
+    assert.ok(sessionPreviewPayload.events.length <= 2);
+    assert.equal(sessionPreviewPayload.reportPath, `/runs/${runPayload.run.id}/report.md`);
 
     const forkResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/fork`, {
       method: "POST",

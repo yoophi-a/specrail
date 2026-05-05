@@ -180,6 +180,7 @@ interface TrackListQuery {
 interface RunListQuery {
   trackId?: string;
   status?: "created" | "queued" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
+  workspacePath?: string;
   page?: number;
   pageSize?: number;
   sortBy?: "createdAt" | "startedAt" | "finishedAt" | "status";
@@ -931,6 +932,10 @@ function assertValidRunListQuery(query: RunListQuery): void {
     details.push({ field: "trackId", message: "must not be empty" });
   }
 
+  if (query.workspacePath !== undefined && !query.workspacePath.trim()) {
+    details.push({ field: "workspacePath", message: "must not be empty" });
+  }
+
   if (
     query.status !== undefined &&
     !["created", "queued", "running", "waiting_approval", "completed", "failed", "cancelled"].includes(query.status)
@@ -1430,6 +1435,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const query: RunListQuery = {
           trackId: searchParams.get("trackId") ?? undefined,
           status: (searchParams.get("status") ?? undefined) as RunListQuery["status"],
+          workspacePath: searchParams.get("workspacePath") ?? undefined,
           page: parsePositiveInteger(searchParams.get("page")),
           pageSize: parsePositiveInteger(searchParams.get("pageSize")),
           sortBy: (searchParams.get("sortBy") ?? undefined) as RunListQuery["sortBy"],
@@ -1486,6 +1492,19 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         sendJson(response, 200, {
           ...sessionFacts,
           session: persistedSession ?? sessionFacts.session,
+        });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "runs" && segments[2] === "session-preview") {
+        const eventLimitSearchParams = getSearchParams(request);
+        const eventLimit = parsePositiveInteger(eventLimitSearchParams.get("eventLimit"));
+        const preview = await deps.service.getRunSessionPreview({ runId: segments[1] ?? "", eventLimit });
+        const persistedSession = await readExecutorSessionMetadata(deps.sessionsDir, preview.execution.sessionRef);
+        sendJson(response, 200, {
+          ...preview,
+          session: persistedSession ?? preview.session,
+          reportPath: `/runs/${encodeURIComponent(preview.execution.id)}/report.md`,
         });
         return;
       }

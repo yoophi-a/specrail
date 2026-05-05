@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 
 import {
   renderPlanDocument,
@@ -290,10 +291,18 @@ export interface ListTracksInput {
 export interface ListRunsInput {
   trackId?: string;
   status?: ExecutionStatus;
+  workspacePath?: string;
   page?: number;
   pageSize?: number;
   sortBy?: "createdAt" | "startedAt" | "finishedAt" | "status";
   sortOrder?: SortOrder;
+}
+
+export interface RunSessionPreview {
+  execution: Execution;
+  session?: ExecutorSessionMetadata | null;
+  capabilities?: { supportsResume: boolean; supportsProviderFork: boolean; supportsContextCopyFork: boolean };
+  events: ExecutionEvent[];
 }
 
 export interface ListPageMeta {
@@ -325,6 +334,23 @@ function buildExecutionSummary(events: ExecutionEvent[]): Execution["summary"] {
     lastEventSummary: lastEvent?.summary,
     lastEventAt: lastEvent?.timestamp,
   };
+}
+
+function normalizeWorkspacePathForMatch(workspacePath: string): string {
+  return path.resolve(workspacePath.trim());
+}
+
+function pathMatchesWorkspace(candidatePath: string, executionWorkspacePath: string): boolean {
+  const candidate = normalizeWorkspacePathForMatch(candidatePath);
+  const workspace = normalizeWorkspacePathForMatch(executionWorkspacePath);
+  const relativeFromCandidate = path.relative(candidate, workspace);
+  const relativeFromWorkspace = path.relative(workspace, candidate);
+
+  return (
+    candidate === workspace ||
+    Boolean(relativeFromCandidate && !relativeFromCandidate.startsWith("..") && !path.isAbsolute(relativeFromCandidate)) ||
+    Boolean(relativeFromWorkspace && !relativeFromWorkspace.startsWith("..") && !path.isAbsolute(relativeFromWorkspace))
+  );
 }
 
 function readExecutionStatus(event: ExecutionEvent): ExecutionStatus | null {
@@ -1061,6 +1087,17 @@ export class SpecRailService {
     return { execution: await this.hydrateExecutionPlanningContext(execution), session, capabilities };
   }
 
+  async getRunSessionPreview(input: GetRunSessionInput & { eventLimit?: number }): Promise<RunSessionPreview> {
+    const session = await this.getRunSession(input);
+    const events = await this.dependencies.eventStore.listByExecution(session.execution.id);
+    const eventLimit = Math.max(1, Math.min(input.eventLimit ?? 10, 50));
+
+    return {
+      ...session,
+      events: events.slice(-eventLimit),
+    };
+  }
+
   async forkRun(input: ForkRunInput): Promise<Execution> {
     const sourceExecution = await this.requireRun(input.runId);
     const executor = this.resolveExecutor(input.backend ?? sourceExecution.backend);
@@ -1181,6 +1218,7 @@ export class SpecRailService {
     const sorted = executions
       .filter((execution) => (input.trackId ? execution.trackId === input.trackId : true))
       .filter((execution) => (input.status ? execution.status === input.status : true))
+      .filter((execution) => (input.workspacePath ? pathMatchesWorkspace(input.workspacePath, execution.workspacePath) : true))
       .sort((left, right) => {
         const primary = (() => {
           switch (sortBy) {

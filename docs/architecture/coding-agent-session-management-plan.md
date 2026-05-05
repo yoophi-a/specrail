@@ -7,11 +7,13 @@ SpecRail already starts coding agents as local child processes and persists a ru
 Implemented in the MVP slice:
 
 - `GET /runs/:runId/session` returns the run, session metadata when available, and backend continuity capabilities.
+- `GET /runs/:runId/session-preview` returns a compact folder/session preview with recent events and report link metadata for selection UIs.
+- `GET /runs?workspacePath=<path>` filters runs whose workspace is the selected folder, an ancestor, or a descendant of it.
 - `POST /runs/:runId/resume` keeps same-run provider continuity and marks the execution `continuityMode: "resume_same_run"`.
 - `POST /runs/:runId/fork` creates a new linked execution with `parentExecutionId`, `parentSessionRef`, `sourceRunId`, and `continuityMode`.
 - Claude Code advertises provider-native fork support and uses `--resume <provider-session-id> --fork-session` for `mode: "provider_fork"`.
 - Codex advertises context-copy fork support and starts a fresh Codex session seeded with source run/session context.
-- Hosted operator UI exposes resume and fork controls; terminal run detail renders continuity/parent session metadata.
+- Hosted operator UI lets users enter/select a folder, preview related sessions, then resume, fork, or start fresh; terminal run detail renders continuity/parent session metadata.
 
 ## Current SpecRail control-plane model
 
