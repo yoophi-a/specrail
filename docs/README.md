@@ -18,6 +18,7 @@ Use this index to find the right reference before changing SpecRail's core servi
 - [Telegram bot interface strategy](./architecture/telegram-bot-interface-strategy.md) — Telegram-facing product and integration strategy.
 - [GitHub entrypoint architecture slice](./architecture/github-entrypoint-slice.md) — minimal GitHub issue/PR command and webhook design over existing SpecRail APIs.
 - [GitHub Speckit/OpenSpec integration plan](./architecture/github-speckit-openspec-integration-plan.md) — integration strategy for GitHub, Speckit, and OpenSpec.
+- [Coding agent session management plan](./architecture/coding-agent-session-management-plan.md) — Codex/Claude Code session behavior, continuity modes, and implementation phases.
 
 ## Execution and adapters
 
