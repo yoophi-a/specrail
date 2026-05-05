@@ -347,6 +347,7 @@ test("operator UI client harness submits selected-track detail actions", async (
   const previewPanel = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview-panel]")[0];
   assert.match(previewPanel?.textContent ?? "", /Workspace: \/workspace\/run-existing/);
   assert.match(previewPanel?.textContent ?? "", /Report: \/runs\/run-existing\/report\.md/);
+  assert.match(previewPanel?.textContent ?? "", /contextCopyFork=true/);
 
   await startRun("Implement selected track now.");
 

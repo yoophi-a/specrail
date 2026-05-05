@@ -276,7 +276,7 @@ export function renderOperatorUiClientScript(): string {
           if (!runId || !panel) return;
           const previewPayload = await api('/runs/' + encodeURIComponent(runId) + '/session-preview?eventLimit=5');
           panel.hidden = false;
-          panel.textContent = 'Session: ' + text(previewPayload.session?.sessionRef) + '\\nWorkspace: ' + text(previewPayload.execution?.workspacePath) + '\\nReport: ' + text(previewPayload.reportPath) + '\\nCapabilities: resume=' + text(previewPayload.capabilities?.supportsResume) + ', providerFork=' + text(previewPayload.capabilities?.supportsProviderFork) + '\\nRecent events:\\n' + (previewPayload.events ?? []).map((event) => '- ' + event.timestamp + ' ' + event.summary).join('\\n');
+          panel.textContent = 'Session: ' + text(previewPayload.session?.sessionRef) + '\\nWorkspace: ' + text(previewPayload.execution?.workspacePath) + '\\nReport: ' + text(previewPayload.reportPath) + '\\nCapabilities: resume=' + text(previewPayload.capabilities?.supportsResume) + ', providerFork=' + text(previewPayload.capabilities?.supportsProviderFork) + ', contextCopyFork=' + text(previewPayload.capabilities?.supportsContextCopyFork) + '\\nRecent events:\\n' + (previewPayload.events ?? []).map((event) => '- ' + event.timestamp + ' ' + event.summary).join('\\n');
         });
       });
       results.querySelectorAll('[data-folder-run-resume]').forEach((button) => {

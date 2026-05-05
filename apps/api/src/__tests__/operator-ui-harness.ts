@@ -286,7 +286,7 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     }
     if (/^\/runs\/[^/]+\/session-preview\?eventLimit=5$/.test(path) && method === "GET") {
       const runId = decodeURIComponent(path.split("/")[2] ?? "");
-      return { ok: true, json: async () => ({ execution: { id: runId, workspacePath: `/workspace/${runId}` }, session: { sessionRef: `${runId}-codex` }, capabilities: { supportsResume: true, supportsProviderFork: false }, events: [{ timestamp: "2026-04-09T03:00:00.000Z", summary: "Run started" }], reportPath: `/runs/${runId}/report.md` }) };
+      return { ok: true, json: async () => ({ execution: { id: runId, workspacePath: `/workspace/${runId}` }, session: { sessionRef: `${runId}-codex` }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ timestamp: "2026-04-09T03:00:00.000Z", summary: "Run started" }], reportPath: `/runs/${runId}/report.md` }) };
     }
     if (/^\/runs\/[^/]+\/resume$/.test(path) && method === "POST") {
       return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "running", ...(body as Record<string, unknown>) } }) };
