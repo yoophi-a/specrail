@@ -47,6 +47,7 @@ The run detail pane also highlights:
 - failure focus, including exit code or signal when present in event payloads
 - planning-context staleness and last planning-context update timestamp
 - operator actions for starting runs from tracks, resuming terminal runs, cancelling active runs, and guarded workspace cleanup
+- folder-session discovery in the start composer: operators can edit a folder path, call `GET /runs?workspacePath=...`, preview the selected run with `GET /runs/:runId/session-preview`, then resume, fork, or start fresh using the existing run lifecycle endpoints
 - contextual keyboard help for the active screen or currently open multi-step composer
 - startup defaults for initial project scope and run filter, plus optional local persistence for project scope, run filter, refresh interval, live-tail pause, and event-detail visibility changes
 
@@ -79,6 +80,7 @@ This is intentionally still lightweight:
 - proposal authoring uses a single-buffer content field plus optional summary and author selector
 - approval decisions use a minimal `decidedBy: "terminal"` payload
 - the client optimizes for browsing and unblocking runs without dropping to raw API calls
+- start-run composition defaults the folder path to the terminal process working directory; use `Tab` to switch between prompt and folder path, `Ctrl+F` to load related sessions, `[` / `]` to change the selected folder session, `Ctrl+R` to resume it, and `Ctrl+K` to fork it. Pressing `Enter` from the start composer still starts a fresh run.
 
 ## Follow-up direction
 

@@ -88,6 +88,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - selecting a track can approve/reject pending artifact approval requests through the existing `POST /approval-requests/:approvalRequestId/(approve|reject)` endpoints
   - selecting a run shows run metadata and recent event summaries from `GET /runs/:runId` plus `GET /runs/:runId/events`
   - selected tracks can start runs through the existing `POST /runs` endpoint
+  - before starting from a track, the terminal start composer can discover related folder sessions through `GET /runs?workspacePath=...`, preview the selected session through `GET /runs/:runId/session-preview`, and either resume, fork, or start fresh
   - selected runs can resume or cancel through the existing `POST /runs/:runId/resume` and `POST /runs/:runId/cancel` endpoints
   - selected runs stay live with incremental updates from `GET /runs/:runId/events/stream` while selected
   - selected runs can request workspace cleanup preview/apply through the existing guarded confirmation flow
@@ -341,7 +342,7 @@ Current shell behavior:
 - allows pausing and resuming the live tail without losing the selected run context
 - shows richer run status context including event counts, last event, planning-context staleness, and failure focus where available
 - supports `1-4` to switch screens, `j/k` or arrow keys to move selection, `P` to cycle project scope, `f` to cycle run filters, `Space` to pause/resume the tail, `r` to refresh, `q` to quit
-- supports `s` on tracks to compose a new run, `e` on runs to resume a completed/failed/cancelled run, and `c` on runs to cancel an active run
+- supports `s` on tracks to compose a new run with optional folder-session discovery before starting fresh, resuming, or forking; `e` on runs to resume a completed/failed/cancelled run; and `c` on runs to cancel an active run
 - exposes backend/profile choices in the terminal action composer, with validation feedback surfaced directly in the shell status and composer note
 - surfaces loading, streaming, and refresh failures in the status line and detail panes
 

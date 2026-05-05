@@ -8,7 +8,7 @@ export type TerminalScreenId = "home" | "tracks" | "runs" | "settings";
 export type RunEventConnectionState = "idle" | "connecting" | "live" | "reconnecting" | "paused" | "closed" | "error";
 export type RunFilterMode = "all" | "active" | "terminal";
 export type ArtifactKind = "spec" | "plan" | "tasks";
-export type ExecutionActionKind = "start" | "resume" | "cancel";
+export type ExecutionActionKind = "start" | "resume" | "fork" | "cancel";
 
 const EXECUTION_BACKEND_OPTIONS = ["codex", "claude_code"] as const;
 const EXECUTION_PROFILE_OPTIONS: Record<string, string[]> = {
@@ -74,6 +74,14 @@ export interface ExecutionEvent {
   source: string;
   summary: string;
   payload?: Record<string, unknown>;
+}
+
+export interface RunSessionPreview {
+  execution: RunListItem;
+  session?: { sessionRef?: string; providerSessionId?: string; resumeSessionRef?: string } | null;
+  capabilities?: { supportsResume?: boolean; supportsProviderFork?: boolean; supportsContextCopyFork?: boolean };
+  events: ExecutionEvent[];
+  reportPath?: string;
 }
 
 export interface WorkspaceCleanupOperation {
@@ -226,6 +234,11 @@ export interface PendingExecutionActionState {
   backend: string;
   profile: string;
   prompt: string;
+  workspacePath?: string;
+  activeField?: "prompt" | "workspacePath";
+  folderSessions?: RunListItem[];
+  selectedFolderSessionIndex?: number;
+  folderSessionPreview?: RunSessionPreview | null;
   submitting: boolean;
   message: string | null;
 }
@@ -322,6 +335,8 @@ interface RunDetailResponse {
 interface RunEventsResponse {
   events: ExecutionEvent[];
 }
+
+type RunSessionPreviewResponse = RunSessionPreview;
 
 interface ApiErrorResponse {
   error?: {
@@ -488,6 +503,15 @@ export class SpecRailTerminalApiClient {
     return payload.events;
   }
 
+  async listRunsByWorkspacePath(workspacePath: string): Promise<RunListItem[]> {
+    const payload = await this.request<RunsResponse>(`/runs?page=1&pageSize=10&workspacePath=${encodeURIComponent(workspacePath)}`);
+    return payload.runs;
+  }
+
+  async loadRunSessionPreview(runId: string, eventLimit = 5): Promise<RunSessionPreview> {
+    return this.request<RunSessionPreviewResponse>(`/runs/${encodeURIComponent(runId)}/session-preview?eventLimit=${eventLimit}`);
+  }
+
   async loadRunReportMarkdown(runId: string): Promise<string> {
     return this.requestText(formatRunReportUrl(runId));
   }
@@ -504,6 +528,16 @@ export class SpecRailTerminalApiClient {
 
   async resumeRun(input: { runId: string; prompt: string; backend?: string; profile?: string }): Promise<RunDetailSnapshot> {
     const payload = await this.request<RunDetailResponse>(`/runs/${input.runId}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: input.prompt, backend: input.backend, profile: input.profile }),
+    });
+
+    return { run: payload.run };
+  }
+
+  async forkRun(input: { runId: string; prompt: string; backend?: string; profile?: string }): Promise<RunDetailSnapshot> {
+    const payload = await this.request<RunDetailResponse>(`/runs/${encodeURIComponent(input.runId)}/fork`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ prompt: input.prompt, backend: input.backend, profile: input.profile }),
@@ -661,6 +695,7 @@ export function createExecutionActionDraft(input: {
   backend?: string;
   profile?: string;
   prompt?: string;
+  workspacePath?: string;
   message?: string | null;
 }): PendingExecutionActionState {
   return {
@@ -672,6 +707,11 @@ export function createExecutionActionDraft(input: {
     backend: input.backend ?? "codex",
     profile: input.profile ?? "default",
     prompt: input.prompt ?? "",
+    workspacePath: input.workspacePath,
+    activeField: "prompt",
+    folderSessions: undefined,
+    selectedFolderSessionIndex: 0,
+    folderSessionPreview: null,
     submitting: false,
     message: input.message ?? null,
   };
@@ -957,7 +997,9 @@ function renderContextualHelp(state: TerminalAppState): string[] {
   if (state.pendingExecutionAction) {
     const promptHelp = state.pendingExecutionAction.kind === "cancel"
       ? "Enter confirms cancellation, Esc aborts."
-      : "type edits prompt, p cycles profile, b cycles backend when unlocked, Enter submits, Esc aborts.";
+      : state.pendingExecutionAction.kind === "start"
+        ? "type edits prompt/folder, Tab switches field, Ctrl+F previews folder sessions, Ctrl+R resumes selected session, Ctrl+K forks selected session, Enter starts fresh, Esc aborts."
+        : "type edits prompt, p cycles profile, b cycles backend when unlocked, Enter submits, Esc aborts.";
     return [
       ...lines,
       `Help: ${state.pendingExecutionAction.kind} composer — ${promptHelp}`,
@@ -968,7 +1010,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "tracks":
       return [
         ...lines,
-        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, v proposes, a/x approves or rejects pending revisions, s starts a run.",
+        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, v proposes, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
       ];
     case "runs":
       return [
@@ -1043,6 +1085,8 @@ function renderExecutionActionComposer(action: PendingExecutionActionState | nul
     ? `Execution action: start track ${action.trackId ?? "unknown"}`
     : action.kind === "resume"
       ? `Execution action: resume run ${action.runId ?? "unknown"}`
+      : action.kind === "fork"
+        ? `Execution action: fork run ${action.runId ?? "unknown"}`
       : `Execution action: cancel run ${action.runId ?? "unknown"}`;
 
   if (action.kind === "cancel") {
@@ -1055,15 +1099,44 @@ function renderExecutionActionComposer(action: PendingExecutionActionState | nul
     ];
   }
 
+  const folderLines = action.kind === "start" ? renderFolderSessionLines(action) : [];
+
   return [
     "",
     title,
-    `- backend: ${action.backend}${action.kind === "resume" ? " (locked to run backend)" : " (press b to cycle)"}`,
+    `- backend: ${action.backend}${action.kind === "resume" || action.kind === "fork" ? " (locked to source run backend)" : " (press b to cycle)"}`,
     `- profile: ${action.profile}`,
+    `- editing: ${action.activeField ?? "prompt"}`,
     `- prompt: ${action.prompt || "(required, type to edit)"}`,
+    ...(action.kind === "start" ? [`- folder path: ${action.workspacePath || "(optional, Tab to edit; Ctrl+F previews related sessions before starting)"}`] : []),
     `- planning session: ${action.planningSessionId ?? "auto/latest approved"}`,
-    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, abort: Esc, backspace deletes`,
-    action.message ? `- note: ${action.message}` : "- note: printable keys edit prompt, p cycles profile presets",
+    ...folderLines,
+    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, abort: Esc, backspace deletes${action.kind === "start" ? ", Tab switches prompt/folder" : ""}`,
+    action.message ? `- note: ${action.message}` : action.kind === "start" ? "- note: Ctrl+F previews folder sessions; Ctrl+R resumes selected session; Ctrl+K forks selected session; p cycles profile presets" : "- note: printable keys edit prompt, p cycles profile presets",
+  ];
+}
+
+function renderFolderSessionLines(action: PendingExecutionActionState): string[] {
+  const sessions = action.folderSessions;
+  if (!sessions) {
+    return ["- folder sessions: not loaded"];
+  }
+
+  if (sessions.length === 0) {
+    return ["- folder sessions: none found; Enter starts fresh"];
+  }
+
+  const selectedIndex = clampIndex(action.selectedFolderSessionIndex ?? 0, sessions.length);
+  const selected = sessions[selectedIndex];
+  const preview = action.folderSessionPreview?.execution.id === selected?.id ? action.folderSessionPreview : null;
+  return [
+    `- folder sessions (${sessions.length}, selected ${selectedIndex + 1}/${sessions.length}; [/] changes selection):`,
+    ...sessions.map((run, index) => `  ${index === selectedIndex ? ">" : " "} ${run.id} | ${run.status} | ${run.backend ?? "backend?"} | ${run.continuityMode ?? "continuity?"} | ${previewText(run.summary?.lastEventSummary ?? "No events yet", 80)}`),
+    ...(preview ? [
+      `- selected session: ${preview.session?.sessionRef ?? selected?.sessionRef ?? "unknown"}`,
+      `- selected capabilities: resume=${String(preview.capabilities?.supportsResume ?? false)}, providerFork=${String(preview.capabilities?.supportsProviderFork ?? false)}, contextCopyFork=${String(preview.capabilities?.supportsContextCopyFork ?? false)}`,
+      `- selected recent events: ${preview.events.map((event) => event.summary).join(" | ") || "none"}`,
+    ] : ["- selected session preview: Ctrl+F loads/refreshes preview for the selected folder session"]),
   ];
 }
 
@@ -1095,7 +1168,8 @@ function renderScreenBody(state: TerminalAppState): string[] {
         "- Press P to cycle project scope for track listings.",
         "- Tracks view surfaces planning sessions, revision history, and pending approvals.",
         "- Press a/x on the tracks screen to approve or reject the next pending request.",
-        "- Press s on tracks to start a run, e on runs to resume, c on runs to cancel.",
+        "- Press s on tracks to start a run; the start composer can preview folder sessions before starting fresh, resuming, or forking.",
+        "- Press e on runs to resume, c on runs to cancel.",
         "- Press f on runs to cycle all/active/terminal filters.",
         "- Press Space on runs to pause or resume the live SSE tail.",
         "- Runs view tails live SSE events with automatic reconnect attempts.",
@@ -1944,6 +2018,7 @@ export async function runTerminalApp(
       backend: "codex",
       profile: "default",
       prompt: `Implement ${detail.track.title}`,
+      workspacePath: process.cwd(),
       message: detail.planningContext?.hasPendingChanges ? "This track currently has pending planning changes. Start will fail until approvals are resolved." : null,
     }));
   };
@@ -2164,7 +2239,114 @@ export async function runTerminalApp(
       return;
     }
 
+    const activeField = action.activeField ?? "prompt";
+    if (activeField === "workspacePath" && action.kind === "start") {
+      updateExecutionComposer({ ...action, workspacePath: updater(action.workspacePath ?? ""), folderSessions: undefined, folderSessionPreview: null, message: null });
+      return;
+    }
+
     updateExecutionComposer({ ...action, prompt: updater(action.prompt), message: null });
+  };
+
+  const cycleExecutionField = () => {
+    const action = state.pendingExecutionAction;
+    if (!action || action.kind !== "start" || action.submitting) {
+      return;
+    }
+
+    const activeField = (action.activeField ?? "prompt") === "prompt" ? "workspacePath" : "prompt";
+    updateExecutionComposer({ ...action, activeField, message: null }, `Editing execution ${activeField}.`);
+  };
+
+  const previewFolderSessions = async () => {
+    const action = state.pendingExecutionAction;
+    if (!action || action.kind !== "start" || action.submitting) {
+      return;
+    }
+
+    const workspacePath = action.workspacePath?.trim();
+    if (!workspacePath) {
+      updateExecutionComposer({ ...action, message: "Folder path is required before previewing folder sessions." }, "Folder path is required before previewing folder sessions.");
+      return;
+    }
+
+    state = {
+      ...state,
+      pendingExecutionAction: { ...action, submitting: true, message: `Looking up sessions for ${workspacePath}...` },
+      statusLine: `Looking up sessions for ${workspacePath}...`,
+    };
+    render();
+
+    try {
+      const sessions = await client.listRunsByWorkspacePath(workspacePath);
+      const selectedIndex = clampIndex(action.selectedFolderSessionIndex ?? 0, sessions.length);
+      const selectedRun = sessions[selectedIndex];
+      const preview = selectedRun ? await client.loadRunSessionPreview(selectedRun.id, 5) : null;
+      updateExecutionComposer({
+        ...action,
+        submitting: false,
+        folderSessions: sessions,
+        selectedFolderSessionIndex: selectedIndex,
+        folderSessionPreview: preview,
+        message: sessions.length > 0 ? "Folder sessions loaded. Ctrl+R resumes selected, Ctrl+K forks selected, Enter starts fresh." : "No folder sessions found. Enter starts fresh.",
+      }, sessions.length > 0 ? `Loaded ${sessions.length} folder session(s).` : "No folder sessions found.");
+    } catch (error) {
+      updateExecutionComposer({
+        ...action,
+        submitting: false,
+        message: error instanceof Error ? error.message : "Failed to preview folder sessions.",
+      }, error instanceof Error ? error.message : "Failed to preview folder sessions.");
+    }
+  };
+
+  const selectFolderSession = async (delta: number) => {
+    const action = state.pendingExecutionAction;
+    const sessions = action?.folderSessions ?? [];
+    if (!action || action.kind !== "start" || action.submitting || sessions.length === 0) {
+      return;
+    }
+
+    const selectedIndex = clampIndex((action.selectedFolderSessionIndex ?? 0) + delta, sessions.length);
+    const selectedRun = sessions[selectedIndex];
+    updateExecutionComposer({ ...action, selectedFolderSessionIndex: selectedIndex, folderSessionPreview: null, message: selectedRun ? `Selected folder session ${selectedRun.id}; loading preview...` : null }, selectedRun ? `Selected folder session ${selectedRun.id}.` : state.statusLine);
+    if (!selectedRun) {
+      return;
+    }
+
+    try {
+      const preview = await client.loadRunSessionPreview(selectedRun.id, 5);
+      const latestAction = state.pendingExecutionAction;
+      if (latestAction?.kind === "start") {
+        updateExecutionComposer({ ...latestAction, folderSessionPreview: preview, message: `Selected folder session ${selectedRun.id}. Ctrl+R resumes, Ctrl+K forks.` }, `Selected folder session ${selectedRun.id}.`);
+      }
+    } catch (error) {
+      const latestAction = state.pendingExecutionAction;
+      if (latestAction?.kind === "start") {
+        updateExecutionComposer({ ...latestAction, message: error instanceof Error ? error.message : "Failed to load session preview." }, error instanceof Error ? error.message : "Failed to load session preview.");
+      }
+    }
+  };
+
+  const continueSelectedFolderSession = (kind: "resume" | "fork") => {
+    const action = state.pendingExecutionAction;
+    const sessions = action?.folderSessions ?? [];
+    const selectedRun = sessions[clampIndex(action?.selectedFolderSessionIndex ?? 0, sessions.length)];
+    if (!action || action.kind !== "start" || !selectedRun) {
+      updateExecutionComposer(action ? { ...action, message: "Preview and select a folder session first." } : null, "Preview and select a folder session first.");
+      return;
+    }
+
+    beginExecutionAction(createExecutionActionDraft({
+      kind,
+      scope: "run",
+      runId: selectedRun.id,
+      trackId: selectedRun.trackId,
+      planningSessionId: action.planningSessionId,
+      backend: selectedRun.backend ?? action.backend,
+      profile: selectedRun.profile ?? action.profile,
+      prompt: action.prompt,
+      message: kind === "resume" ? `Resuming folder session ${selectedRun.id}.` : `Forking folder session ${selectedRun.id}.`,
+    }));
   };
 
   const editExecutionProfile = (updater: (value: string) => string) => {
@@ -2362,7 +2544,7 @@ export async function runTerminalApp(
       return;
     }
 
-    if ((action.kind === "start" || action.kind === "resume") && action.prompt.trim().length === 0) {
+    if ((action.kind === "start" || action.kind === "resume" || action.kind === "fork") && action.prompt.trim().length === 0) {
       updateExecutionComposer({ ...action, message: "Prompt is required." }, "Prompt is required.");
       return;
     }
@@ -2370,7 +2552,7 @@ export async function runTerminalApp(
     state = {
       ...state,
       pendingExecutionAction: { ...action, submitting: true, message: null },
-      statusLine: `${action.kind === "cancel" ? "Cancelling" : action.kind === "resume" ? "Resuming" : "Starting"} execution...`,
+      statusLine: `${action.kind === "cancel" ? "Cancelling" : action.kind === "resume" ? "Resuming" : action.kind === "fork" ? "Forking" : "Starting"} execution...`,
     };
     render();
 
@@ -2386,6 +2568,13 @@ export async function runTerminalApp(
         });
       } else if (action.kind === "resume") {
         runDetail = await client.resumeRun({
+          runId: action.runId ?? "",
+          prompt: action.prompt.trim(),
+          backend: action.backend,
+          profile: action.profile.trim() || undefined,
+        });
+      } else if (action.kind === "fork") {
+        runDetail = await client.forkRun({
           runId: action.runId ?? "",
           prompt: action.prompt.trim(),
           backend: action.backend,
@@ -2413,6 +2602,8 @@ export async function runTerminalApp(
             ? `Started run ${runId} with ${runDetail.run.backend ?? action.backend}/${runDetail.run.profile ?? action.profile}.`
             : action.kind === "resume"
               ? `Resumed run ${runId} with ${runDetail.run.backend ?? action.backend}/${runDetail.run.profile ?? action.profile}.`
+              : action.kind === "fork"
+                ? `Forked run ${action.runId} as ${runId} with ${runDetail.run.backend ?? action.backend}/${runDetail.run.profile ?? action.profile}.`
               : `Cancelled run ${runId}.`,
       }));
     } catch (error) {
@@ -2476,6 +2667,36 @@ export async function runTerminalApp(
         }
 
         if (state.pendingExecutionAction.kind !== "cancel") {
+          if (state.pendingExecutionAction.kind === "start" && key.ctrl && key.name === "f") {
+            void previewFolderSessions();
+            return;
+          }
+
+          if (state.pendingExecutionAction.kind === "start" && key.ctrl && key.name === "r") {
+            continueSelectedFolderSession("resume");
+            return;
+          }
+
+          if (state.pendingExecutionAction.kind === "start" && key.ctrl && key.name === "k") {
+            continueSelectedFolderSession("fork");
+            return;
+          }
+
+          if (state.pendingExecutionAction.kind === "start" && key.name === "tab") {
+            cycleExecutionField();
+            return;
+          }
+
+          if (state.pendingExecutionAction.kind === "start" && input === "[") {
+            void selectFolderSession(-1);
+            return;
+          }
+
+          if (state.pendingExecutionAction.kind === "start" && input === "]") {
+            void selectFolderSession(1);
+            return;
+          }
+
           if (key.name === "backspace") {
             editExecutionPrompt((value) => value.slice(0, -1));
             return;

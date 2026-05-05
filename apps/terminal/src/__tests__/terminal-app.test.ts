@@ -10,6 +10,7 @@ import test from "node:test";
 import {
   appendRunEvents,
   bootstrapTerminalState,
+  createExecutionActionDraft,
   createEmptyRunEventFeedState,
   loadTerminalPreferences,
   renderAppShell,
@@ -134,6 +135,37 @@ test("SpecRailTerminalApiClient loads Markdown run reports", async () => {
   });
 
   assert.equal(await client.loadRunReportMarkdown("run/1"), "# Run Report — run/1\n");
+});
+
+test("SpecRailTerminalApiClient supports folder session discovery, preview, and fork", async () => {
+  const requests: Array<{ url: string; method?: string; body?: string }> = [];
+  const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
+    const url = String(input);
+    requests.push({ url, method: init?.method, body: init?.body?.toString() });
+
+    if (url === "http://example.test/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Fapp") {
+      return new Response(JSON.stringify({ runs: [{ id: "run-folder", trackId: "track-1", status: "completed", workspacePath: "/workspace/app", backend: "codex" }] }), { status: 200 });
+    }
+
+    if (url === "http://example.test/runs/run-folder/session-preview?eventLimit=5") {
+      return new Response(JSON.stringify({ execution: { id: "run-folder", trackId: "track-1", status: "completed" }, session: { sessionRef: "run-folder-codex" }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ id: "evt-1", executionId: "run-folder", type: "summary", timestamp: "2026-04-10T12:00:00.000Z", source: "codex", summary: "Run completed" }], reportPath: "/runs/run-folder/report.md" }), { status: 200 });
+    }
+
+    if (url === "http://example.test/runs/run-folder/fork" && init?.method === "POST") {
+      assert.equal(init.body?.toString(), JSON.stringify({ prompt: "Continue from folder", backend: "codex", profile: "default" }));
+      return new Response(JSON.stringify({ run: { id: "run-fork", trackId: "track-1", status: "running", parentExecutionId: "run-folder", backend: "codex" } }), { status: 201 });
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  const runs = await client.listRunsByWorkspacePath("/workspace/app");
+  assert.equal(runs[0]?.id, "run-folder");
+  const preview = await client.loadRunSessionPreview("run-folder");
+  assert.equal(preview.session?.sessionRef, "run-folder-codex");
+  const fork = await client.forkRun({ runId: "run-folder", prompt: "Continue from folder", backend: "codex", profile: "default" });
+  assert.equal(fork.run.id, "run-fork");
+  assert.equal(requests.length, 3);
 });
 
 test("runTerminalCommand writes report command output to stdout", async () => {
@@ -472,7 +504,53 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
   assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, v propose, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
-  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, v proposes, a\/x approves or rejects pending revisions, s starts a run\./);
+  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, v proposes, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
+});
+
+test("renderAppShell renders start composer folder session discovery controls", () => {
+  const action = createExecutionActionDraft({
+    kind: "start",
+    scope: "track",
+    trackId: "track-1",
+    planningSessionId: "plan-1",
+    backend: "codex",
+    profile: "default",
+    prompt: "Continue selected work",
+    workspacePath: "/workspace/app",
+  });
+  action.folderSessions = [{ id: "run-folder", trackId: "track-1", status: "completed", workspacePath: "/workspace/app", backend: "codex", continuityMode: "fresh", summary: { eventCount: 3, lastEventSummary: "Run completed" } }];
+  action.folderSessionPreview = {
+    execution: action.folderSessions[0]!,
+    session: { sessionRef: "run-folder-codex" },
+    capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true },
+    events: [{ id: "evt-1", executionId: "run-folder", type: "summary", timestamp: "2026-04-10T12:00:00.000Z", source: "codex", summary: "Run completed" }],
+    reportPath: "/runs/run-folder/report.md",
+  };
+
+  const rendered = renderAppShell({
+    screen: "tracks",
+    statusLine: "Composing run start for track-1.",
+    apiBaseUrl: "http://127.0.0.1:4000",
+    refreshIntervalMs: 5000,
+    loading: false,
+    error: null,
+    tracks: { selectedId: "track-1", selectedIndex: 0, loading: false, error: null, data: null },
+    runs: { selectedId: null, selectedIndex: 0, loading: false, error: null, data: null },
+    runFilter: "all",
+    runEvents: createEmptyRunEventFeedState(),
+    pendingTrackAction: null,
+    pendingExecutionAction: action,
+    pendingProposalAction: null,
+    summary: { fetchedAt: "2026-04-10T12:00:00.000Z", tracks: [{ id: "track-1", title: "Terminal shell" }], runs: [] },
+  });
+
+  assert.match(rendered, /folder path: \/workspace\/app/);
+  assert.match(rendered, /folder sessions \(1, selected 1\/1/);
+  assert.match(rendered, /> run-folder \| completed \| codex \| fresh \| Run completed/);
+  assert.match(rendered, /selected session: run-folder-codex/);
+  assert.match(rendered, /selected capabilities: resume=true, providerFork=false, contextCopyFork=true/);
+  assert.match(rendered, /Ctrl\+F previews folder sessions; Ctrl\+R resumes selected session; Ctrl\+K forks selected session/);
+  assert.match(rendered, /Help: start composer — type edits prompt\/folder, Tab switches field, Ctrl\+F previews folder sessions, Ctrl\+R resumes selected session, Ctrl\+K forks selected session, Enter starts fresh, Esc aborts\./);
 });
 
 test("renderAppShell renders run event monitor details", () => {
