@@ -16,8 +16,10 @@ import type {
   ArtifactKind,
   ArtifactRevision,
   ChannelBinding,
+  ContinuityMode,
   Execution,
   ExecutionEvent,
+  ExecutorSessionMetadata,
   ExecutionStatus,
   PlanningMessage,
   PlanningMessageKind,
@@ -78,6 +80,13 @@ export interface RuntimeApprovalDecisionInput {
 
 export interface ExecutionBackend {
   readonly name: string;
+  readonly capabilities?: {
+    supportsResume?: boolean;
+    supportsStructuredEvents?: boolean;
+    supportsApprovalBroker?: boolean;
+    supportsProviderFork?: boolean;
+    supportsContextCopyFork?: boolean;
+  };
   spawn(input: {
     executionId: string;
     prompt: string;
@@ -90,6 +99,15 @@ export interface ExecutionBackend {
     prompt: string;
     workspacePath: string;
     profile: string;
+  }): Promise<ExecutorLaunchResult>;
+  fork?(input: {
+    executionId: string;
+    sourceSessionRef: string;
+    sourceExecutionId: string;
+    prompt: string;
+    workspacePath: string;
+    profile: string;
+    mode: ContinuityMode;
   }): Promise<ExecutorLaunchResult>;
   cancel(input: {
     executionId: string;
@@ -190,6 +208,18 @@ export interface ResumeRunInput {
 
 export interface CancelRunInput {
   runId: string;
+}
+
+export interface GetRunSessionInput {
+  runId: string;
+}
+
+export interface ForkRunInput {
+  runId: string;
+  prompt: string;
+  mode?: ContinuityMode;
+  backend?: string;
+  profile?: string;
 }
 
 export interface ProposeArtifactRevisionInput {
@@ -904,6 +934,7 @@ export class SpecRailService {
       tasksRevisionId: planningContext.tasksRevisionId,
       planningContextStale: false,
       planningContextUpdatedAt: planningContext.updatedAt,
+      continuityMode: "fresh",
       status: "running",
       createdAt,
       startedAt: createdAt,
@@ -951,6 +982,7 @@ export class SpecRailService {
       ...execution,
       profile,
       command: launch.command,
+      continuityMode: "resume_same_run",
       status: "running",
       startedAt: execution.startedAt ?? this.now(),
       finishedAt: undefined,
@@ -996,6 +1028,133 @@ export class SpecRailService {
     await this.reconcileTrackStatusFromRun(cancelledExecution.trackId, cancelledExecution);
 
     return this.hydrateExecutionPlanningContext(cancelledExecution);
+  }
+
+  async getRunSession(input: GetRunSessionInput): Promise<{ execution: Execution; session?: ExecutorSessionMetadata | null; capabilities?: { supportsResume: boolean; supportsProviderFork: boolean; supportsContextCopyFork: boolean } }> {
+    const execution = await this.requireRun(input.runId);
+    const executor = this.resolveExecutor(execution.backend);
+
+    const session: ExecutorSessionMetadata | null = execution.sessionRef
+      ? {
+          executionId: execution.id,
+          sessionRef: execution.sessionRef,
+          backend: execution.backend,
+          profile: execution.profile,
+          workspacePath: execution.workspacePath,
+          command: execution.command ?? { command: "", args: [], cwd: execution.workspacePath, prompt: "" },
+          status: execution.status === "running" || execution.status === "waiting_approval" ? "running" : execution.status === "completed" ? "completed" : execution.status === "failed" ? "failed" : execution.status === "cancelled" ? "cancelled" : "spawned",
+          prompt: execution.command?.prompt ?? "",
+          createdAt: execution.createdAt,
+          startedAt: execution.startedAt,
+          updatedAt: execution.finishedAt ?? execution.createdAt,
+          finishedAt: execution.finishedAt,
+          parentSessionRef: execution.parentSessionRef,
+        }
+      : null;
+
+    const capabilities = {
+      supportsResume: executor.capabilities?.supportsResume ?? true,
+      supportsProviderFork: executor.capabilities?.supportsProviderFork ?? false,
+      supportsContextCopyFork: executor.capabilities?.supportsContextCopyFork ?? true,
+    };
+
+    return { execution: await this.hydrateExecutionPlanningContext(execution), session, capabilities };
+  }
+
+  async forkRun(input: ForkRunInput): Promise<Execution> {
+    const sourceExecution = await this.requireRun(input.runId);
+    const executor = this.resolveExecutor(input.backend ?? sourceExecution.backend);
+    const track = await this.dependencies.trackRepository.getById(sourceExecution.trackId);
+
+    if (!track) {
+      throw new NotFoundError(`Track not found: ${sourceExecution.trackId}`);
+    }
+
+    const planningContext = await this.resolvePlanningContextForStart(track, sourceExecution.planningSessionId);
+    const executionId = `run-${this.idGenerator()}`;
+    const createdAt = this.now();
+    const workspace = await this.workspaceManager.allocate({
+      executionId,
+      workspaceRoot: this.dependencies.workspaceRoot,
+      localRepoPath: this.dependencies.defaultProject.localRepoPath,
+    });
+    const prompt = normalizeRequiredString(input.prompt);
+    const profile = normalizeProfile(this.resolveExecutionProfile(input.profile ?? sourceExecution.profile));
+    const mode: ContinuityMode = input.mode ?? (executor.capabilities?.supportsProviderFork ? "provider_fork" : "context_copy");
+
+    if (mode === "resume_same_run" || mode === "provider_resume") {
+      throw new ValidationError(`Fork mode ${mode} is not supported by /fork; use resume for same-run continuity`);
+    }
+
+    if (mode === "provider_fork" && (!(executor.capabilities?.supportsProviderFork ?? false) || !executor.fork)) {
+      throw new ValidationError(`Execution backend ${executor.name} does not support provider-level fork`);
+    }
+
+    if (mode === "context_copy" && !(executor.capabilities?.supportsContextCopyFork ?? true)) {
+      throw new ValidationError(`Execution backend ${executor.name} does not support context-copy fork`);
+    }
+
+    let launch: { sessionRef: string; command: Execution["command"]; events: ExecutionEvent[] };
+
+    if ((mode === "provider_fork" || mode === "context_copy") && sourceExecution.sessionRef && executor.fork) {
+      const forkResult = await executor.fork({
+        executionId,
+        sourceSessionRef: sourceExecution.sessionRef,
+        sourceExecutionId: sourceExecution.id,
+        prompt,
+        workspacePath: workspace.workspacePath,
+        profile,
+        mode,
+      });
+      launch = { sessionRef: forkResult.sessionRef, command: forkResult.command, events: forkResult.events };
+    } else {
+      const spawnResult = await executor.spawn({
+        executionId,
+        prompt,
+        workspacePath: workspace.workspacePath,
+        profile,
+      });
+      launch = { sessionRef: spawnResult.sessionRef, command: spawnResult.command, events: spawnResult.events };
+    }
+
+    const forkedExecution: Execution = {
+      id: executionId,
+      trackId: track.id,
+      backend: executor.name,
+      profile,
+      workspacePath: workspace.workspacePath,
+      branchName: workspace.branchName,
+      sessionRef: launch.sessionRef,
+      command: launch.command,
+      planningSessionId: planningContext.planningSessionId,
+      specRevisionId: planningContext.specRevisionId,
+      planRevisionId: planningContext.planRevisionId,
+      tasksRevisionId: planningContext.tasksRevisionId,
+      planningContextStale: false,
+      planningContextUpdatedAt: planningContext.updatedAt,
+      parentExecutionId: sourceExecution.id,
+      parentSessionRef: sourceExecution.sessionRef,
+      continuityMode: mode,
+      sourceRunId: sourceExecution.id,
+      status: "running",
+      createdAt,
+      startedAt: createdAt,
+    };
+
+    await this.dependencies.executionRepository.create(forkedExecution);
+
+    for (const event of launch.events) {
+      await this.dependencies.eventStore.append(event);
+    }
+
+    const execution = buildExecutionSnapshot(
+      forkedExecution,
+      await this.dependencies.eventStore.listByExecution(executionId),
+    );
+    await this.dependencies.executionRepository.update(execution);
+    await this.reconcileTrackStatusFromRun(execution.trackId, execution);
+
+    return this.hydrateExecutionPlanningContext(execution);
   }
 
   async getRun(runId: string): Promise<Execution | null> {

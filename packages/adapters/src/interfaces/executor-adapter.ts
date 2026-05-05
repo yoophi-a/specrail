@@ -1,6 +1,7 @@
 import type { CommandExecutionMetadata, ExecutionEvent, RuntimeApprovalDecisionInput } from "@specrail/core";
 
 export type ExecutionBackend = "codex" | "claude_code" | (string & {});
+export type ContinuityMode = "fresh" | "resume_same_run" | "provider_resume" | "provider_fork" | "context_copy";
 
 export interface ExecutorCommandSpec {
   command: string;
@@ -63,6 +64,23 @@ export interface ResumeExecutionResult {
   events: ExecutionEvent[];
 }
 
+export interface ForkExecutionInput {
+  executionId: string;
+  sourceSessionRef: string;
+  sourceExecutionId: string;
+  prompt: string;
+  workspacePath: string;
+  profile: string;
+  mode: ContinuityMode;
+}
+
+export interface ForkExecutionResult {
+  sessionRef: string;
+  metadata: ExecutorSessionMetadata;
+  command: CommandExecutionMetadata;
+  events: ExecutionEvent[];
+}
+
 export interface CancelExecutionInput {
   executionId?: string;
   sessionRef: string;
@@ -72,6 +90,8 @@ export interface AdapterCapabilities {
   supportsResume: boolean;
   supportsStructuredEvents: boolean;
   supportsApprovalBroker: boolean;
+  supportsProviderFork?: boolean;
+  supportsContextCopyFork?: boolean;
 }
 
 export interface ExecutorAdapter {
@@ -79,6 +99,7 @@ export interface ExecutorAdapter {
   readonly capabilities: AdapterCapabilities;
   spawn(input: SpawnExecutionInput): Promise<SpawnExecutionResult>;
   resume(input: ResumeExecutionInput): Promise<ResumeExecutionResult>;
+  fork?(input: ForkExecutionInput): Promise<ForkExecutionResult>;
   cancel(input: CancelExecutionInput): Promise<ExecutionEvent>;
   resolveRuntimeApproval?(input: RuntimeApprovalDecisionInput): Promise<ExecutionEvent[]>;
   normalize(rawEvent: unknown): ExecutionEvent | null;

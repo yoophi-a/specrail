@@ -47,6 +47,10 @@ export interface RunListItem {
   branchName?: string;
   workspacePath?: string;
   sessionRef?: string;
+  parentExecutionId?: string;
+  parentSessionRef?: string;
+  continuityMode?: string;
+  sourceRunId?: string;
   planningSessionId?: string;
   planningContextStale?: boolean;
   planningContextUpdatedAt?: string;
@@ -1342,6 +1346,8 @@ function renderRunDetail(
     `- branch: ${run.branchName ?? "unknown"}`,
     `- workspace: ${run.workspacePath ?? "unknown"}`,
     `- session: ${run.sessionRef ?? "none"}`,
+    `- continuity: ${run.continuityMode ?? "unknown"}`,
+    `- parent run/session: ${run.parentExecutionId ?? "none"} / ${run.parentSessionRef ?? "none"}`,
     `- planning session: ${run.planningSessionId ?? "none"}`,
     `- planning context stale: ${run.planningContextStale ? "yes" : "no"}`,
     `- stale reason: ${run.planningContextStaleReason ?? "none"}`,

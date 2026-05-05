@@ -60,6 +60,7 @@ interface ApiDeps {
   workspaceRoot: string;
   executionWorkspaceMode: ExecutionWorkspaceMode;
   localRepoPath?: string;
+  sessionsDir?: string;
   cleanupApplier: ExecutionWorkspaceCleanupApplier;
 }
 
@@ -113,6 +114,13 @@ interface AppendPlanningMessageRequestBody {
 
 interface ResumeRunRequestBody {
   prompt: string;
+  backend?: string;
+  profile?: string;
+}
+
+interface ForkRunRequestBody {
+  prompt: string;
+  mode?: "fresh" | "resume_same_run" | "provider_resume" | "provider_fork" | "context_copy";
   backend?: string;
   profile?: string;
 }
@@ -195,6 +203,7 @@ interface DefaultDependencies {
   workspaceRoot: string;
   executionWorkspaceMode: ExecutionWorkspaceMode;
   localRepoPath?: string;
+  sessionsDir: string;
   serviceDependencies: SpecRailServiceDependencies;
 }
 
@@ -327,6 +336,7 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
     workspaceRoot,
     executionWorkspaceMode: config.executionWorkspaceMode,
     localRepoPath: serviceDependencies.defaultProject.localRepoPath,
+    sessionsDir,
     serviceDependencies,
   };
 }
@@ -723,6 +733,43 @@ function assertValidResumeRunBody(body: ResumeRunRequestBody): void {
   }
 }
 
+function assertValidForkRunBody(body: ForkRunRequestBody): void {
+  const details: ApiErrorDetail[] = [];
+
+  const promptDetail = getNonEmptyStringDetail("prompt", body.prompt);
+
+  if (promptDetail) {
+    details.push(promptDetail);
+  }
+
+  if (body.mode !== undefined) {
+    const validModes = ["fresh", "resume_same_run", "provider_resume", "provider_fork", "context_copy"] as const;
+    if (!validModes.includes(body.mode as (typeof validModes)[number])) {
+      details.push({ field: "mode", message: `must be one of: ${validModes.join(", ")}` });
+    }
+  }
+
+  if (body.backend !== undefined) {
+    const backendDetail = getNonEmptyStringDetail("backend", body.backend);
+    if (backendDetail) {
+      details.push(backendDetail);
+    } else if (!EXECUTION_BACKENDS.includes(body.backend as (typeof EXECUTION_BACKENDS)[number])) {
+      details.push({ field: "backend", message: `must be one of: ${EXECUTION_BACKENDS.join(", ")}` });
+    }
+  }
+
+  if (body.profile !== undefined) {
+    const profileDetail = getNonEmptyStringDetail("profile", body.profile);
+    if (profileDetail) {
+      details.push(profileDetail);
+    }
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
 function assertValidProposeArtifactRevisionBody(body: ProposeArtifactRevisionRequestBody): void {
   const details: ApiErrorDetail[] = [];
   const contentDetail = getNonEmptyStringDetail("content", body.content);
@@ -1040,6 +1087,18 @@ async function readTrackArtifacts(artifactRoot: string, trackId: string): Promis
   ]);
 
   return { spec, plan, tasks };
+}
+
+async function readExecutorSessionMetadata(sessionsDir: string | undefined, sessionRef: string | undefined): Promise<Record<string, unknown> | null> {
+  if (!sessionsDir || !sessionRef) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(await readFile(path.join(sessionsDir, `${sessionRef}.json`), "utf8")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
@@ -1400,9 +1459,34 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "POST" && segments.length === 3 && segments[0] === "runs" && segments[2] === "fork") {
+        const body = await readJson<ForkRunRequestBody>(request);
+        assertValidForkRunBody(body);
+
+        const run = await deps.service.forkRun({
+          runId: segments[1] ?? "",
+          prompt: body.prompt,
+          mode: body.mode,
+          backend: body.backend,
+          profile: body.profile,
+        });
+        sendJson(response, 201, { run });
+        return;
+      }
+
       if (method === "POST" && segments.length === 3 && segments[0] === "runs" && segments[2] === "cancel") {
         const run = await deps.service.cancelRun({ runId: segments[1] ?? "" });
         sendJson(response, 200, { run });
+        return;
+      }
+
+      if (method === "GET" && segments.length === 3 && segments[0] === "runs" && segments[2] === "session") {
+        const sessionFacts = await deps.service.getRunSession({ runId: segments[1] ?? "" });
+        const persistedSession = await readExecutorSessionMetadata(deps.sessionsDir, sessionFacts.execution.sessionRef);
+        sendJson(response, 200, {
+          ...sessionFacts,
+          session: persistedSession ?? sessionFacts.session,
+        });
         return;
       }
 
@@ -1460,6 +1544,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         sendJson(response, 200, { run });
         return;
       }
+
 
       if (method === "GET" && segments.length === 4 && segments[0] === "runs" && segments[2] === "events" && segments[3] === "stream") {
         const run = await deps.service.getRun(segments[1] ?? "");
@@ -1547,6 +1632,7 @@ export function createDefaultServer(): http.Server {
     workspaceRoot: dependencies.workspaceRoot,
     executionWorkspaceMode: dependencies.executionWorkspaceMode,
     localRepoPath: dependencies.localRepoPath,
+    sessionsDir: dependencies.sessionsDir,
     cleanupApplier: new ExecutionWorkspaceCleanupApplier(),
   });
 }

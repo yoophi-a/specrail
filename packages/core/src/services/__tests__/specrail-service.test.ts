@@ -195,6 +195,7 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.deepEqual(workspaceAllocations, [{ executionId: "run-run-a", workspaceRoot, localRepoPath: undefined }]);
   assert.equal(run.command?.command, "codex");
   assert.equal(run.status, "running");
+  assert.equal(run.continuityMode, "fresh");
   assert.deepEqual(run.summary, {
     eventCount: 2,
     lastEventSummary: "Prepared Codex command",
@@ -208,9 +209,26 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(resumedRun.command?.resumeSessionRef, "session:run-run-a");
   assert.equal(resumedRun.command?.prompt, "Continue with verification");
   assert.equal(resumedRun.status, "running");
+  assert.equal(resumedRun.continuityMode, "resume_same_run");
   assert.ok((resumedRun.summary?.eventCount ?? 0) >= (run.summary?.eventCount ?? 0) + 1);
   assert.equal(resumedRun.summary?.lastEventSummary, "Run resumed");
   assert.equal(resumedRun.summary?.lastEventAt, "2026-04-09T03:05:00.000Z");
+
+  const runSession = await service.getRunSession({ runId: run.id });
+  assert.equal(runSession.session?.sessionRef, "session:run-run-a");
+  assert.equal(runSession.capabilities?.supportsResume, true);
+  assert.equal(runSession.capabilities?.supportsContextCopyFork, true);
+
+  const forkedRun = await service.forkRun({
+    runId: run.id,
+    prompt: "Explore this in a separate run",
+    mode: "context_copy",
+  });
+  assert.equal(forkedRun.parentExecutionId, run.id);
+  assert.equal(forkedRun.parentSessionRef, "session:run-run-a");
+  assert.equal(forkedRun.continuityMode, "context_copy");
+  assert.notEqual(forkedRun.id, run.id);
+  assert.notEqual(forkedRun.sessionRef, run.sessionRef);
 
   const cancelledRun = await service.cancelRun({ runId: run.id });
   assert.equal(cancelledRun.status, "cancelled");

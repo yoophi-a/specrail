@@ -137,6 +137,33 @@ export const CHANNEL_TYPES = ["telegram", "github"] as const;
 
 export type ChannelType = (typeof CHANNEL_TYPES)[number];
 
+export interface ExecutorSessionMetadata {
+  executionId: string;
+  sessionRef: string;
+  backend: string;
+  profile: string;
+  workspacePath: string;
+  command: CommandExecutionMetadata;
+  pid?: number;
+  providerSessionId?: string;
+  providerInvocationId?: string;
+  resumeSessionRef?: string;
+  parentSessionRef?: string;
+  providerMetadata?: Record<string, unknown>;
+  codexSessionId?: string;
+  status: "spawned" | "running" | "completed" | "failed" | "cancelled";
+  prompt: string;
+  createdAt: string;
+  startedAt?: string;
+  updatedAt: string;
+  resumedAt?: string;
+  cancelledAt?: string;
+  finishedAt?: string;
+  exitCode?: number | null;
+  signal?: NodeJS.Signals;
+  failureMessage?: string;
+}
+
 export interface ChannelBinding {
   id: string;
   projectId: string;
@@ -181,6 +208,8 @@ export interface ExecutionSummary {
   lastEventAt?: string;
 }
 
+export type ContinuityMode = "fresh" | "resume_same_run" | "provider_resume" | "provider_fork" | "context_copy";
+
 export interface Execution {
   id: string;
   trackId: string;
@@ -198,6 +227,10 @@ export interface Execution {
   planningContextStale?: boolean;
   planningContextUpdatedAt?: string;
   planningContextStaleReason?: string;
+  parentExecutionId?: string;
+  parentSessionRef?: string;
+  continuityMode?: ContinuityMode;
+  sourceRunId?: string;
   status: ExecutionStatus;
   createdAt: string;
   startedAt?: string;

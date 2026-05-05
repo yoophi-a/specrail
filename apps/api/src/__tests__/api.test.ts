@@ -774,6 +774,31 @@ test("API supports resuming and cancelling a run", async () => {
     assert.ok((resumedPayload.run.summary?.eventCount ?? 0) >= 3);
     assert.match(resumedPayload.run.summary?.lastEventSummary ?? "", /Resumed Codex session/);
 
+    const sessionResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/session`);
+    await assertJsonResponseStatus(sessionResponse, 200);
+    const sessionPayload = (await sessionResponse.json()) as {
+      session?: { sessionRef?: string; providerSessionId?: string; codexSessionId?: string; resumeSessionRef?: string };
+      capabilities?: { supportsResume?: boolean; supportsContextCopyFork?: boolean };
+    };
+    assert.equal(sessionPayload.session?.sessionRef, `${runPayload.run.id}-codex`);
+    assert.ok(sessionPayload.session?.resumeSessionRef ?? sessionPayload.session?.providerSessionId ?? sessionPayload.session?.codexSessionId);
+    assert.equal(sessionPayload.capabilities?.supportsResume, true);
+    assert.equal(sessionPayload.capabilities?.supportsContextCopyFork, true);
+
+    const forkResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/fork`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "Continue separately", mode: "context_copy" }),
+    });
+    await assertJsonResponseStatus(forkResponse, 201);
+    const forkPayload = (await forkResponse.json()) as {
+      run: { id: string; sessionRef?: string; parentExecutionId?: string; parentSessionRef?: string; continuityMode?: string };
+    };
+    assert.notEqual(forkPayload.run.id, runPayload.run.id);
+    assert.equal(forkPayload.run.parentExecutionId, runPayload.run.id);
+    assert.equal(forkPayload.run.parentSessionRef, `${runPayload.run.id}-codex`);
+    assert.equal(forkPayload.run.continuityMode, "context_copy");
+
     const cancelResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/cancel`, {
       method: "POST",
     });

@@ -269,6 +269,12 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     if (/^\/runs\/[^/]+\/resume$/.test(path) && method === "POST") {
       return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "running", ...(body as Record<string, unknown>) } }) };
     }
+    if (/^\/runs\/[^/]+\/fork$/.test(path) && method === "POST") {
+      const sourceRunId = decodeURIComponent(path.split("/")[2] ?? "");
+      const run = { id: `run-${runCounter++}`, sourceRunId, parentExecutionId: sourceRunId, parentSessionRef: `${sourceRunId}-codex`, continuityMode: "context_copy", status: "running", ...(body as Record<string, unknown>) };
+      runs.push(run);
+      return { ok: true, json: async () => ({ run }) };
+    }
     if (/^\/runs\/[^/]+\/cancel$/.test(path) && method === "POST") {
       return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "cancelled" } }) };
     }

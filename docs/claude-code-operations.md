@@ -32,11 +32,27 @@ claude \
   '<prompt>'
 ```
 
+Provider fork mode:
+
+```bash
+claude \
+  --permission-mode bypassPermissions \
+  --print \
+  --verbose \
+  --output-format stream-json \
+  --resume <source-provider-session-id> \
+  --fork-session \
+  [--model <profile>] \
+  --session-id <new-derived-session-id> \
+  '<prompt>'
+```
+
 Important expectations:
 - SpecRail uses `--print`, not an interactive TTY flow.
 - structured runtime data is discovered from Claude's `stream-json` stdout.
 - the process must be able to run in the allocated workspace directory.
 - `profile` is passed through as `--model` unless it is `default`.
+- provider fork mode creates a new SpecRail run linked to the source run/session while asking Claude Code to fork the provider conversation.
 
 ## Setup and environment assumptions
 

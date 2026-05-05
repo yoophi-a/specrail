@@ -15,6 +15,8 @@ import type {
   ExecutorAdapter,
   ExecutorCommandSpec,
   ExecutorSessionMetadata,
+  ForkExecutionInput,
+  ForkExecutionResult,
   ResumeExecutionInput,
   ResumeExecutionResult,
   SpawnExecutionInput,
@@ -172,6 +174,34 @@ function buildClaudeCodeResumeCommand(input: ResumeExecutionInput, metadata: Exe
   };
 }
 
+function buildClaudeCodeForkCommand(input: ForkExecutionInput, sourceMetadata: ExecutorSessionMetadata, sessionRef: string): ExecutorCommandSpec {
+  const resumeSessionRef = sourceMetadata.providerSessionId ?? sourceMetadata.resumeSessionRef ?? sourceMetadata.sessionRef;
+  const args = [
+    "--permission-mode",
+    "bypassPermissions",
+    "--print",
+    "--verbose",
+    "--output-format",
+    "stream-json",
+    "--resume",
+    resumeSessionRef,
+    "--fork-session",
+  ];
+
+  if (input.profile && input.profile !== "default") {
+    args.push("--model", input.profile);
+  }
+
+  args.push("--session-id", deriveClaudeSessionId(sessionRef));
+  args.push(input.prompt);
+
+  return {
+    command: "claude",
+    args,
+    cwd: input.workspacePath,
+  };
+}
+
 function deriveClaudeSessionId(sessionRef: string): string {
   const base = Buffer.from(sessionRef).toString("hex").slice(0, 32).padEnd(32, "0");
   return `${base.slice(0, 8)}-${base.slice(8, 12)}-${base.slice(12, 16)}-${base.slice(16, 20)}-${base.slice(20, 32)}`;
@@ -264,6 +294,8 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
     supportsResume: true,
     supportsStructuredEvents: true,
     supportsApprovalBroker: true,
+    supportsProviderFork: true,
+    supportsContextCopyFork: true,
   };
 
   private readonly sessionsDir: string;
@@ -375,6 +407,71 @@ export class ClaudeCodeAdapter implements ExecutorAdapter {
       sessionRef: metadata.sessionRef,
       command: toCommandMetadata(command, input.prompt, resumeSessionRef),
       events: event ? [event] : [],
+    };
+  }
+
+  async fork(input: ForkExecutionInput): Promise<ForkExecutionResult> {
+    const sourceMetadata = await readSessionMetadata(this.sessionsDir, input.sourceSessionRef);
+    const timestamp = this.now();
+    const sessionRef = `${input.executionId}-claude`;
+    const command = input.mode === "provider_fork"
+      ? buildClaudeCodeForkCommand(input, sourceMetadata, sessionRef)
+      : buildClaudeCodeSpawnCommandForSessionRef(input, sessionRef);
+    const resumeSessionRef = sourceMetadata.providerSessionId ?? sourceMetadata.resumeSessionRef ?? sourceMetadata.sessionRef;
+    const metadata = normalizeClaudeCodeSessionMetadata({
+      executionId: input.executionId,
+      sessionRef,
+      prompt: input.prompt,
+      workspacePath: input.workspacePath,
+      profile: input.profile,
+      command,
+      createdAt: timestamp,
+      startedAt: timestamp,
+      updatedAt: timestamp,
+      status: "running",
+      sessionId: input.mode === "provider_fork" ? undefined : deriveClaudeSessionId(sessionRef),
+      workingDirectory: input.workspacePath,
+      transcriptPath: buildSessionRawOutputPath(this.sessionsDir, sessionRef),
+      parentSessionRef: input.sourceSessionRef,
+    });
+    metadata.resumeSessionRef = input.mode === "provider_fork" ? resumeSessionRef : metadata.resumeSessionRef;
+    metadata.providerMetadata = mergeProviderMetadata(metadata, {
+      forkMode: input.mode,
+      sourceExecutionId: input.sourceExecutionId,
+      sourceSessionRef: input.sourceSessionRef,
+      sourceProviderSessionId: sourceMetadata.providerSessionId,
+    });
+
+    const spawned = this.spawnProcess(command.command, command.args, command.cwd);
+    metadata.pid = spawned.pid;
+    await writeSessionMetadata(this.sessionsDir, metadata);
+    this.attachProcessLifecycle({ executionId: input.executionId, sessionRef, process: spawned });
+
+    const lifecycleEvent = this.normalize({
+      kind: "spawned",
+      executionId: input.executionId,
+      sessionRef,
+      timestamp,
+      command,
+      sessionId: metadata.providerSessionId,
+    });
+
+    return {
+      sessionRef,
+      metadata,
+      command: toCommandMetadata(command, input.prompt, input.mode === "provider_fork" ? resumeSessionRef : metadata.providerSessionId),
+      events: [
+        {
+          id: `${input.executionId}:running:${timestamp}`,
+          executionId: input.executionId,
+          type: "task_status_changed",
+          timestamp,
+          source: this.name,
+          summary: `Forked Claude Code session from ${input.sourceSessionRef}`,
+          payload: { status: "running", sessionRef, parentSessionRef: input.sourceSessionRef, continuityMode: input.mode, pid: spawned.pid },
+        },
+        ...(lifecycleEvent ? [lifecycleEvent] : []),
+      ],
     };
   }
 

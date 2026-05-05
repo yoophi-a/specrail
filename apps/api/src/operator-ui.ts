@@ -85,6 +85,14 @@ export function operatorUiRunReportPath(runId: string): string {
   return `/runs/${encodeURIComponent(runId)}/report.md`;
 }
 
+export function operatorUiRunSessionPath(runId: string): string {
+  return `/runs/${encodeURIComponent(runId)}/session`;
+}
+
+export function operatorUiRunForkPath(runId: string): string {
+  return `/runs/${encodeURIComponent(runId)}/fork`;
+}
+
 export function renderOperatorUiStyleCss(): string {
   return `:root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { margin: 0; padding: 2rem; background: Canvas; color: CanvasText; }
@@ -458,12 +466,16 @@ export function renderOperatorUiClientScript(): string {
           ['Profile', run.profile],
           ['Workspace', run.workspacePath],
           ['Branch', run.branchName],
+          ['Session', run.sessionRef],
+          ['Continuity', run.continuityMode],
+          ['Parent run', run.parentExecutionId],
+          ['Parent session', run.parentSessionRef],
           ['Planning session', run.planningSessionId],
           ['Started', run.startedAt],
           ['Finished', run.finishedAt],
         ])
         + systemMessage('Run events below are projected as prompt-kit-style steps and tool cards while canonical history stays in SpecRail event storage.', '')
-        + '<h3>Run lifecycle</h3><div class="form-grid" data-control-group="run-lifecycle">' + promptInput('Resume prompt', 'run-resume-prompt', 'Continue with verification.', '<button data-run-resume="' + escapeHtml(run.id) + '">Resume run</button>', 'Resume sends a new prompt to the persisted backend session.') + '<label>Cancel confirmation <input id="run-cancel-confirmation" autocomplete="off" placeholder="Type cancel to confirm" /></label><p><button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button></p></div>'
+        + '<h3>Run lifecycle</h3><div class="form-grid" data-control-group="run-lifecycle">' + promptInput('Resume prompt', 'run-resume-prompt', 'Continue with verification.', '<button data-run-resume="' + escapeHtml(run.id) + '">Resume this run</button>', 'Resume sends a new prompt to the same persisted backend session.') + promptInput('Fork prompt', 'run-fork-prompt', 'Continue this work in a separate run.', '<button data-run-fork="' + escapeHtml(run.id) + '">Fork as new run</button>', 'Fork creates a new SpecRail run and records this run/session as its parent.') + '<label>Cancel confirmation <input id="run-cancel-confirmation" autocomplete="off" placeholder="Type cancel to confirm" /></label><p><button data-run-cancel="' + escapeHtml(run.id) + '">Cancel run</button></p></div>'
         + '<h3>Run report</h3><p data-control-group="run-report"><a class="pk-source" data-run-report="' + escapeHtml(run.id) + '" href="/runs/' + encodeURIComponent(run.id) + '/report.md" target="_blank" rel="noopener">↗ Open Markdown run report</a></p>'
         + cleanupSection
         + '<h3>Recent events</h3><p class="muted">Live updates use <code>GET /runs/:runId/events/stream</code> while this run is selected.</p><ul id="run-events" class="pk-steps">' + events.slice(-10).map((event) => renderRunEventCard(event)).join('') + '</ul>';
@@ -479,6 +491,20 @@ export function renderOperatorUiClientScript(): string {
           await load();
           await loadRunDetail(run.id);
         }, 'Resumed run ' + run.id + '.');
+      });
+      detail.querySelector('[data-run-fork]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const promptText = detail.querySelector('#run-fork-prompt')?.value.trim();
+        if (!promptText) {
+          status.textContent = 'Run fork prompt is required for ' + run.id + '.';
+          return;
+        }
+        await withAction(button, 'Forking run ' + run.id + '…', async () => {
+          const payload = await postJson('/runs/' + encodeURIComponent(run.id) + '/fork', { prompt: promptText });
+          await load();
+          await loadRunDetail(payload.run.id);
+          return payload;
+        }, (payload) => 'Forked run ' + run.id + ' as ' + payload.run.id + '.');
       });
       detail.querySelector('[data-run-cancel]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;

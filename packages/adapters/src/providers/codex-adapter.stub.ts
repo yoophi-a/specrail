@@ -15,6 +15,8 @@ import type {
   ExecutorAdapter,
   ExecutorCommandSpec,
   ExecutorSessionMetadata,
+  ForkExecutionInput,
+  ForkExecutionResult,
   ResumeExecutionInput,
   ResumeExecutionResult,
   SpawnExecutionInput,
@@ -193,6 +195,8 @@ export class CodexAdapter implements ExecutorAdapter {
     supportsResume: true,
     supportsStructuredEvents: true,
     supportsApprovalBroker: true,
+    supportsProviderFork: false,
+    supportsContextCopyFork: true,
   };
 
   private readonly sessionsDir: string;
@@ -297,6 +301,42 @@ export class CodexAdapter implements ExecutorAdapter {
       sessionRef: metadata.sessionRef,
       command: toCommandMetadata(command, input.prompt, resumeSessionRef),
       events: event ? [event] : [],
+    };
+  }
+
+  async fork(input: ForkExecutionInput): Promise<ForkExecutionResult> {
+    const sourceMetadata = await readSessionMetadata(this.sessionsDir, input.sourceSessionRef);
+    const contextPrompt = [
+      `Continue from SpecRail source run ${input.sourceExecutionId}.`,
+      `Source session: ${input.sourceSessionRef}.`,
+      sourceMetadata.providerSessionId ? `Source Codex provider session: ${sourceMetadata.providerSessionId}.` : undefined,
+      "This is a new Codex session seeded with source context; do not assume provider-level conversation continuity.",
+      "",
+      input.prompt,
+    ].filter(Boolean).join("\n");
+    const result = await this.spawn({
+      executionId: input.executionId,
+      prompt: contextPrompt,
+      workspacePath: input.workspacePath,
+      profile: input.profile,
+    });
+    const metadata = await readSessionMetadata(this.sessionsDir, result.sessionRef);
+    const updatedMetadata: ExecutorSessionMetadata = {
+      ...metadata,
+      parentSessionRef: input.sourceSessionRef,
+      providerMetadata: {
+        ...(metadata.providerMetadata ?? {}),
+        forkMode: "context_copy",
+        sourceExecutionId: input.sourceExecutionId,
+        sourceSessionRef: input.sourceSessionRef,
+        sourceProviderSessionId: sourceMetadata.providerSessionId ?? sourceMetadata.codexSessionId,
+      },
+    };
+    await writeSessionMetadata(this.sessionsDir, updatedMetadata);
+
+    return {
+      ...result,
+      metadata: updatedMetadata,
     };
   }
 

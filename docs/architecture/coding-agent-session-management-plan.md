@@ -2,6 +2,17 @@
 
 SpecRail already starts coding agents as local child processes and persists a run-local `sessionRef` on each execution. This document records how each supported coding-agent backend models sessions today and defines the implementation plan for choosing whether to continue an existing session or start a fresh one.
 
+## Implementation status
+
+Implemented in the MVP slice:
+
+- `GET /runs/:runId/session` returns the run, session metadata when available, and backend continuity capabilities.
+- `POST /runs/:runId/resume` keeps same-run provider continuity and marks the execution `continuityMode: "resume_same_run"`.
+- `POST /runs/:runId/fork` creates a new linked execution with `parentExecutionId`, `parentSessionRef`, `sourceRunId`, and `continuityMode`.
+- Claude Code advertises provider-native fork support and uses `--resume <provider-session-id> --fork-session` for `mode: "provider_fork"`.
+- Codex advertises context-copy fork support and starts a fresh Codex session seeded with source run/session context.
+- Hosted operator UI exposes resume and fork controls; terminal run detail renders continuity/parent session metadata.
+
 ## Current SpecRail control-plane model
 
 The shared executor boundary is `ExecutorAdapter` in `packages/adapters/src/interfaces/executor-adapter.ts`:
@@ -19,7 +30,7 @@ Core execution state in `packages/core/src/domain/types.ts` stores:
 - command metadata with optional `resumeSessionRef`
 - run lifecycle status and event-derived summaries
 
-Today, `resumeRun()` always resumes the existing run's backend session. There is no first-class API for forking a provider conversation, linking a new run to a prior session, or explicitly starting a fresh session from an existing track/run context.
+`resumeRun()` resumes the existing run's backend session. `forkRun()` creates a new linked run and chooses either provider-native fork or context-copy fork based on backend capability and requested mode.
 
 ## Backend session findings
 
