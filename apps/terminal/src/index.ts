@@ -356,6 +356,15 @@ export class SpecRailTerminalApiClient {
     return (await response.json()) as T;
   }
 
+  private async requestText(pathname: string, init?: RequestInit): Promise<string> {
+    const response = await this.fetchImpl(new URL(pathname, this.baseUrl), init);
+    if (!response.ok) {
+      throw new Error(await this.buildRequestError(response, pathname));
+    }
+
+    return response.text();
+  }
+
   private async buildRequestError(response: Response, pathname: string): Promise<string> {
     const fallback = `SpecRail API request failed (${response.status}) for ${pathname}`;
 
@@ -473,6 +482,10 @@ export class SpecRailTerminalApiClient {
   async loadRunEvents(runId: string): Promise<ExecutionEvent[]> {
     const payload = await this.request<RunEventsResponse>(`/runs/${runId}/events`);
     return payload.events;
+  }
+
+  async loadRunReportMarkdown(runId: string): Promise<string> {
+    return this.requestText(formatRunReportUrl(runId));
   }
 
   async startRun(input: { trackId: string; prompt: string; backend?: string; profile?: string; planningSessionId?: string }): Promise<RunDetailSnapshot> {
@@ -2690,11 +2703,44 @@ async function delay(durationMs: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+export interface TerminalCommandOptions {
+  argv?: string[];
+  env?: NodeJS.ProcessEnv;
+  fetchImpl?: typeof fetch;
+  stdout?: { write(chunk: string): unknown };
+}
+
+export async function runTerminalCommand(options: TerminalCommandOptions = {}): Promise<boolean> {
+  const argv = options.argv ?? process.argv.slice(2);
+  const [command, runId] = argv;
+
+  if (command !== "report") {
+    return false;
+  }
+
+  if (!runId?.trim()) {
+    throw new Error("Usage: specrail-terminal report <runId>");
+  }
+
+  const config = loadTerminalClientConfig(options.env ?? process.env);
+  const client = new SpecRailTerminalApiClient(config.apiBaseUrl, options.fetchImpl ?? fetch);
+  const report = await client.loadRunReportMarkdown(runId);
+  const output = report.endsWith("\n") ? report : `${report}\n`;
+  (options.stdout ?? process.stdout).write(output);
+  return true;
+}
+
 const isEntrypoint = process.argv[1] ? import.meta.url === new URL(`file://${process.argv[1]}`).href : false;
 
 if (isEntrypoint) {
-  void runTerminalApp().catch((error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
+  void runTerminalCommand()
+    .then(async (handled) => {
+      if (!handled) {
+        await runTerminalApp();
+      }
+    })
+    .catch((error) => {
+      process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    });
 }

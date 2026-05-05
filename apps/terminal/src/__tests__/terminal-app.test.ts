@@ -15,6 +15,7 @@ import {
   renderAppShell,
   refreshTerminalState,
   runTerminalApp,
+  runTerminalCommand,
   saveTerminalPreferences,
   SpecRailTerminalApiClient,
   setRunFilter,
@@ -119,6 +120,41 @@ test("SpecRailTerminalApiClient surfaces API validation details for execution ac
   });
 
   await assert.rejects(() => client.startRun({ trackId: "track-1", prompt: "" }), /request validation failed \(prompt: must not be empty\)/);
+});
+
+test("SpecRailTerminalApiClient loads Markdown run reports", async () => {
+  const client = new SpecRailTerminalApiClient("http://example.test", async (input) => {
+    const url = String(input);
+
+    if (url === "http://example.test/runs/run%2F1/report.md") {
+      return new Response("# Run Report — run/1\n", { status: 200, headers: { "content-type": "text/markdown; charset=utf-8" } });
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  assert.equal(await client.loadRunReportMarkdown("run/1"), "# Run Report — run/1\n");
+});
+
+test("runTerminalCommand writes report command output to stdout", async () => {
+  const writes: string[] = [];
+  const handled = await runTerminalCommand({
+    argv: ["report", "run-1"],
+    env: { SPECRAIL_API_BASE_URL: "http://example.test" },
+    stdout: { write: (chunk) => writes.push(chunk) },
+    fetchImpl: async (input) => {
+      assert.equal(String(input), "http://example.test/runs/run-1/report.md");
+      return new Response("# Run Report — run-1", { status: 200 });
+    },
+  });
+
+  assert.equal(handled, true);
+  assert.deepEqual(writes, ["# Run Report — run-1\n"]);
+});
+
+test("runTerminalCommand ignores non-report commands and validates report usage", async () => {
+  assert.equal(await runTerminalCommand({ argv: ["interactive"] }), false);
+  await assert.rejects(() => runTerminalCommand({ argv: ["report"] }), /Usage: specrail-terminal report <runId>/);
 });
 
 test("SpecRailTerminalApiClient submits artifact revision proposals", async () => {

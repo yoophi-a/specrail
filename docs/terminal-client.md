@@ -15,6 +15,7 @@
 - `SpecRailTerminalApiClient` loads small track/run summaries from the API
 - `runTerminalApp()` renders a shell and listens for keypress navigation
 - when stdin is not a TTY, the app renders once and exits, which is useful for smoke runs
+- `report <runId>` is a non-interactive command that writes `GET /runs/:runId/report.md` Markdown to stdout using the configured `SPECRAIL_API_BASE_URL`
 
 ## Current screens
 
@@ -61,6 +62,16 @@ The tracks screen now also acts as the first planning-workspace inspector:
 - highlights pending approval requests and whether the approved execution context is stale or blocked by newer planning changes
 - lets operators approve or reject the next pending approval request with `a` / `x`
 - opens a lightweight revision proposal composer with `v`
+
+## Non-interactive report export
+
+Use the terminal entrypoint as a thin CLI wrapper when an operator wants the derived run report in a shell pipeline:
+
+```sh
+SPECRAIL_API_BASE_URL=http://127.0.0.1:4000 pnpm --filter @specrail/terminal exec tsx src/index.ts report <runId> > run-report.md
+```
+
+The command does not persist report files itself; it streams the read-only API response to stdout so callers can redirect, copy, or attach the Markdown as needed.
 
 This is intentionally still lightweight:
 
