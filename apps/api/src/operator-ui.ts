@@ -275,8 +275,14 @@ export function renderOperatorUiClientScript(): string {
           const panel = Array.from(results.querySelectorAll('[data-folder-run-preview-panel]')).find((node) => node.getAttribute('data-folder-run-preview-panel') === runId);
           if (!runId || !panel) return;
           const previewPayload = await api('/runs/' + encodeURIComponent(runId) + '/session-preview?eventLimit=5');
+          const recentEvents = (previewPayload.events ?? []).map((event) => '- ' + event.timestamp + ' ' + event.summary).join('\\n') || 'none';
+          const reportPath = previewPayload.reportPath;
           panel.hidden = false;
-          panel.textContent = 'Session: ' + text(previewPayload.session?.sessionRef) + '\\nWorkspace: ' + text(previewPayload.execution?.workspacePath) + '\\nReport: ' + text(previewPayload.reportPath) + '\\nCapabilities: resume=' + text(previewPayload.capabilities?.supportsResume) + ', providerFork=' + text(previewPayload.capabilities?.supportsProviderFork) + ', contextCopyFork=' + text(previewPayload.capabilities?.supportsContextCopyFork) + '\\nRecent events:\\n' + (previewPayload.events ?? []).map((event) => '- ' + event.timestamp + ' ' + event.summary).join('\\n');
+          panel.innerHTML = '<p><strong>Session:</strong> ' + escapeHtml(previewPayload.session?.sessionRef) + '</p>'
+            + '<p><strong>Workspace:</strong> ' + escapeHtml(previewPayload.execution?.workspacePath) + '</p>'
+            + '<p><strong>Report:</strong> ' + (reportPath ? '<a href="' + escapeHtml(reportPath) + '">' + escapeHtml(reportPath) + '</a>' : 'not available') + '</p>'
+            + '<p><strong>Capabilities:</strong> resume=' + escapeHtml(previewPayload.capabilities?.supportsResume) + ', providerFork=' + escapeHtml(previewPayload.capabilities?.supportsProviderFork) + ', contextCopyFork=' + escapeHtml(previewPayload.capabilities?.supportsContextCopyFork) + '</p>'
+            + '<p><strong>Recent events:</strong></p><pre>' + escapeHtml(recentEvents) + '</pre>';
         });
       });
       results.querySelectorAll('[data-folder-run-resume]').forEach((button) => {
