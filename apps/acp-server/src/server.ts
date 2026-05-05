@@ -596,75 +596,103 @@ export class SpecRailAcpServer {
   }
 
   private toEventProjection(event: ExecutionEvent): Record<string, unknown> | undefined {
+    const provider = this.toProviderEventProjection(event);
+    const withProvider = (projection: Record<string, unknown>) => ({
+      ...projection,
+      ...(provider ? { provider } : {}),
+    });
+
     switch (event.type) {
       case "tool_call":
-        return {
+        return withProvider({
           kind: "tool_call",
           toolName: this.readString(event.payload?.toolName),
           toolUseId: this.readString(event.payload?.toolUseId),
-        };
+        });
       case "tool_result":
-        return {
+        return withProvider({
           kind: "tool_result",
           toolName: this.readString(event.payload?.toolName),
           toolUseId: this.readString(event.payload?.toolUseId),
           exitCode: this.readNumber(event.payload?.exitCode),
           status: this.readString(event.payload?.status),
-        };
+        });
       case "approval_requested":
-        return {
+        return withProvider({
           kind: "approval_requested",
           requestId: event.id,
           toolName: this.readString(event.payload?.toolName),
           toolUseId: this.readString(event.payload?.toolUseId),
-        };
+        });
       case "approval_resolved":
-        return {
+        return withProvider({
           kind: "approval_resolved",
           requestId: this.readString(event.payload?.requestId),
           outcome: this.readString(event.payload?.outcome),
           decidedBy: this.readString(event.payload?.decidedBy),
-        };
+        });
       case "task_status_changed":
-        return {
+        return withProvider({
           kind: "task_status_changed",
           status: this.readString(event.payload?.status),
-        };
+        });
       case "message":
-        return {
+        return withProvider({
           kind: "message",
           subtype: event.subtype,
           role: this.readString(event.payload?.role),
-        };
+        });
       case "summary":
-        return {
+        return withProvider({
           kind: "summary",
           subtype: event.subtype,
           status: this.readString(event.payload?.status),
-        };
+        });
       case "test_result":
-        return {
+        return withProvider({
           kind: "test_result",
           status: this.readString(event.payload?.status),
           passed: this.readNumber(event.payload?.passed),
           failed: this.readNumber(event.payload?.failed),
-        };
+        });
       case "file_change":
-        return {
+        return withProvider({
           kind: "file_change",
           path: this.readString(event.payload?.path),
           operation: this.readString(event.payload?.operation),
-        };
+        });
       case "shell_command":
-        return {
+        return withProvider({
           kind: "shell_command",
           command: this.readString(event.payload?.command),
           exitCode: this.readNumber(event.payload?.exitCode),
           status: this.readString(event.payload?.status),
-        };
+        });
       default:
         return undefined;
     }
+  }
+
+  private toProviderEventProjection(event: ExecutionEvent): Record<string, unknown> | undefined {
+    if (event.source !== "claude_code" && !event.subtype?.startsWith("claude_")) {
+      return undefined;
+    }
+
+    return {
+      kind: "claude_code",
+      subtype: event.subtype,
+      providerSessionId: this.readString(event.payload?.providerSessionId),
+      providerInvocationId: this.readString(event.payload?.providerInvocationId),
+      providerEventType: this.readString(event.payload?.providerEventType),
+      providerEventSubtype: this.readString(event.payload?.providerEventSubtype),
+      model: this.readString(event.payload?.model),
+      lifecycleStatus: this.readString(event.payload?.status),
+      durationMs: this.readNumber(event.payload?.durationMs),
+      durationApiMs: this.readNumber(event.payload?.durationApiMs),
+      totalCostUsd: this.readNumber(event.payload?.totalCostUsd),
+      numTurns: this.readNumber(event.payload?.numTurns),
+      isError: this.readBoolean(event.payload?.isError),
+    };
   }
 
   private toSessionUpdate(sessionId: string, event: ExecutionEvent): Record<string, unknown> {
@@ -751,6 +779,10 @@ export class SpecRailAcpServer {
 
   private readNumber(value: unknown): number | undefined {
     return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  }
+
+  private readBoolean(value: unknown): boolean | undefined {
+    return typeof value === "boolean" ? value : undefined;
   }
 
   private readSessionStatus(event: ExecutionEvent): Execution["status"] | null {

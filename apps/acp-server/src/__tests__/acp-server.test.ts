@@ -133,6 +133,27 @@ function createFakeService(options: { workspaceRoot?: string } = {}) {
         summary: `Implementation note for ${runId}`,
         payload: { role: "assistant" },
       });
+      pushEvent(runId, {
+        executionId: runId,
+        type: "summary",
+        subtype: "claude_result_success",
+        timestamp: "2026-04-13T00:00:00.980Z",
+        source: "claude_code",
+        summary: `Claude result ${runId}`,
+        payload: {
+          providerSessionId: `claude-session-${runId}`,
+          providerInvocationId: `claude-invocation-${runId}`,
+          providerEventType: "result",
+          providerEventSubtype: "success",
+          model: "sonnet",
+          status: "completed",
+          durationMs: 1200,
+          durationApiMs: 800,
+          totalCostUsd: 0.012,
+          numTurns: 2,
+          isError: false,
+        },
+      });
       if (requiresApproval) {
         pushEvent(runId, {
           id: `${runId}-approval-request`,
@@ -342,7 +363,10 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"file_change","path":"README.md","operation":"modified"}'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"test_result","status":"passed","passed":12,"failed":0}'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"message","subtype":"assistant_text","role":"assistant"}'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"summary","status":"completed"}'));
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"summary","subtype":"claude_result_success","status":"completed","provider":{"kind":"claude_code"'));
+  assert.ok(JSON.stringify(notifications).includes('"providerSessionId":"claude-session-run-1"'));
+  assert.ok(JSON.stringify(notifications).includes('"providerEventType":"result"'));
+  assert.ok(JSON.stringify(notifications).includes('"totalCostUsd":0.012'));
 
   const listResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 4, method: "session/list", params: { cwd: "/tmp/specrail" } },
