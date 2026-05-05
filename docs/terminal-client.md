@@ -87,5 +87,9 @@ This is intentionally still lightweight:
 
 ## Follow-up direction
 
-Good next steps after the live monitor baseline:
-- richer planning interaction beyond the current focused revision selector and lightweight proposal authoring
+Good next steps after the current planning/run-operation baseline:
+
+- add a planning-session selector when a track has multiple active or archived planning sessions, instead of always using the API-selected session
+- make terminal planning-message authoring more ergonomic for longer notes, such as paste-friendly multiline input or opening `$EDITOR`
+- add richer revision diff/compare views before approval so operators can review proposed changes without leaving the terminal
+- consider terminal affordances for creating planning sessions only if operators need to start planning work from the terminal rather than the hosted UI
