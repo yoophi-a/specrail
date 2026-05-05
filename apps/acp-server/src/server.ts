@@ -630,6 +630,38 @@ export class SpecRailAcpServer {
           kind: "task_status_changed",
           status: this.readString(event.payload?.status),
         };
+      case "message":
+        return {
+          kind: "message",
+          subtype: event.subtype,
+          role: this.readString(event.payload?.role),
+        };
+      case "summary":
+        return {
+          kind: "summary",
+          subtype: event.subtype,
+          status: this.readString(event.payload?.status),
+        };
+      case "test_result":
+        return {
+          kind: "test_result",
+          status: this.readString(event.payload?.status),
+          passed: this.readNumber(event.payload?.passed),
+          failed: this.readNumber(event.payload?.failed),
+        };
+      case "file_change":
+        return {
+          kind: "file_change",
+          path: this.readString(event.payload?.path),
+          operation: this.readString(event.payload?.operation),
+        };
+      case "shell_command":
+        return {
+          kind: "shell_command",
+          command: this.readString(event.payload?.command),
+          exitCode: this.readNumber(event.payload?.exitCode),
+          status: this.readString(event.payload?.status),
+        };
       default:
         return undefined;
     }
