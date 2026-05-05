@@ -104,14 +104,19 @@ Implemented slices now cover:
 1. `github` channel binding source types and persistence/API validation.
 2. `apps/github` webhook signature validation and issue-comment command parsing.
 3. GitHub `/specrail run` orchestration through existing SpecRail bindings, tracks, and runs.
-4. Terminal outcome comment formatting/posting boundary with report links.
+4. Terminal outcome comment formatting/posting boundary with report links and optional hosted operator run links.
 5. Webhook HTTP server wiring and runnable SpecRail HTTP client startup.
+6. GitHub REST issue-comment posting with static-token and GitHub App installation-token providers.
+7. Repository-to-project allowlists plus sender-login, organization, and team-based authorization for `/specrail` commands.
+8. SpecRail SSE terminal-outcome relay with either in-process scheduling or a JSON-file durable relay queue.
+9. Safe diagnostics and coarse command outcome metrics for ignored, unauthorized, unsupported, failed, and accepted commands.
+10. Tests for unauthorized commands, repository mapping, actor/team authorization, terminal relay scheduling/enqueue failures, durable relay queue behavior, and live comment delivery boundaries.
 
-See [GitHub App setup](../github-app-setup.md) for operator-facing configuration and current limitations.
+See [GitHub App setup](../github-app-setup.md), [GitHub webhook production operations](../github-production-ops.md), and [GitHub command troubleshooting](../github-command-troubleshooting.md) for operator-facing configuration, operations, diagnostics, and current limitations.
 
 ## Open implementation follow-ups
 
-1. Add GitHub App authentication and a live issue-comment client around the existing comment port.
-2. Wire terminal run events from SpecRail SSE to the GitHub terminal outcome comment relay.
-3. Add repository-to-project allowlist and actor/team authorization for `/specrail` commands.
-4. Add integration-style tests for unauthorized commands and live comment delivery boundaries.
+1. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
+2. Add deployment-specific manifests for Kubernetes or other production orchestration targets when a target environment is selected.
+3. Extend the command grammar beyond `/specrail run` only after a concrete operator workflow needs planning-only, approval, or artifact-proposal commands.
+4. Keep GitHub as a thin frontend: future additions should continue linking back to SpecRail reports/operator surfaces rather than copying canonical run or artifact history into GitHub.
