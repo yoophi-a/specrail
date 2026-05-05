@@ -319,6 +319,10 @@ interface PlanningMessagesResponse {
   messages: PlanningMessage[];
 }
 
+interface PlanningMessageResponse {
+  message: PlanningMessage;
+}
+
 interface ArtifactWorkflowResponse {
   revisions: ArtifactRevisionSummary[];
   approvalRequests: ApprovalRequestSummary[];
@@ -484,6 +488,27 @@ export class SpecRailTerminalApiClient {
         createdBy: input.createdBy,
       }),
     });
+  }
+
+  async appendPlanningMessage(input: {
+    planningSessionId: string;
+    authorType: "user" | "agent" | "system";
+    kind: "message" | "question" | "decision" | "note";
+    body: string;
+    relatedArtifact?: ArtifactKind;
+  }): Promise<PlanningMessage> {
+    const payload = await this.request<PlanningMessageResponse>(`/planning-sessions/${encodeURIComponent(input.planningSessionId)}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authorType: input.authorType,
+        kind: input.kind,
+        body: input.body,
+        relatedArtifact: input.relatedArtifact,
+      }),
+    });
+
+    return payload.message;
   }
 
   async decideApprovalRequest(approvalRequestId: string, decision: "approve" | "reject"): Promise<void> {

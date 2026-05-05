@@ -240,6 +240,82 @@ test("SpecRailTerminalApiClient submits artifact revision proposals", async () =
   assert.equal(result.approvalRequest.id, "approval-2");
 });
 
+test("SpecRailTerminalApiClient appends planning messages", async () => {
+  const requests: Array<{ url: string; method?: string; body?: string }> = [];
+  const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
+    const url = String(input);
+    requests.push({ url, method: init?.method, body: init?.body?.toString() });
+
+    if (url.endsWith("/planning-sessions/plan-1/messages") && init?.method === "POST") {
+      assert.equal(init.body?.toString(), JSON.stringify({
+        authorType: "user",
+        kind: "decision",
+        body: "Proceed with the approved plan.",
+        relatedArtifact: "plan",
+      }));
+      return new Response(
+        JSON.stringify({
+          message: {
+            id: "msg-2",
+            planningSessionId: "plan-1",
+            authorType: "user",
+            kind: "decision",
+            relatedArtifact: "plan",
+            body: "Proceed with the approved plan.",
+            createdAt: "2026-04-13T11:30:00.000Z",
+          },
+        }),
+        { status: 201 },
+      );
+    }
+
+    if (url.endsWith("/planning-sessions/plan-2/messages") && init?.method === "POST") {
+      assert.equal(init.body?.toString(), JSON.stringify({
+        authorType: "agent",
+        kind: "note",
+        body: "No artifact focus yet.",
+      }));
+      return new Response(
+        JSON.stringify({
+          message: {
+            id: "msg-3",
+            planningSessionId: "plan-2",
+            authorType: "agent",
+            kind: "note",
+            body: "No artifact focus yet.",
+            createdAt: "2026-04-13T11:31:00.000Z",
+          },
+        }),
+        { status: 201 },
+      );
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  const message = await client.appendPlanningMessage({
+    planningSessionId: "plan-1",
+    authorType: "user",
+    kind: "decision",
+    body: "Proceed with the approved plan.",
+    relatedArtifact: "plan",
+  });
+
+  const note = await client.appendPlanningMessage({
+    planningSessionId: "plan-2",
+    authorType: "agent",
+    kind: "note",
+    body: "No artifact focus yet.",
+  });
+
+  assert.equal(message.id, "msg-2");
+  assert.equal(message.relatedArtifact, "plan");
+  assert.equal(note.id, "msg-3");
+  assert.equal(note.relatedArtifact, undefined);
+  assert.equal(requests[0]?.url, "http://example.test/planning-sessions/plan-1/messages");
+  assert.equal(requests[1]?.body?.includes("relatedArtifact"), false);
+});
+
 test("SpecRailTerminalApiClient previews and applies workspace cleanup with explicit confirmation", async () => {
   const requests: Array<{ url: string; method?: string; body?: string }> = [];
   const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {

@@ -57,6 +57,7 @@ The tracks screen now also acts as the first planning-workspace inspector:
 
 - loads planning sessions for the selected track
 - shows the latest messages from the selected planning session
+- has typed API-client support for appending planning messages through the existing planning-session message endpoint, ready for a future terminal composer
 - summarizes revision focus for `spec`, `plan`, and `tasks`
 - lets operators switch artifact focus with `h` / `l`
 - lets operators cycle revision history for the focused artifact with `[` / `]`
