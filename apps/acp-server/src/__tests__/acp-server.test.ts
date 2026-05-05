@@ -100,6 +100,39 @@ function createFakeService(options: { workspaceRoot?: string } = {}) {
         summary: `Tests passed for ${runId}`,
         payload: { toolName: "shell", toolUseId: `tool-call-${runId}`, exitCode: 0, status: "completed" },
       });
+      pushEvent(runId, {
+        executionId: runId,
+        type: "shell_command",
+        timestamp: "2026-04-13T00:00:00.800Z",
+        source: "executor",
+        summary: `pnpm test for ${runId}`,
+        payload: { command: "pnpm test", exitCode: 0, status: "completed" },
+      });
+      pushEvent(runId, {
+        executionId: runId,
+        type: "file_change",
+        timestamp: "2026-04-13T00:00:00.850Z",
+        source: "executor",
+        summary: `Updated README for ${runId}`,
+        payload: { path: "README.md", operation: "modified" },
+      });
+      pushEvent(runId, {
+        executionId: runId,
+        type: "test_result",
+        timestamp: "2026-04-13T00:00:00.900Z",
+        source: "executor",
+        summary: `Tests passed for ${runId}`,
+        payload: { status: "passed", passed: 12, failed: 0 },
+      });
+      pushEvent(runId, {
+        executionId: runId,
+        type: "message",
+        subtype: "assistant_text",
+        timestamp: "2026-04-13T00:00:00.950Z",
+        source: "executor",
+        summary: `Implementation note for ${runId}`,
+        payload: { role: "assistant" },
+      });
       if (requiresApproval) {
         pushEvent(runId, {
           id: `${runId}-approval-request`,
@@ -122,6 +155,7 @@ function createFakeService(options: { workspaceRoot?: string } = {}) {
           timestamp: "2026-04-13T00:00:01.000Z",
           source: "executor",
           summary: `Completed ${runId}`,
+          payload: { status: "completed" },
         });
       }
       return created;
@@ -304,6 +338,11 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"task_status_changed","status":"running"}'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"tool_call","toolName":"shell","toolUseId":"tool-call-run-1"}'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"tool_result","toolName":"shell","toolUseId":"tool-call-run-1","exitCode":0,"status":"completed"}'));
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"shell_command","command":"pnpm test","exitCode":0,"status":"completed"}'));
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"file_change","path":"README.md","operation":"modified"}'));
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"test_result","status":"passed","passed":12,"failed":0}'));
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"message","subtype":"assistant_text","role":"assistant"}'));
+  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"summary","status":"completed"}'));
 
   const listResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 4, method: "session/list", params: { cwd: "/tmp/specrail" } },

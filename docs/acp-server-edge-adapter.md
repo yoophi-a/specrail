@@ -63,8 +63,13 @@ Known event families additionally include `_meta.specrail.eventProjection`, a co
 - `approval_requested`: `kind`, `requestId`, `toolName`, `toolUseId`
 - `approval_resolved`: `kind`, `requestId`, `outcome`, `decidedBy`
 - `task_status_changed`: `kind`, `status`
+- `message`: `kind`, `subtype`, `role`
+- `summary`: `kind`, `subtype`, `status`
+- `test_result`: `kind`, `status`, `passed`, `failed`
+- `file_change`: `kind`, `path`, `operation`
+- `shell_command`: `kind`, `command`, `exitCode`, `status`
 
-Clients should use these fields for common rendering, and fall back to `_meta.specrail.executionEvent` when they need provider-specific or not-yet-projected payload details.
+Clients should use these fields for common rendering, and fall back to `_meta.specrail.executionEvent` when they need provider-specific or not-yet-projected payload details. Projection fields are optional when the source payload does not provide the corresponding value.
 
 ### Permission round-trip
 
@@ -169,7 +174,7 @@ This follows the ACP fit analysis in `docs/research/acp-fit-for-specrail.md`:
 
 Good next steps from the current bridge:
 - replace approved-permission resume fallbacks with narrower provider-native permission continuation when Codex or Claude Code expose a usable primitive
-- expand ACP-facing projections for provider-specific details that clients need to render natively
+- expand ACP-facing projections for provider-specific details that clients need to render natively beyond the generic event families
 - extend the scoped ACP filesystem capability with audited write operations if a concrete ACP client needs them
 - build an ACP-aware terminal or editor client spike against this adapter to validate the session/update and permission request shapes with a real client
 - revisit the planning/admin boundary only when a concrete ACP client needs a narrowly scoped session-local interaction
