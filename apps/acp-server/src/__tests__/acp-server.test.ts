@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,7 +8,7 @@ import type { Execution, ExecutionEvent, SpecRailService, Track } from "@specrai
 
 import { SpecRailAcpServer } from "../server.js";
 
-function createFakeService() {
+function createFakeService(options: { workspaceRoot?: string } = {}) {
   const track: Track = {
     id: "track-1",
     projectId: "project-default",
@@ -65,7 +65,7 @@ function createFakeService() {
         trackId: input.trackId,
         backend: input.backend ?? "codex",
         profile: input.profile ?? "default",
-        workspacePath: path.join("/tmp", runId),
+        workspacePath: path.join(options.workspaceRoot ?? "/tmp", runId),
         branchName: `specrail/${runId}`,
         sessionRef: `session:${runId}`,
         planningSessionId: input.planningSessionId,
@@ -322,6 +322,64 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   );
   assert.equal(loadResponse?.error, undefined);
   assert.ok(loadNotifications.some((payload) => JSON.stringify(payload).includes("Started run-1")));
+});
+
+test("ACP server reads linked run workspace paths through scoped capability", async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-workspace-"));
+  const server = new SpecRailAcpServer({
+    service: createFakeService({ workspaceRoot }) as unknown as SpecRailService,
+    stateDir,
+    now: () => "2026-04-13T12:00:00.000Z",
+    pollIntervalMs: 1,
+  });
+
+  const newResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: { cwd: "/tmp/specrail", _meta: { specrail: { trackId: "track-1" } } },
+    },
+    () => {},
+  );
+  const sessionId = (newResponse?.result as { sessionId: string }).sessionId;
+  await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "Start workspace read test" }] },
+    },
+    () => {},
+  );
+
+  const runWorkspace = path.join(workspaceRoot, "run-1");
+  await mkdir(path.join(runWorkspace, "notes"), { recursive: true });
+  await writeFile(path.join(runWorkspace, "notes", "summary.md"), "# Summary\nDone.\n");
+
+  const fileResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 3, method: "specrail/workspace/read", params: { sessionId, path: "notes/summary.md" } },
+    () => {},
+  );
+  assert.equal(fileResponse?.error, undefined);
+  assert.deepEqual((fileResponse?.result as { kind: string; path: string; content: string }).kind, "file");
+  assert.equal((fileResponse?.result as { path: string }).path, "notes/summary.md");
+  assert.match((fileResponse?.result as { content: string }).content, /# Summary/);
+  assert.ok(JSON.stringify(fileResponse?.result).includes('"workspaceCapability"'));
+
+  const directoryResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 4, method: "specrail/workspace/read", params: { sessionId, path: "notes" } },
+    () => {},
+  );
+  assert.equal(directoryResponse?.error, undefined);
+  assert.ok(JSON.stringify(directoryResponse?.result).includes('"summary.md"'));
+
+  const outsideResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 5, method: "specrail/workspace/read", params: { sessionId, path: "../secret.txt" } },
+    () => {},
+  );
+  assert.equal(outsideResponse?.error?.data && (outsideResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
 });
 
 test("ACP server creates a project-scoped track when session/new omits trackId", async () => {

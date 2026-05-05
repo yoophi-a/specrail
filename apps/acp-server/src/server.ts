@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -96,6 +96,11 @@ interface SessionCancelParams {
   sessionId?: string;
 }
 
+interface WorkspaceReadParams {
+  sessionId?: string;
+  path?: string;
+}
+
 export interface AcpServerOptions {
   service: SpecRailService;
   stateDir: string;
@@ -168,6 +173,8 @@ export class SpecRailAcpServer {
         case "session/cancel":
           await this.handleSessionCancel(message.params);
           return message.id === undefined ? null : this.ok(message.id, null);
+        case "specrail/workspace/read":
+          return this.ok(message.id, await this.handleWorkspaceRead(message.params));
         default:
           return this.error(message.id, -32601, `method not found: ${message.method}`);
       }
@@ -177,7 +184,7 @@ export class SpecRailAcpServer {
       }
 
       if (error instanceof ValidationError || error instanceof Error) {
-        return this.error(message.id, -32602, error.message);
+        return this.error(message.id, -32602, error.message, this.readErrorData(error));
       }
 
       return this.error(message.id, -32000, "unknown acp server error");
@@ -386,6 +393,80 @@ export class SpecRailAcpServer {
     if (session.runId) {
       await this.options.service.cancelRun({ runId: session.runId });
     }
+  }
+
+  private async handleWorkspaceRead(params: unknown): Promise<Record<string, unknown>> {
+    const body = (params ?? {}) as WorkspaceReadParams;
+    const sessionId = this.requireNonEmptyString(body.sessionId, "sessionId");
+    const requestedPath = this.optionalString(body.path) ?? ".";
+    const session = await this.readSession(sessionId);
+    if (!session.runId) {
+      throw this.workspaceRefusal("workspace read requires a linked run", { reason: "missing_run" });
+    }
+
+    const run = await this.options.service.getRun(session.runId);
+    if (!run) {
+      throw this.workspaceRefusal("workspace read requires an existing run", { reason: "missing_run", runId: session.runId });
+    }
+    if (!run.workspacePath) {
+      throw this.workspaceRefusal("workspace is unavailable for this run", { reason: "workspace_unavailable", runId: run.id });
+    }
+
+    const workspaceRoot = path.resolve(run.workspacePath);
+    const targetPath = path.resolve(workspaceRoot, requestedPath);
+    const relativePath = path.relative(workspaceRoot, targetPath);
+    if (path.isAbsolute(requestedPath) || relativePath.startsWith("..") || relativePath === ".." || path.isAbsolute(relativePath)) {
+      throw this.workspaceRefusal("workspace read path must stay inside the run workspace", {
+        reason: "path_outside_workspace",
+        runId: run.id,
+      });
+    }
+
+    let targetStat;
+    try {
+      targetStat = await stat(targetPath);
+    } catch {
+      throw this.workspaceRefusal("workspace path was not found", { reason: "path_not_found", runId: run.id, path: relativePath || "." });
+    }
+
+    const capability = {
+      runId: run.id,
+      workspacePath: run.workspacePath,
+      allowedOperations: ["read"],
+      cleanupBlocked: run.status === "created" || run.status === "queued" || run.status === "running" || run.status === "waiting_approval",
+    };
+
+    if (targetStat.isDirectory()) {
+      const entries = await readdir(targetPath, { withFileTypes: true });
+      return {
+        kind: "directory",
+        path: relativePath || ".",
+        entries: entries.slice(0, 100).map((entry) => ({
+          name: entry.name,
+          kind: entry.isDirectory() ? "directory" : "file",
+        })),
+        truncated: entries.length > 100,
+        _meta: { specrail: { workspaceCapability: capability } },
+      };
+    }
+
+    if (!targetStat.isFile()) {
+      throw this.workspaceRefusal("workspace path is not a readable file or directory", {
+        reason: "operation_not_allowed",
+        runId: run.id,
+        path: relativePath || ".",
+      });
+    }
+
+    const content = await readFile(targetPath, "utf8");
+    const truncated = content.length > 64_000;
+    return {
+      kind: "file",
+      path: relativePath || ".",
+      content: truncated ? content.slice(0, 64_000) : content,
+      truncated,
+      _meta: { specrail: { workspaceCapability: capability } },
+    };
   }
 
   private toSessionInfoUpdate(session: AcpSessionRecord, execution: Execution): Record<string, unknown> {
@@ -626,6 +707,14 @@ export class SpecRailAcpServer {
 
   private readString(value: unknown): string | undefined {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
+  private readErrorData(error: unknown): unknown {
+    return typeof error === "object" && error !== null && "data" in error ? (error as { data?: unknown }).data : undefined;
+  }
+
+  private workspaceRefusal(message: string, data: Record<string, unknown>): ValidationError & { data: Record<string, unknown> } {
+    return Object.assign(new ValidationError(message), { data });
   }
 
   private readNumber(value: unknown): number | undefined {
