@@ -357,6 +357,25 @@ test("operator UI client harness submits selected-track detail actions", async (
   });
 });
 
+test("operator UI client harness renders unsafe folder-session report paths as text", async () => {
+  const { createTrack, detail, loadInitialState, runs, setSessionPreviewReportPath } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Unsafe Report Link Track" });
+  runs.push({ id: "run-unsafe", trackId: "track-1", status: "completed", workspacePath: "/workspace/run-unsafe" });
+  setSessionPreviewReportPath("run-unsafe", "javascript:alert(1)");
+
+  detail.querySelector("#folder-session-path").value = "/workspace/run-unsafe";
+  await detail.querySelector("[data-folder-session-search]").click();
+  await flushClientPromises();
+  await detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview]")[0]?.click();
+  await flushClientPromises();
+
+  const previewPanel = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview-panel]")[0];
+  assert.doesNotMatch(previewPanel?.innerHTML ?? "", /<a href=/);
+  assert.match(previewPanel?.innerHTML ?? "", /javascript:alert\(1\)/);
+});
+
 test("operator UI client harness submits selected-run detail actions", async () => {
   const { calls, createTrack, detail, elements, eventSources, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun } = createHostedUiClientHarness();
   await loadInitialState();

@@ -189,6 +189,7 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
   const calls: HostedUiFetchCall[] = [];
   const eventSources: FakeEventSource[] = [];
   const failedPaths = new Map<string, string>();
+  const sessionPreviewReportPaths = new Map<string, string | undefined>();
   let projectCounter = 3;
   let trackCounter = 1;
   let runCounter = 1;
@@ -286,7 +287,8 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     }
     if (/^\/runs\/[^/]+\/session-preview\?eventLimit=5$/.test(path) && method === "GET") {
       const runId = decodeURIComponent(path.split("/")[2] ?? "");
-      return { ok: true, json: async () => ({ execution: { id: runId, workspacePath: `/workspace/${runId}` }, session: { sessionRef: `${runId}-codex` }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ timestamp: "2026-04-09T03:00:00.000Z", summary: "Run started" }], reportPath: `/runs/${runId}/report.md` }) };
+      const reportPath = sessionPreviewReportPaths.has(runId) ? sessionPreviewReportPaths.get(runId) : `/runs/${runId}/report.md`;
+      return { ok: true, json: async () => ({ execution: { id: runId, workspacePath: `/workspace/${runId}` }, session: { sessionRef: `${runId}-codex` }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ timestamp: "2026-04-09T03:00:00.000Z", summary: "Run started" }], reportPath }) };
     }
     if (/^\/runs\/[^/]+\/resume$/.test(path) && method === "POST") {
       return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "running", ...(body as Record<string, unknown>) } }) };
@@ -368,6 +370,10 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     await flushClientPromises();
   }
 
+  function setSessionPreviewReportPath(runId: string, reportPath: string | undefined): void {
+    sessionPreviewReportPaths.set(runId, reportPath);
+  }
+
   async function requestCleanupPreview(): Promise<void> {
     await detail.querySelector("[data-cleanup-preview]").click();
     await flushClientPromises();
@@ -378,7 +384,7 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     await flushClientPromises();
   }
 
-  return { calls, detail, elements, eventSources, runs, scope, createTrack, failPath, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, selectProject, startRun };
+  return { calls, detail, elements, eventSources, runs, scope, createTrack, failPath, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, selectProject, setSessionPreviewReportPath, startRun };
 }
 
 export async function flushClientPromises(): Promise<void> {

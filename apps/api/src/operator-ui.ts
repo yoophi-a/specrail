@@ -228,6 +228,24 @@ export function renderOperatorUiClientScript(): string {
       return '<h3>' + escapeHtml(label) + '</h3><div class="artifact-preview">' + escapeHtml(String(value).slice(0, 2000)) + '</div>';
     }
 
+    function safeLinkHref(value) {
+      const href = text(value);
+      if (href.startsWith('/') && !href.startsWith('//')) return href;
+      try {
+        const url = new URL(href);
+        return url.protocol === 'http:' || url.protocol === 'https:' ? href : '';
+      } catch (_error) {
+        return '';
+      }
+    }
+
+    function renderReportPath(value) {
+      const href = safeLinkHref(value);
+      if (!value) return 'not available';
+      if (!href) return escapeHtml(value);
+      return '<a href="' + escapeHtml(href) + '">' + escapeHtml(value) + '</a>';
+    }
+
     function systemMessage(textValue, tone) {
       return '<div class="pk-system-message' + (tone ? ' ' + escapeHtml(tone) : '') + '">' + escapeHtml(textValue) + '</div>';
     }
@@ -280,7 +298,7 @@ export function renderOperatorUiClientScript(): string {
           panel.hidden = false;
           panel.innerHTML = '<p><strong>Session:</strong> ' + escapeHtml(previewPayload.session?.sessionRef) + '</p>'
             + '<p><strong>Workspace:</strong> ' + escapeHtml(previewPayload.execution?.workspacePath) + '</p>'
-            + '<p><strong>Report:</strong> ' + (reportPath ? '<a href="' + escapeHtml(reportPath) + '">' + escapeHtml(reportPath) + '</a>' : 'not available') + '</p>'
+            + '<p><strong>Report:</strong> ' + renderReportPath(reportPath) + '</p>'
             + '<p><strong>Capabilities:</strong> resume=' + escapeHtml(previewPayload.capabilities?.supportsResume) + ', providerFork=' + escapeHtml(previewPayload.capabilities?.supportsProviderFork) + ', contextCopyFork=' + escapeHtml(previewPayload.capabilities?.supportsContextCopyFork) + '</p>'
             + '<p><strong>Recent events:</strong></p><pre>' + escapeHtml(recentEvents) + '</pre>';
         });
