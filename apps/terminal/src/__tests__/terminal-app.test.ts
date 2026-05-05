@@ -652,6 +652,42 @@ test("renderAppShell renders start composer folder session discovery controls", 
   assert.match(rendered, /Help: start composer — type edits prompt\/folder, Tab switches field, Ctrl\+F previews folder sessions, Ctrl\+R resumes selected session, Ctrl\+K forks selected session, Enter starts fresh, Esc aborts\./);
 });
 
+test("renderAppShell renders planning message composer state", () => {
+  const rendered = renderAppShell({
+    screen: "tracks",
+    statusLine: "Composing planning message for plan-1.",
+    apiBaseUrl: "http://127.0.0.1:4000",
+    refreshIntervalMs: 5000,
+    loading: false,
+    error: null,
+    tracks: { selectedId: "track-1", selectedIndex: 0, loading: false, error: null, data: null },
+    runs: { selectedId: null, selectedIndex: 0, loading: false, error: null, data: null },
+    runFilter: "all",
+    runEvents: createEmptyRunEventFeedState(),
+    pendingTrackAction: null,
+    pendingExecutionAction: null,
+    pendingProposalAction: null,
+    pendingPlanningMessageAction: {
+      trackId: "track-1",
+      planningSessionId: "plan-1",
+      authorType: "agent",
+      kind: "note",
+      relatedArtifact: "tasks",
+      body: "Capture handoff context.",
+      submitting: false,
+      message: "Ready to append.",
+    },
+    summary: { fetchedAt: "2026-04-10T12:00:00.000Z", tracks: [], runs: [] },
+  });
+
+  assert.match(rendered, /Planning message action: session plan-1 for track track-1/);
+  assert.match(rendered, /author: agent \(press g to cycle\)/);
+  assert.match(rendered, /kind: note \(press y to cycle\)/);
+  assert.match(rendered, /related artifact: tasks \(press h\/l to cycle\)/);
+  assert.match(rendered, /body: Capture handoff context\./);
+  assert.match(rendered, /Help: planning message composer/);
+});
+
 test("renderAppShell renders run event monitor details", () => {
   const rendered = renderAppShell({
     screen: "runs",
@@ -1290,6 +1326,9 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
     await waitFor(() => stdout.output.includes("track-msg"));
     stdin.key("m");
     await waitFor(() => stdout.output.includes("Composing planning message for plan-msg."));
+    stdin.key("\r", "return");
+    await waitFor(() => stdout.output.includes("Planning message body is required."));
+    assert.deepEqual(messageBodies, []);
     stdin.key("y");
     stdin.key("G");
     stdin.key("o");
