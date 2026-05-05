@@ -71,7 +71,10 @@ Known event families additionally include `_meta.specrail.eventProjection`, a co
 
 Clients should use these fields for common rendering, and fall back to `_meta.specrail.executionEvent` when they need provider-specific or not-yet-projected payload details. Projection fields are optional when the source payload does not provide the corresponding value.
 
-Claude Code events additionally include `eventProjection.provider` when `event.source` is `claude_code` or the subtype starts with `claude_`. The nested provider projection is compact and may include `kind: "claude_code"`, `subtype`, `providerSessionId`, `providerInvocationId`, `providerEventType`, `providerEventSubtype`, `model`, `lifecycleStatus`, `durationMs`, `durationApiMs`, `totalCostUsd`, `numTurns`, and `isError`.
+Provider events additionally include compact `eventProjection.provider` metadata:
+
+- Claude Code events include this metadata when `event.source` is `claude_code` or the subtype starts with `claude_`. Fields may include `kind: "claude_code"`, `subtype`, `providerSessionId`, `providerInvocationId`, `providerEventType`, `providerEventSubtype`, `model`, `lifecycleStatus`, `durationMs`, `durationApiMs`, `totalCostUsd`, `numTurns`, and `isError`.
+- Codex events include this metadata when `event.source` is `codex`. Fields may include `kind: "codex"`, `sessionRef`, `stream`, `lifecycleStatus`, `terminal`, `exitCode`, and `signal`.
 
 ### Permission round-trip
 
@@ -176,7 +179,7 @@ This follows the ACP fit analysis in `docs/research/acp-fit-for-specrail.md`:
 
 Good next steps from the current bridge:
 - replace approved-permission resume fallbacks with narrower provider-native permission continuation when Codex or Claude Code expose a usable primitive
-- expand ACP-facing projections for additional provider-specific details when clients need them beyond the current Claude Code metadata
+- expand ACP-facing projections for additional provider-specific details when clients need them beyond the current Claude Code and Codex metadata
 - extend the scoped ACP filesystem capability with audited write operations if a concrete ACP client needs them
 - build an ACP-aware terminal or editor client spike against this adapter to validate the session/update and permission request shapes with a real client
 - revisit the planning/admin boundary only when a concrete ACP client needs a narrowly scoped session-local interaction
