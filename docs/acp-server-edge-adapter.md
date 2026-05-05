@@ -104,6 +104,20 @@ ACP clients must treat SpecRail workspaces as **SpecRail-managed execution works
 
 These rules keep ACP as a thin interactive edge while preserving SpecRail as the canonical owner of execution state, artifacts, and workspace cleanup.
 
+## Scoped filesystem and terminal capability shape
+
+Filesystem and terminal ACP capabilities are future work, but their contract should be narrow before implementation:
+
+- Capability grants are session-local and tied to a linked SpecRail `runId`; clients must not request arbitrary host paths.
+- The effective root is the SpecRail-managed `workspacePath` for that run. Relative paths resolve under that root and must be rejected if they escape it.
+- The adapter should expose capability metadata through `_meta.specrail.workspaceCapability`, including `runId`, `workspacePath`, allowed operations, and whether cleanup is currently blocked by active execution.
+- Filesystem reads should start as explicit file/directory reads, not broad recursive sync. Writes should require a separate operation grant and should record a SpecRail execution event or equivalent audit entry.
+- Terminal access should run through a SpecRail-mediated command/session API, inherit the linked run workspace, and emit execution events for command start/output/exit rather than becoming an unmanaged client shell.
+- Refusals should be structured and non-sensitive, for example `missing_run`, `workspace_unavailable`, `path_outside_workspace`, `operation_not_allowed`, `cleanup_blocked`, or `active_run_required`.
+- Cleanup remains outside the ACP capability. Clients may surface cleanup status and links/actions, but deletion must still use the SpecRail cleanup preview/apply flow.
+
+This shape preserves the workspace ownership rules while leaving room for ACP-native clients to inspect and interact with a run workspace in a controlled way.
+
 ## Planning and admin boundary
 
 ACP should stay focused on interactive session transport. Planning and admin flows remain owned by the REST/API surface unless they need direct, session-local interaction.
@@ -132,7 +146,7 @@ This is intentionally an initial bridge, not a full ACP implementation.
 3. Runtime permission requests are translated into ACP-friendly updates; decisions are persisted through the core approval path and delivered to executors that implement `resolveRuntimeApproval`.
 4. Event updates include compact projections for common SpecRail event families, but many provider-specific details still remain in `session/update` plus raw `_meta` rather than a full ACP-native event taxonomy.
 5. The adapter stores ACP session records locally, but run state still lives in the normal SpecRail repositories.
-6. Terminal and filesystem ACP capabilities are not exposed yet; future versions must apply the workspace ownership rules above before granting scoped access.
+6. Terminal and filesystem ACP capabilities are not exposed yet; future versions should implement the scoped capability shape above before granting access.
 7. `approval_resolved` records the operator decision. Callback delivery may additionally append handled, unsupported, or failed callback events depending on the selected executor.
 
 ## Why this shape
@@ -147,6 +161,6 @@ This follows the ACP fit analysis in `docs/research/acp-fit-for-specrail.md`:
 Good next steps from the current bridge:
 - replace approved-permission resume fallbacks with narrower provider-native permission continuation when Codex or Claude Code expose a usable primitive
 - expand ACP-facing projections for provider-specific details that clients need to render natively
-- design the scoped ACP filesystem/terminal capability shape that applies the documented workspace ownership rules
+- implement a small scoped ACP filesystem capability spike using the documented capability shape
 - build an ACP-aware terminal or editor client spike against this adapter to validate the session/update and permission request shapes with a real client
 - revisit the planning/admin boundary only when a concrete ACP client needs a narrowly scoped session-local interaction
