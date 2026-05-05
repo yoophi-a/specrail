@@ -15,6 +15,7 @@ import {
   loadTerminalPreferences,
   renderAppShell,
   refreshTerminalState,
+  resolveTrackDefaultWorkspacePath,
   runTerminalApp,
   runTerminalCommand,
   saveTerminalPreferences,
@@ -51,6 +52,26 @@ test("SpecRailTerminalApiClient loads a summary snapshot", async () => {
   assert.equal(summary.projects?.[0]?.id, "project-1");
   assert.equal(summary.tracks[0]?.id, "track-1");
   assert.equal(summary.runs[0]?.id, "run-1");
+});
+
+test("resolveTrackDefaultWorkspacePath prefers the selected project's local repo path", () => {
+  assert.equal(
+    resolveTrackDefaultWorkspacePath({
+      track: { projectId: "project-1" },
+      projects: [{ id: "project-1", name: "SpecRail", localRepoPath: "/workspace/specrail" }],
+      fallbackPath: "/tmp/current-shell",
+    }),
+    "/workspace/specrail",
+  );
+
+  assert.equal(
+    resolveTrackDefaultWorkspacePath({
+      track: { projectId: "project-2" },
+      projects: [{ id: "project-1", name: "SpecRail", localRepoPath: "/workspace/specrail" }],
+      fallbackPath: "/tmp/current-shell",
+    }),
+    "/tmp/current-shell",
+  );
 });
 
 test("SpecRailTerminalApiClient loads planning workspace details for a track", async () => {

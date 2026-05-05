@@ -34,6 +34,7 @@ export interface TrackListItem {
 export interface ProjectListItem {
   id: string;
   name: string;
+  localRepoPath?: string;
   defaultPlanningSystem?: string;
   updatedAt?: string;
 }
@@ -684,6 +685,15 @@ function getFilteredRuns(summary: TerminalSummarySnapshot | null, mode: RunFilte
 
 function cycleRunFilterMode(current: RunFilterMode): RunFilterMode {
   return current === "all" ? "active" : current === "active" ? "terminal" : "all";
+}
+
+export function resolveTrackDefaultWorkspacePath(input: {
+  track?: Pick<TrackListItem, "projectId"> | null;
+  projects?: ProjectListItem[] | null;
+  fallbackPath: string;
+}): string {
+  const project = input.projects?.find((candidate) => candidate.id === input.track?.projectId);
+  return project?.localRepoPath?.trim() || input.fallbackPath;
 }
 
 export function createExecutionActionDraft(input: {
@@ -2018,7 +2028,7 @@ export async function runTerminalApp(
       backend: "codex",
       profile: "default",
       prompt: `Implement ${detail.track.title}`,
-      workspacePath: process.cwd(),
+      workspacePath: resolveTrackDefaultWorkspacePath({ track: detail.track, projects: state.summary?.projects, fallbackPath: process.cwd() }),
       message: detail.planningContext?.hasPendingChanges ? "This track currently has pending planning changes. Start will fail until approvals are resolved." : null,
     }));
   };
