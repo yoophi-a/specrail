@@ -344,6 +344,9 @@ test("operator UI client harness submits selected-track detail actions", async (
   await flushClientPromises();
 
   assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run-existing/session-preview?eventLimit=5"), true);
+  const previewPanel = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview-panel]")[0];
+  assert.match(previewPanel?.textContent ?? "", /Workspace: \/workspace\/run-existing/);
+  assert.match(previewPanel?.textContent ?? "", /Report: \/runs\/run-existing\/report\.md/);
 
   await startRun("Implement selected track now.");
 
