@@ -1144,6 +1144,8 @@ function renderFolderSessionLines(action: PendingExecutionActionState): string[]
     ...sessions.map((run, index) => `  ${index === selectedIndex ? ">" : " "} ${run.id} | ${run.status} | ${run.backend ?? "backend?"} | ${run.continuityMode ?? "continuity?"} | ${previewText(run.summary?.lastEventSummary ?? "No events yet", 80)}`),
     ...(preview ? [
       `- selected session: ${preview.session?.sessionRef ?? selected?.sessionRef ?? "unknown"}`,
+      `- selected workspace: ${preview.execution.workspacePath ?? selected?.workspacePath ?? "unknown"}`,
+      `- selected report: ${preview.reportPath ?? "not available"}`,
       `- selected capabilities: resume=${String(preview.capabilities?.supportsResume ?? false)}, providerFork=${String(preview.capabilities?.supportsProviderFork ?? false)}, contextCopyFork=${String(preview.capabilities?.supportsContextCopyFork ?? false)}`,
       `- selected recent events: ${preview.events.map((event) => event.summary).join(" | ") || "none"}`,
     ] : ["- selected session preview: Ctrl+F loads/refreshes preview for the selected folder session"]),

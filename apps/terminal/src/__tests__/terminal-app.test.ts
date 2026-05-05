@@ -569,6 +569,8 @@ test("renderAppShell renders start composer folder session discovery controls", 
   assert.match(rendered, /folder sessions \(1, selected 1\/1/);
   assert.match(rendered, /> run-folder \| completed \| codex \| fresh \| Run completed/);
   assert.match(rendered, /selected session: run-folder-codex/);
+  assert.match(rendered, /selected workspace: \/workspace\/app/);
+  assert.match(rendered, /selected report: \/runs\/run-folder\/report\.md/);
   assert.match(rendered, /selected capabilities: resume=true, providerFork=false, contextCopyFork=true/);
   assert.match(rendered, /Ctrl\+F previews folder sessions; Ctrl\+R resumes selected session; Ctrl\+K forks selected session/);
   assert.match(rendered, /Help: start composer — type edits prompt\/folder, Tab switches field, Ctrl\+F previews folder sessions, Ctrl\+R resumes selected session, Ctrl\+K forks selected session, Enter starts fresh, Esc aborts\./);

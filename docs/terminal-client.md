@@ -80,7 +80,7 @@ This is intentionally still lightweight:
 - proposal authoring uses a single-buffer content field plus optional summary and author selector
 - approval decisions use a minimal `decidedBy: "terminal"` payload
 - the client optimizes for browsing and unblocking runs without dropping to raw API calls
-- start-run composition defaults the folder path to the selected project's local repository path when available, then falls back to the terminal process working directory; use `Tab` to switch between prompt and folder path, `Ctrl+F` to load related sessions, `[` / `]` to change the selected folder session, `Ctrl+R` to resume it, and `Ctrl+K` to fork it. Pressing `Enter` from the start composer still starts a fresh run.
+- start-run composition defaults the folder path to the selected project's local repository path when available, then falls back to the terminal process working directory; use `Tab` to switch between prompt and folder path, `Ctrl+F` to load related sessions, `[` / `]` to change the selected folder session, `Ctrl+R` to resume it, and `Ctrl+K` to fork it. The selected session preview includes workspace and report path context when available. Pressing `Enter` from the start composer still starts a fresh run.
 
 ## Follow-up direction
 
