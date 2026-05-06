@@ -60,6 +60,7 @@ The tracks screen now also acts as the first planning-workspace inspector:
 - shows the selected planning-session position, an overflow hint for hidden sessions, and latest messages from the selected planning session
 - has typed API-client support for appending planning messages through the existing planning-session message endpoint
 - lets operators open a lightweight planning-message composer with `m`, apply reusable handoff/question/decision/test-note templates with `Ctrl+T`, edit a multiline body with `Ctrl+N`, open `$EDITOR` for longer notes with `Ctrl+E`, cycle author/kind/related artifact, and append handoff notes without leaving the terminal
+- can load project/team-specific planning-message templates from `SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH`; the JSON file must be a non-empty array of `{ "name", "kind", "relatedArtifact", "body" }` objects, where `kind` is `message`, `question`, `decision`, or `note`, and `relatedArtifact` is `none`, `spec`, `plan`, or `tasks`
 - summarizes revision focus for `spec`, `plan`, and `tasks`
 - compares the selected revision against the current artifact with changed-line counts and a short +/- preview, with `u` to toggle an expanded all-changed-lines view and `U` to export a patch-like diff file
 - lets operators switch artifact focus with `h` / `l`
@@ -91,6 +92,6 @@ This is intentionally still lightweight:
 
 Good next steps after the current planning/run-operation baseline:
 
-- make terminal planning-message authoring more ergonomic for longer notes, such as adding paste-mode controls or project-specific template files
+- make terminal planning-message authoring more ergonomic for longer notes, such as adding paste-mode controls or template import/export helpers
 - add richer revision diff/compare views before approval, such as side-by-side paging or patch export destinations outside the current working directory
 - consider richer terminal controls for planning-session metadata if operators need fields beyond status

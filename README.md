@@ -324,6 +324,7 @@ Operator environment:
 - `SPECRAIL_TERMINAL_INITIAL_PROJECT_ID` optional project id for the initial track/run scope
 - `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER` one of `all`, `active`, `terminal`; defaults to `all`
 - `SPECRAIL_TERMINAL_PREFERENCES_PATH` optional local JSON file for persisting project scope, run filter, refresh interval, live-tail pause, and event-detail visibility changes
+- `SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH` optional JSON file for custom terminal planning-message templates
 
 Run it locally:
 

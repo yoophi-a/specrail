@@ -12,6 +12,14 @@ export type RunFilterMode = "all" | "active" | "terminal";
 export type ArtifactKind = "spec" | "plan" | "tasks";
 export type ExecutionActionKind = "start" | "resume" | "fork" | "cancel";
 export type PlanningSessionStatus = "active" | "waiting_user" | "waiting_agent" | "approved" | "archived";
+export type PlanningMessageTemplateKind = "message" | "question" | "decision" | "note";
+
+export interface PlanningMessageTemplate {
+  name: string;
+  kind: PlanningMessageTemplateKind;
+  relatedArtifact: ArtifactKind | "none";
+  body: string;
+}
 
 const EXECUTION_BACKEND_OPTIONS = ["codex", "claude_code"] as const;
 const PLANNING_SESSION_STATUS_OPTIONS = ["active", "waiting_user", "waiting_agent", "approved", "archived"] as const;
@@ -47,16 +55,69 @@ const PLANNING_MESSAGE_TEMPLATES = [
     relatedArtifact: "tasks",
     body: "Test note:\n- Command:\n- Result:\n- Remaining coverage:",
   },
-] as const satisfies ReadonlyArray<{
-  name: string;
-  kind: PendingPlanningMessageActionState["kind"];
-  relatedArtifact: PendingPlanningMessageActionState["relatedArtifact"];
-  body: string;
-}>;
+] as const satisfies readonly PlanningMessageTemplate[];
 
 function nextPlanningSessionStatus(status: PlanningSessionStatus): PlanningSessionStatus {
   const currentIndex = PLANNING_SESSION_STATUS_OPTIONS.findIndex((candidate) => candidate === status);
   return PLANNING_SESSION_STATUS_OPTIONS[(currentIndex + 1 + PLANNING_SESSION_STATUS_OPTIONS.length) % PLANNING_SESSION_STATUS_OPTIONS.length] ?? status;
+}
+
+function isPlanningMessageTemplateKind(value: unknown): value is PlanningMessageTemplateKind {
+  return value === "message" || value === "question" || value === "decision" || value === "note";
+}
+
+function isPlanningMessageTemplateArtifact(value: unknown): value is PlanningMessageTemplate["relatedArtifact"] {
+  return value === "none" || value === "spec" || value === "plan" || value === "tasks";
+}
+
+export function parsePlanningMessageTemplatesJson(content: string, source = "planning message template file"): PlanningMessageTemplate[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    throw new Error(`Invalid ${source}: ${error instanceof Error ? error.message : "malformed JSON"}`);
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error(`Invalid ${source}: expected a non-empty JSON array of templates.`);
+  }
+
+  return parsed.map((item, index) => {
+    const prefix = `Invalid ${source} at index ${index}`;
+    if (!item || typeof item !== "object") {
+      throw new Error(`${prefix}: expected an object.`);
+    }
+
+    const template = item as Partial<PlanningMessageTemplate>;
+    if (typeof template.name !== "string" || template.name.trim().length === 0) {
+      throw new Error(`${prefix}: name must be a non-empty string.`);
+    }
+    if (!isPlanningMessageTemplateKind(template.kind)) {
+      throw new Error(`${prefix}: kind must be one of message, question, decision, note.`);
+    }
+    if (!isPlanningMessageTemplateArtifact(template.relatedArtifact)) {
+      throw new Error(`${prefix}: relatedArtifact must be one of none, spec, plan, tasks.`);
+    }
+    if (typeof template.body !== "string" || template.body.trim().length === 0) {
+      throw new Error(`${prefix}: body must be a non-empty string.`);
+    }
+
+    return {
+      name: template.name.trim(),
+      kind: template.kind,
+      relatedArtifact: template.relatedArtifact,
+      body: template.body,
+    };
+  });
+}
+
+async function loadPlanningMessageTemplates(path: string | null): Promise<PlanningMessageTemplate[]> {
+  if (!path) {
+    return [...PLANNING_MESSAGE_TEMPLATES];
+  }
+
+  const content = await readFile(path, "utf8");
+  return parsePlanningMessageTemplatesJson(content, path);
 }
 
 export interface TrackListItem {
@@ -352,6 +413,7 @@ export interface TerminalAppState {
   runs: DetailPanelState<RunDetailSnapshot>;
   runFilter: RunFilterMode;
   runEvents: RunEventFeedState;
+  planningMessageTemplates?: PlanningMessageTemplate[];
   showRunEventDetail?: boolean;
   showRevisionDiffDetail?: boolean;
   runEventDetailIndex?: number | null;
@@ -784,6 +846,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     runs: createEmptyDetailState<RunDetailSnapshot>(),
     runFilter: config.initialRunFilter,
     runEvents: createEmptyRunEventFeedState(),
+    planningMessageTemplates: [...PLANNING_MESSAGE_TEMPLATES],
     showRunEventDetail: false,
     showRevisionDiffDetail: false,
     runEventDetailIndex: null,
@@ -1111,7 +1174,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...renderContextualHelp(state),
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
-    ...renderPlanningMessageComposer(state.pendingPlanningMessageAction ?? null),
+    ...renderPlanningMessageComposer(state.pendingPlanningMessageAction ?? null, state.planningMessageTemplates ?? PLANNING_MESSAGE_TEMPLATES),
     ...renderPlanningSessionSelection(state),
     ...renderPlanningSessionCreateComposer(state.pendingPlanningSessionCreate ?? null),
     ...renderWorkspaceCleanupComposer(state.pendingWorkspaceCleanupAction ?? null),
@@ -1238,7 +1301,7 @@ function renderProposalActionComposer(action: PendingProposalActionState | null)
   ];
 }
 
-function renderPlanningMessageComposer(action: PendingPlanningMessageActionState | null): string[] {
+function renderPlanningMessageComposer(action: PendingPlanningMessageActionState | null, templates: readonly PlanningMessageTemplate[] = PLANNING_MESSAGE_TEMPLATES): string[] {
   if (!action) {
     return [];
   }
@@ -1253,7 +1316,7 @@ function renderPlanningMessageComposer(action: PendingPlanningMessageActionState
     `- author: ${action.authorType} (press g to cycle)`,
     `- kind: ${action.kind} (press y to cycle)`,
     `- related artifact: ${action.relatedArtifact} (press h/l to cycle)`,
-    `- template: ${PLANNING_MESSAGE_TEMPLATES[action.templateIndex % PLANNING_MESSAGE_TEMPLATES.length]?.name ?? "handoff"} (press Ctrl+T to apply/cycle)`,
+    `- template: ${templates[action.templateIndex % templates.length]?.name ?? "handoff"} (press Ctrl+T to apply/cycle)`,
     ...bodyLines,
     `- submit: Enter${action.submitting ? " (submitting...)" : ""}, template: Ctrl+T, newline: Ctrl+N, editor: Ctrl+E, abort: Esc, backspace deletes`,
     action.message ? `- note: ${action.message}` : "- note: append a planning handoff note without leaving the terminal",
@@ -2122,8 +2185,11 @@ export async function saveTerminalPreferences(path: string | null, preferences: 
   }
 }
 
-async function resolveTerminalClientStartup(config: SpecRailTerminalClientConfig): Promise<{ config: SpecRailTerminalClientConfig; preferences: Partial<TerminalPreferenceState> }> {
-  const preferences = await loadTerminalPreferences(config.preferencePath);
+async function resolveTerminalClientStartup(config: SpecRailTerminalClientConfig): Promise<{ config: SpecRailTerminalClientConfig; preferences: Partial<TerminalPreferenceState>; planningMessageTemplates: PlanningMessageTemplate[] }> {
+  const [preferences, planningMessageTemplates] = await Promise.all([
+    loadTerminalPreferences(config.preferencePath),
+    loadPlanningMessageTemplates(config.messageTemplatesPath ?? null),
+  ]);
   return {
     config: {
       ...config,
@@ -2132,6 +2198,7 @@ async function resolveTerminalClientStartup(config: SpecRailTerminalClientConfig
       refreshIntervalMs: preferences.refreshIntervalMs ?? config.refreshIntervalMs,
     },
     preferences,
+    planningMessageTemplates,
   };
 }
 
@@ -2146,6 +2213,7 @@ export async function runTerminalApp(
     ...createEmptyTerminalState(effectiveConfig),
     runEvents: createEmptyRunEventFeedState(null, startup.preferences.liveTailPaused ?? false),
     showRunEventDetail: startup.preferences.showRunEventDetail ?? false,
+    planningMessageTemplates: startup.planningMessageTemplates,
   };
   let disposed = false;
   let monitorSerial = 0;
@@ -2309,7 +2377,8 @@ export async function runTerminalApp(
     render();
 
     try {
-      updateState(state.summary ? await refreshTerminalState(state, client) : await bootstrapTerminalState(effectiveConfig, client));
+      const refreshed = state.summary ? await refreshTerminalState(state, client) : await bootstrapTerminalState(effectiveConfig, client);
+      updateState({ ...refreshed, planningMessageTemplates: state.planningMessageTemplates });
     } catch (error) {
       updateState({
         ...state,
@@ -3203,9 +3272,10 @@ export async function runTerminalApp(
       return;
     }
 
-    const template = PLANNING_MESSAGE_TEMPLATES[action.templateIndex % PLANNING_MESSAGE_TEMPLATES.length] ?? PLANNING_MESSAGE_TEMPLATES[0];
+    const templates = state.planningMessageTemplates?.length ? state.planningMessageTemplates : [...PLANNING_MESSAGE_TEMPLATES];
+    const template = templates[action.templateIndex % templates.length] ?? templates[0];
     const body = action.body.trim().length > 0 ? `${action.body}\n\n${template.body}` : template.body;
-    const templateIndex = (action.templateIndex + 1) % PLANNING_MESSAGE_TEMPLATES.length;
+    const templateIndex = (action.templateIndex + 1) % templates.length;
     updatePlanningMessageComposer(
       {
         ...action,

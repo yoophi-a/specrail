@@ -11,6 +11,7 @@ test("loadTerminalClientConfig returns defaults", () => {
     initialProjectId: null,
     initialRunFilter: "all",
     preferencePath: null,
+    messageTemplatesPath: null,
   });
 });
 
@@ -23,6 +24,7 @@ test("loadTerminalClientConfig reads terminal-specific environment values", () =
       SPECRAIL_TERMINAL_INITIAL_PROJECT_ID: "project-1",
       SPECRAIL_TERMINAL_INITIAL_RUN_FILTER: "active",
       SPECRAIL_TERMINAL_PREFERENCES_PATH: ".specrail-terminal/preferences.json",
+      SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH: ".specrail-terminal/message-templates.json",
     }),
     {
       apiBaseUrl: "http://localhost:9999",
@@ -31,6 +33,7 @@ test("loadTerminalClientConfig reads terminal-specific environment values", () =
       initialProjectId: "project-1",
       initialRunFilter: "active",
       preferencePath: ".specrail-terminal/preferences.json",
+      messageTemplatesPath: ".specrail-terminal/message-templates.json",
     },
   );
 });

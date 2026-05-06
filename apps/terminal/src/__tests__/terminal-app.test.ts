@@ -15,6 +15,7 @@ import {
   editTextWithTerminalEditor,
   exportRevisionDiffPatch,
   loadTerminalPreferences,
+  parsePlanningMessageTemplatesJson,
   renderAppShell,
   renderRevisionDiffLines,
   renderRevisionDiffPatch,
@@ -339,6 +340,18 @@ test("SpecRailTerminalApiClient updates planning session status", async () => {
   assert.equal(planningSession.status, "waiting_agent");
   assert.equal(requests[0]?.url, "http://example.test/planning-sessions/plan-1");
   assert.equal(requests[0]?.method, "PATCH");
+});
+
+test("parsePlanningMessageTemplatesJson validates custom templates", () => {
+  assert.deepEqual(
+    parsePlanningMessageTemplatesJson(JSON.stringify([{ name: "Team handoff", kind: "note", relatedArtifact: "plan", body: "Team handoff:\n- State:" }]), "templates.json"),
+    [{ name: "Team handoff", kind: "note", relatedArtifact: "plan", body: "Team handoff:\n- State:" }],
+  );
+
+  assert.throws(
+    () => parsePlanningMessageTemplatesJson(JSON.stringify([{ name: "Broken", kind: "memo", relatedArtifact: "plan", body: "Body" }]), "templates.json"),
+    /kind must be one of message, question, decision, note/,
+  );
 });
 
 test("editTextWithTerminalEditor seeds and reads editor temp file", async () => {
@@ -1364,6 +1377,9 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
 
 test("runTerminalApp appends planning messages from the tracks screen", async () => {
   const messageBodies: unknown[] = [];
+  const tempRoot = await mkdtemp(join(tmpdir(), "specrail-terminal-templates-"));
+  const templatesPath = join(tempRoot, "message-templates.json");
+  await writeFile(templatesPath, JSON.stringify([{ name: "Team handoff", kind: "note", relatedArtifact: "tasks", body: "Team handoff:\n- State:\n- Owner:" }]), "utf8");
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
@@ -1447,7 +1463,7 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
   const stdin = new FakeTerminalStdin();
   const stdout = new FakeTerminalStdout();
   const app = runTerminalApp(
-    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "tracks", initialProjectId: null, initialRunFilter: "all", preferencePath: null },
+    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "tracks", initialProjectId: null, initialRunFilter: "all", preferencePath: null, messageTemplatesPath: templatesPath },
     { stdin, stdout } as never,
   );
 
@@ -1467,21 +1483,22 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
     await waitFor(() => stdout.output.includes("Planning message body is required."));
     assert.deepEqual(messageBodies, []);
     stdin.key("", "t", true);
-    await waitFor(() => stdout.output.includes("Applied handoff planning-message template."));
+    await waitFor(() => stdout.output.includes("Applied Team handoff planning-message template."));
     assert.match(stdout.output, /kind: note/);
-    assert.match(stdout.output, /Handoff:/);
+    assert.match(stdout.output, /Team handoff:/);
     stdin.key("\r", "return");
     await waitFor(() => stdout.output.includes("Appended planning message msg-terminal-1 to plan-msg-next."));
     assert.deepEqual(messageBodies, [{
       authorType: "user",
       kind: "note",
-      body: "Handoff:\n- Current state:\n- Next step:\n- Blocker/risk:",
-      relatedArtifact: "plan",
+      body: "Team handoff:\n- State:\n- Owner:",
+      relatedArtifact: "tasks",
     }]);
   } finally {
     stdin.key("q");
     await app;
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await rm(tempRoot, { recursive: true, force: true });
   }
 });
 

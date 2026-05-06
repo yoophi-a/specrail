@@ -20,6 +20,7 @@ export interface SpecRailTerminalClientConfig {
   initialProjectId: string | null;
   initialRunFilter: SpecRailTerminalInitialRunFilter;
   preferencePath: string | null;
+  messageTemplatesPath?: string | null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): SpecRailConfig {
@@ -52,6 +53,7 @@ export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): 
   const initialRunFilter = parseTerminalInitialRunFilter(env.SPECRAIL_TERMINAL_INITIAL_RUN_FILTER);
   const initialProjectId = env.SPECRAIL_TERMINAL_INITIAL_PROJECT_ID?.trim() || null;
   const preferencePath = env.SPECRAIL_TERMINAL_PREFERENCES_PATH?.trim() || null;
+  const messageTemplatesPath = env.SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH?.trim() || null;
 
   return {
     apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
@@ -61,6 +63,7 @@ export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): 
     initialProjectId,
     initialRunFilter,
     preferencePath,
+    messageTemplatesPath,
   };
 }
 

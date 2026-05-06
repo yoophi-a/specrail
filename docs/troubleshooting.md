@@ -55,6 +55,7 @@ Check:
 5. `SPECRAIL_TERMINAL_INITIAL_PROJECT_ID`, when set, matches an existing project id.
 6. `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER` is one of `all`, `active`, or `terminal`.
 7. `SPECRAIL_TERMINAL_PREFERENCES_PATH`, when set, points to a writable local JSON path; malformed files are ignored and recreated on the next preference change.
+8. `SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH`, when set, points to a readable JSON array of planning-message templates.
 
 Then restart the terminal client:
 
