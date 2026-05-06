@@ -56,6 +56,7 @@ The run detail pane also highlights:
 The tracks screen now also acts as the first planning-workspace inspector:
 
 - loads planning sessions for the selected track
+- lets operators cycle the selected planning session with `M`
 - shows the latest messages from the selected planning session
 - has typed API-client support for appending planning messages through the existing planning-session message endpoint
 - lets operators open a lightweight planning-message composer with `m`, edit a body, cycle author/kind/related artifact, and append handoff notes without leaving the terminal
@@ -89,7 +90,7 @@ This is intentionally still lightweight:
 
 Good next steps after the current planning/run-operation baseline:
 
-- add a planning-session selector when a track has multiple active or archived planning sessions, instead of always using the API-selected session
+- make terminal planning-session selection more explicit for long session lists, such as a chooser overlay instead of single-step cycling
 - make terminal planning-message authoring more ergonomic for longer notes, such as paste-friendly multiline input or opening `$EDITOR`
 - add richer revision diff/compare views before approval so operators can review proposed changes without leaving the terminal
 - consider terminal affordances for creating planning sessions only if operators need to start planning work from the terminal rather than the hosted UI

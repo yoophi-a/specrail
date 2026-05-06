@@ -596,12 +596,12 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /Need approval\?/);
   assert.match(rendered, /revision focus \(plan 2\/2\): v1 by agent/);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
-  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, v proposes a new revision for plan/);
+  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, M cycles planning sessions, v proposes a new revision for plan/);
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
-  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, M session, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, M cycles planning sessions, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
 });
 
 test("renderAppShell renders start composer folder session discovery controls", () => {
@@ -1271,7 +1271,10 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
     }
 
     if (request.method === "GET" && url.pathname === "/tracks/track-msg/planning-sessions") {
-      sendJson(response, { planningSessions: [{ id: "plan-msg", trackId: "track-msg", status: "active", updatedAt: "2026-04-10T12:00:00.000Z" }] });
+      sendJson(response, { planningSessions: [
+        { id: "plan-msg", trackId: "track-msg", status: "active", updatedAt: "2026-04-10T12:00:00.000Z" },
+        { id: "plan-msg-next", trackId: "track-msg", status: "active", updatedAt: "2026-04-10T12:05:00.000Z" },
+      ] });
       return;
     }
 
@@ -1280,13 +1283,18 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
       return;
     }
 
-    if (request.method === "POST" && url.pathname === "/planning-sessions/plan-msg/messages") {
+    if (request.method === "GET" && url.pathname === "/planning-sessions/plan-msg-next/messages") {
+      sendJson(response, { messages: [{ id: "msg-next", planningSessionId: "plan-msg-next", authorType: "agent", kind: "note", relatedArtifact: "tasks", body: "Alternate context", createdAt: "2026-04-10T12:06:00.000Z" }] });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/planning-sessions/plan-msg-next/messages") {
       const body = await readRequestJson(request);
       messageBodies.push(body);
       sendJson(response, {
         message: {
           id: "msg-terminal-1",
-          planningSessionId: "plan-msg",
+          planningSessionId: "plan-msg-next",
           authorType: "user",
           kind: "question",
           relatedArtifact: "plan",
@@ -1324,8 +1332,11 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
 
   try {
     await waitFor(() => stdout.output.includes("track-msg"));
+    stdin.key("M");
+    await waitFor(() => stdout.output.includes("Selected planning session plan-msg-next."));
+    await waitFor(() => stdout.output.includes("agent/note/tasks: Alternate context"));
     stdin.key("m");
-    await waitFor(() => stdout.output.includes("Composing planning message for plan-msg."));
+    await waitFor(() => stdout.output.includes("Composing planning message for plan-msg-next."));
     stdin.key("\r", "return");
     await waitFor(() => stdout.output.includes("Planning message body is required."));
     assert.deepEqual(messageBodies, []);
@@ -1333,7 +1344,7 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
     stdin.key("G");
     stdin.key("o");
     stdin.key("\r", "return");
-    await waitFor(() => stdout.output.includes("Appended planning message msg-terminal-1 to plan-msg."));
+    await waitFor(() => stdout.output.includes("Appended planning message msg-terminal-1 to plan-msg-next."));
     assert.deepEqual(messageBodies, [{ authorType: "user", kind: "question", body: "Go", relatedArtifact: "plan" }]);
   } finally {
     stdin.key("q");
