@@ -9,8 +9,10 @@ export type RunEventConnectionState = "idle" | "connecting" | "live" | "reconnec
 export type RunFilterMode = "all" | "active" | "terminal";
 export type ArtifactKind = "spec" | "plan" | "tasks";
 export type ExecutionActionKind = "start" | "resume" | "fork" | "cancel";
+export type PlanningSessionStatus = "active" | "waiting_user" | "waiting_agent" | "approved" | "archived";
 
 const EXECUTION_BACKEND_OPTIONS = ["codex", "claude_code"] as const;
+const PLANNING_SESSION_STATUS_OPTIONS = ["active", "waiting_user", "waiting_agent", "approved", "archived"] as const;
 const EXECUTION_PROFILE_OPTIONS: Record<string, string[]> = {
   codex: ["default", "gpt-5.4", "gpt-5.4-mini"],
   claude_code: ["default", "sonnet", "opus"],
@@ -273,6 +275,13 @@ export interface PendingPlanningSessionSelectionState {
   message: string | null;
 }
 
+export interface PendingPlanningSessionCreateState {
+  trackId: string;
+  status: PlanningSessionStatus;
+  submitting: boolean;
+  message: string | null;
+}
+
 export interface PendingWorkspaceCleanupActionState {
   runId: string;
   preview: WorkspaceCleanupPreviewResponse;
@@ -310,6 +319,7 @@ export interface TerminalAppState {
   pendingProposalAction: PendingProposalActionState | null;
   pendingPlanningMessageAction?: PendingPlanningMessageActionState | null;
   pendingPlanningSessionSelection?: PendingPlanningSessionSelectionState | null;
+  pendingPlanningSessionCreate?: PendingPlanningSessionCreateState | null;
   pendingWorkspaceCleanupAction?: PendingWorkspaceCleanupActionState | null;
 }
 
@@ -501,7 +511,7 @@ export class SpecRailTerminalApiClient {
     return payload.messages;
   }
 
-  async createPlanningSession(trackId: string, status = "active"): Promise<PlanningSessionSummary> {
+  async createPlanningSession(trackId: string, status: PlanningSessionStatus = "active"): Promise<PlanningSessionSummary> {
     const payload = await this.request<PlanningSessionResponse>(`/tracks/${encodeURIComponent(trackId)}/planning-sessions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1051,6 +1061,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...renderProposalActionComposer(state.pendingProposalAction),
     ...renderPlanningMessageComposer(state.pendingPlanningMessageAction ?? null),
     ...renderPlanningSessionSelection(state),
+    ...renderPlanningSessionCreateComposer(state.pendingPlanningSessionCreate ?? null),
     ...renderWorkspaceCleanupComposer(state.pendingWorkspaceCleanupAction ?? null),
   ].join("\n");
 }
@@ -1086,6 +1097,13 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     ];
   }
 
+  if (state.pendingPlanningSessionCreate) {
+    return [
+      ...lines,
+      "Help: planning-session create — y cycles status, Enter creates, Esc aborts.",
+    ];
+  }
+
   if (state.pendingExecutionAction) {
     const promptHelp = state.pendingExecutionAction.kind === "cancel"
       ? "Enter confirms cancellation, Esc aborts."
@@ -1102,7 +1120,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "tracks":
       return [
         ...lines,
-        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, M opens planning-session chooser, N creates planning session, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
+        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
       ];
     case "runs":
       return [
@@ -1212,6 +1230,21 @@ function renderPlanningSessionSelection(state: TerminalAppState): string[] {
     `- selected: ${sessions[action.selectedIndex]?.id ?? "none"}`,
     ...lines,
     `- note: ${action.message ?? "j/k select, Enter loads messages, Esc aborts"}`,
+  ];
+}
+
+function renderPlanningSessionCreateComposer(action: PendingPlanningSessionCreateState | null): string[] {
+  if (!action) {
+    return [];
+  }
+
+  return [
+    "",
+    "Planning session create action",
+    `- track: ${action.trackId}`,
+    `- status: ${action.status} (press y to cycle)`,
+    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, abort: Esc`,
+    action.message ? `- note: ${action.message}` : "- note: create a planning session and select it for follow-up messages",
   ];
 }
 
@@ -1438,7 +1471,7 @@ function renderTrackDetail(
     ...(selectedRevision ? renderRevisionDiffLines(detail.artifacts[selectedArtifact], selectedRevision.content) : ["- revision diff: none"]),
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
     `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
-    `- planning actions: h/l switches artifact focus, [/] cycles revisions, M opens planning-session chooser, N creates a planning session, v proposes a new revision for ${selectedArtifact}`,
+    `- planning actions: h/l switches artifact focus, [/] cycles revisions, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for ${selectedArtifact}`,
     `- execution actions: press s to start a run for this track${detail.planningContext?.hasPendingChanges ? " (currently blocked until approvals land)" : ""}`,
   ];
 }
@@ -2176,6 +2209,8 @@ export async function runTerminalApp(
       ...state,
       pendingExecutionAction: action,
       pendingPlanningMessageAction: null,
+      pendingPlanningSessionSelection: null,
+      pendingPlanningSessionCreate: null,
       pendingWorkspaceCleanupAction: null,
       statusLine:
         action.kind === "start"
@@ -2298,6 +2333,7 @@ export async function runTerminalApp(
       },
       pendingPlanningMessageAction: null,
       pendingPlanningSessionSelection: null,
+      pendingPlanningSessionCreate: null,
       statusLine: `Composing ${artifact} revision proposal for ${detail.track.id}.`,
     });
   };
@@ -2326,6 +2362,7 @@ export async function runTerminalApp(
       pendingExecutionAction: null,
       pendingProposalAction: null,
       pendingPlanningSessionSelection: null,
+      pendingPlanningSessionCreate: null,
       pendingPlanningMessageAction: {
         trackId: detail.track.id,
         planningSessionId,
@@ -2663,6 +2700,7 @@ export async function runTerminalApp(
       pendingExecutionAction: null,
       pendingProposalAction: null,
       pendingPlanningMessageAction: null,
+      pendingPlanningSessionCreate: null,
       pendingPlanningSessionSelection: {
         trackId: detail.track.id,
         selectedIndex: currentIndex,
@@ -2734,7 +2772,7 @@ export async function runTerminalApp(
     }
   };
 
-  const createPlanningSessionForSelectedTrack = async () => {
+  const openPlanningSessionCreateComposer = () => {
     if (state.screen !== "tracks") {
       updateState({ ...state, statusLine: "Switch to the tracks screen to create a planning session." });
       return;
@@ -2746,11 +2784,54 @@ export async function runTerminalApp(
       return;
     }
 
-    updateState({ ...state, statusLine: `Creating planning session for ${detail.track.id}...` });
+    updateState({
+      ...state,
+      pendingExecutionAction: null,
+      pendingProposalAction: null,
+      pendingPlanningMessageAction: null,
+      pendingPlanningSessionSelection: null,
+      pendingPlanningSessionCreate: {
+        trackId: detail.track.id,
+        status: "active",
+        submitting: false,
+        message: null,
+      },
+      pendingWorkspaceCleanupAction: null,
+      statusLine: `Composing planning session creation for ${detail.track.id}.`,
+    });
+  };
+
+  const cyclePlanningSessionCreateStatus = () => {
+    const action = state.pendingPlanningSessionCreate;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const currentIndex = PLANNING_SESSION_STATUS_OPTIONS.findIndex((status) => status === action.status);
+    const status = PLANNING_SESSION_STATUS_OPTIONS[(currentIndex + 1 + PLANNING_SESSION_STATUS_OPTIONS.length) % PLANNING_SESSION_STATUS_OPTIONS.length] ?? action.status;
+    updateState({
+      ...state,
+      pendingPlanningSessionCreate: { ...action, status, message: `Planning session status set to ${status}.` },
+      statusLine: `Planning session status set to ${status}.`,
+    });
+  };
+
+  const submitPlanningSessionCreate = async () => {
+    const action = state.pendingPlanningSessionCreate;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    state = {
+      ...state,
+      pendingPlanningSessionCreate: { ...action, submitting: true, message: null },
+      statusLine: `Creating ${action.status} planning session for ${action.trackId}...`,
+    };
+    render();
 
     try {
-      const planningSession = await client.createPlanningSession(detail.track.id, "active");
-      const refreshedDetail = await client.loadTrackDetail(detail.track.id);
+      const planningSession = await client.createPlanningSession(action.trackId, action.status);
+      const refreshedDetail = await client.loadTrackDetail(action.trackId);
       const workspace = refreshedDetail.planningWorkspace;
       if (!workspace) {
         throw new Error("Track planning workspace was unavailable after session creation.");
@@ -2758,6 +2839,7 @@ export async function runTerminalApp(
       const planningMessages = await client.loadPlanningMessages(planningSession.id);
       updateState({
         ...state,
+        pendingPlanningSessionCreate: null,
         tracks: {
           ...state.tracks,
           data: {
@@ -2769,11 +2851,12 @@ export async function runTerminalApp(
             },
           },
         },
-        statusLine: `Created planning session ${planningSession.id}.`,
+        statusLine: `Created ${planningSession.status} planning session ${planningSession.id}.`,
       });
     } catch (error) {
       updateState({
         ...state,
+        pendingPlanningSessionCreate: { ...action, submitting: false, message: error instanceof Error ? error.message : "Failed to create planning session." },
         error: error instanceof Error ? error.message : "Failed to create planning session.",
         statusLine: error instanceof Error ? error.message : "Failed to create planning session.",
       });
@@ -3290,6 +3373,23 @@ export async function runTerminalApp(
         }
       }
 
+      if (state.pendingPlanningSessionCreate) {
+        if (key.name === "escape") {
+          updateState({ ...state, pendingPlanningSessionCreate: null, statusLine: "Planning session creation cancelled." });
+          return;
+        }
+
+        if (key.name === "return" || key.name === "enter") {
+          void submitPlanningSessionCreate();
+          return;
+        }
+
+        if (key.name === "y") {
+          cyclePlanningSessionCreateStatus();
+          return;
+        }
+      }
+
       if (state.pendingWorkspaceCleanupAction) {
         if (key.name === "escape") {
           updateState({ ...state, pendingWorkspaceCleanupAction: null, statusLine: "Workspace cleanup action cancelled." });
@@ -3328,7 +3428,7 @@ export async function runTerminalApp(
       }
 
       if (input === "N") {
-        void createPlanningSessionForSelectedTrack();
+        openPlanningSessionCreateComposer();
         return;
       }
 

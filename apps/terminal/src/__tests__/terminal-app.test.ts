@@ -605,12 +605,12 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /- Add navigation/);
   assert.match(rendered, /\+ Add keyboard navigation/);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
-  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, M opens planning-session chooser, N creates a planning session, v proposes a new revision for plan/);
+  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for plan/);
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
   assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
-  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, M opens planning-session chooser, N creates planning session, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
+  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
 });
 
 test("renderAppShell renders start composer folder session discovery controls", () => {
@@ -1411,8 +1411,9 @@ test("runTerminalApp creates a planning session from the tracks screen", async (
     }
 
     if (request.method === "POST" && url.pathname === "/tracks/track-create/planning-sessions") {
-      createBodies.push(await readRequestJson(request));
-      planningSessions = [...planningSessions, { id: "plan-created", trackId: "track-create", status: "active", updatedAt: "2026-04-10T12:10:00.000Z" }];
+      const body = await readRequestJson(request) as { status?: string };
+      createBodies.push(body);
+      planningSessions = [...planningSessions, { id: "plan-created", trackId: "track-create", status: body.status ?? "active", updatedAt: "2026-04-10T12:10:00.000Z" }];
       sendJson(response, { planningSession: planningSessions.at(-1) }, 201);
       return;
     }
@@ -1446,10 +1447,15 @@ test("runTerminalApp creates a planning session from the tracks screen", async (
   try {
     await waitFor(() => stdout.output.includes("track-create"));
     stdin.key("N");
-    await waitFor(() => stdout.output.includes("Created planning session plan-created."));
-    assert.deepEqual(createBodies, [{ status: "active" }]);
+    await waitFor(() => stdout.output.includes("Planning session create action"));
+    assert.match(stdout.output, /status: active \(press y to cycle\)/);
+    stdin.key("y");
+    await waitFor(() => stdout.output.includes("Planning session status set to waiting_user."));
+    stdin.key("\r", "return");
+    await waitFor(() => stdout.output.includes("Created waiting_user planning session plan-created."));
+    assert.deepEqual(createBodies, [{ status: "waiting_user" }]);
     assert.match(stdout.output, /planning session: plan-created \(2\/2\)/);
-    assert.match(stdout.output, /> plan-created \| active/);
+    assert.match(stdout.output, /> plan-created \| waiting_user/);
   } finally {
     stdin.key("q");
     await app;
