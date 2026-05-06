@@ -556,7 +556,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
             spec: [],
             plan: [
               { id: "rev-2", trackId: "track-1", artifact: "plan", version: 2, createdBy: "user", content: "# Plan\nShip it", approvalRequestId: "approval-2", approvedAt: "2026-04-10T12:10:00.000Z", createdAt: "2026-04-10T12:09:30.000Z" },
-              { id: "rev-1", trackId: "track-1", artifact: "plan", version: 1, createdBy: "agent", content: "# Plan\nAdd navigation", approvalRequestId: "approval-1", createdAt: "2026-04-10T12:00:30.000Z" },
+              { id: "rev-1", trackId: "track-1", artifact: "plan", version: 1, createdBy: "agent", content: "# Plan\nAdd keyboard navigation", approvalRequestId: "approval-1", createdAt: "2026-04-10T12:00:30.000Z" },
             ],
             tasks: [],
           },
@@ -601,6 +601,9 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /\.\.\. 1 more sessions, press M to cycle/);
   assert.match(rendered, /Need approval\?/);
   assert.match(rendered, /revision focus \(plan 2\/2\): v1 by agent/);
+  assert.match(rendered, /revision diff: \+1 -1 changed lines vs current/);
+  assert.match(rendered, /- Add navigation/);
+  assert.match(rendered, /\+ Add keyboard navigation/);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
   assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, M opens planning-session chooser, v proposes a new revision for plan/);
   assert.match(rendered, /press a to approve or x to reject selected pending request/);

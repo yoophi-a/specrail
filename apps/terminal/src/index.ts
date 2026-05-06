@@ -1418,6 +1418,7 @@ function renderTrackDetail(
     ...renderPlanningSessionLines(workspace),
     `- revision focus (${selectedArtifact}${selectedArtifactRevisionCount > 0 && selectedRevisionIndex >= 0 ? ` ${selectedRevisionIndex + 1}/${selectedArtifactRevisionCount}` : ""}): ${selectedRevision ? `v${selectedRevision.version} by ${selectedRevision.createdBy} at ${selectedRevision.createdAt}${selectedRevision.approvedAt ? ` | approved ${selectedRevision.approvedAt}` : " | pending review"}` : "none"}`,
     `- revision preview: ${selectedRevision ? previewText(selectedRevision.content, 120) : "none"}`,
+    ...(selectedRevision ? renderRevisionDiffLines(detail.artifacts[selectedArtifact], selectedRevision.content) : ["- revision diff: none"]),
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
     `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
     `- planning actions: h/l switches artifact focus, [/] cycles revisions, M opens planning-session chooser, v proposes a new revision for ${selectedArtifact}`,
@@ -1827,6 +1828,41 @@ function previewText(value: string, maxLength = 80): string {
   }
 
   return `${compact.slice(0, maxLength - 3)}...`;
+}
+
+function renderRevisionDiffLines(currentContent: string, revisionContent: string): string[] {
+  if (currentContent === revisionContent) {
+    return ["- revision diff: matches current artifact"];
+  }
+
+  const currentLines = currentContent.split(/\r?\n/);
+  const revisionLines = revisionContent.split(/\r?\n/);
+  const maxLength = Math.max(currentLines.length, revisionLines.length);
+  const removed: string[] = [];
+  const added: string[] = [];
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const before = currentLines[index];
+    const after = revisionLines[index];
+    if (before === after) {
+      continue;
+    }
+    if (before !== undefined) {
+      removed.push(before);
+    }
+    if (after !== undefined) {
+      added.push(after);
+    }
+  }
+
+  const previewLines = removed.slice(0, 2).map((line) => `  - ${previewText(line || "(blank)", 72)}`)
+    .concat(added.slice(0, 2).map((line) => `  + ${previewText(line || "(blank)", 72)}`));
+  const hiddenCount = Math.max(0, removed.length + added.length - previewLines.length);
+
+  return [
+    `- revision diff: +${added.length} -${removed.length} changed lines vs current ${hiddenCount > 0 ? `(${hiddenCount} more hidden)` : ""}`.trim(),
+    ...previewLines,
+  ];
 }
 
 function previewMultilineText(value: string, maxLength = 900): string {
