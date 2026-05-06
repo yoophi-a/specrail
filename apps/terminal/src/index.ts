@@ -2206,6 +2206,7 @@ function renderTerminalCommandHelp(): string {
     "Commands:",
     "  report <runId> [--output <file>]            Print or write a completed-run Markdown report.",
     "  diff-exports [--json] [--limit <n>]          List revision diff export manifest entries.",
+    "  diff-export <index>                         Print one listed revision diff export patch.",
     "  message-templates [--json] [--output <file>] List or export planning-message templates.",
     "  help                                        Show this help output.",
     "",
@@ -4092,6 +4093,27 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
       ? `${JSON.stringify(entries, null, 2)}\n`
       : formatRevisionDiffExportManifest(entries);
     (options.stdout ?? process.stdout).write(output);
+    return true;
+  }
+
+  if (command === "diff-export") {
+    const indexValue = runId?.trim();
+    const parsedIndex = indexValue ? Number(indexValue) : null;
+
+    if (!indexValue || typeof parsedIndex !== "number" || !Number.isInteger(parsedIndex) || parsedIndex <= 0) {
+      throw new Error("Usage: specrail-terminal diff-export <positive-index>");
+    }
+
+    const config = loadTerminalClientConfig(options.env ?? process.env);
+    const entries = [...(await loadRevisionDiffExportManifest(config.diffExportDirectory ?? process.cwd()))].reverse();
+    const entry = entries[parsedIndex - 1];
+
+    if (!entry) {
+      throw new Error(`No revision diff export found at index ${parsedIndex}.`);
+    }
+
+    const patch = await readFile(entry.filePath, "utf8");
+    (options.stdout ?? process.stdout).write(patch.endsWith("\n") ? patch : `${patch}\n`);
     return true;
   }
 

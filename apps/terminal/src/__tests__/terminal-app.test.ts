@@ -226,6 +226,7 @@ test("runTerminalCommand prints command help", async () => {
   assert.match(output, /Usage: specrail-terminal \[command\]/);
   assert.match(output, /report <runId> \[--output <file>\]/);
   assert.match(output, /diff-exports \[--json\] \[--limit <n>\]/);
+  assert.match(output, /diff-export <index>/);
   assert.match(output, /message-templates \[--json\] \[--output <file>\]/);
 });
 
@@ -329,6 +330,45 @@ test("runTerminalCommand handles missing revision diff export manifests", async 
       true,
     );
     assert.equal(writes.join(""), "No revision diff exports found.\n");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("runTerminalCommand prints revision diff export patch content by index", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-diff-export-detail-test-"));
+  const olderPatch = join(directory, "older.patch");
+  const newerPatch = join(directory, "newer.patch");
+  const manifestPath = join(directory, "specrail-revision-diff-exports.jsonl");
+  const writes: string[] = [];
+
+  try {
+    await writeFile(olderPatch, "older patch\n", "utf8");
+    await writeFile(newerPatch, "newer patch", "utf8");
+    await writeFile(
+      manifestPath,
+      [
+        JSON.stringify({ exportedAt: "2026-04-10T12:05:00.000Z", filePath: olderPatch, trackId: "track-1", artifact: "spec", revisionId: "rev-1", version: 1 }),
+        JSON.stringify({ exportedAt: "2026-04-10T12:10:00.000Z", filePath: newerPatch, trackId: "track-1", artifact: "plan", revisionId: "rev-2", version: 2 }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["diff-export", "1"],
+        env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
+        stdout: { write: (chunk) => writes.push(chunk) },
+      }),
+      true,
+    );
+    assert.equal(writes.join(""), "newer patch\n");
+
+    await assert.rejects(() => runTerminalCommand({ argv: ["diff-export", "0"] }), /Usage: specrail-terminal diff-export <positive-index>/);
+    await assert.rejects(
+      () => runTerminalCommand({ argv: ["diff-export", "3"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
+      /No revision diff export found at index 3/,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
