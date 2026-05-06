@@ -315,6 +315,7 @@ export interface TerminalAppState {
   runFilter: RunFilterMode;
   runEvents: RunEventFeedState;
   showRunEventDetail?: boolean;
+  showRevisionDiffDetail?: boolean;
   runEventDetailIndex?: number | null;
   pendingTrackAction: PendingTrackActionState | null;
   pendingExecutionAction: PendingExecutionActionState | null;
@@ -737,6 +738,7 @@ export function createEmptyTerminalState(config: SpecRailTerminalClientConfig): 
     runFilter: config.initialRunFilter,
     runEvents: createEmptyRunEventFeedState(),
     showRunEventDetail: false,
+    showRevisionDiffDetail: false,
     runEventDetailIndex: null,
     pendingTrackAction: null,
     pendingExecutionAction: null,
@@ -835,6 +837,7 @@ export async function bootstrapTerminalState(
     runFilter: config.initialRunFilter,
     runEvents: createEmptyRunEventFeedState(runs.selectedId),
     showRunEventDetail: false,
+    showRevisionDiffDetail: false,
     runEventDetailIndex: null,
     pendingTrackAction: null,
     pendingExecutionAction: null,
@@ -1057,7 +1060,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, u diff, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderContextualHelp(state),
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
@@ -1122,7 +1125,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "tracks":
       return [
         ...lines,
-        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
+        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, u toggles expanded diff, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
       ];
     case "runs":
       return [
@@ -1380,7 +1383,7 @@ function renderTracksScreen(state: TerminalAppState): string[] {
     ),
     "",
     "Track detail",
-    ...renderTrackDetail(selectedTrack?.id === state.tracks.data?.track.id ? state.tracks.data : null, state.tracks, selectedTrack?.id ?? null),
+    ...renderTrackDetail(selectedTrack?.id === state.tracks.data?.track.id ? state.tracks.data : null, state.tracks, selectedTrack?.id ?? null, state.showRevisionDiffDetail ?? false),
   ];
 }
 
@@ -1425,6 +1428,7 @@ function renderTrackDetail(
   detail: TrackDetailSnapshot | null,
   panel: DetailPanelState<TrackDetailSnapshot>,
   selectedId: string | null,
+  showRevisionDiffDetail = false,
 ): string[] {
   if (!selectedId) {
     return ["- No track selected."];
@@ -1470,10 +1474,10 @@ function renderTrackDetail(
     ...renderPlanningSessionLines(workspace),
     `- revision focus (${selectedArtifact}${selectedArtifactRevisionCount > 0 && selectedRevisionIndex >= 0 ? ` ${selectedRevisionIndex + 1}/${selectedArtifactRevisionCount}` : ""}): ${selectedRevision ? `v${selectedRevision.version} by ${selectedRevision.createdBy} at ${selectedRevision.createdAt}${selectedRevision.approvedAt ? ` | approved ${selectedRevision.approvedAt}` : " | pending review"}` : "none"}`,
     `- revision preview: ${selectedRevision ? previewText(selectedRevision.content, 120) : "none"}`,
-    ...(selectedRevision ? renderRevisionDiffLines(detail.artifacts[selectedArtifact], selectedRevision.content) : ["- revision diff: none"]),
+    ...(selectedRevision ? renderRevisionDiffLines(detail.artifacts[selectedArtifact], selectedRevision.content, showRevisionDiffDetail) : ["- revision diff: none"]),
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
     `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
-    `- planning actions: h/l switches artifact focus, [/] cycles revisions, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for ${selectedArtifact}`,
+    `- planning actions: h/l switches artifact focus, [/] cycles revisions, u toggles expanded diff, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for ${selectedArtifact}`,
     `- execution actions: press s to start a run for this track${detail.planningContext?.hasPendingChanges ? " (currently blocked until approvals land)" : ""}`,
   ];
 }
@@ -1908,7 +1912,7 @@ export async function editTextWithTerminalEditor(initialText: string, editorComm
   }
 }
 
-function renderRevisionDiffLines(currentContent: string, revisionContent: string): string[] {
+export function renderRevisionDiffLines(currentContent: string, revisionContent: string, expanded = false): string[] {
   if (currentContent === revisionContent) {
     return ["- revision diff: matches current artifact"];
   }
@@ -1933,12 +1937,14 @@ function renderRevisionDiffLines(currentContent: string, revisionContent: string
     }
   }
 
-  const previewLines = removed.slice(0, 2).map((line) => `  - ${previewText(line || "(blank)", 72)}`)
-    .concat(added.slice(0, 2).map((line) => `  + ${previewText(line || "(blank)", 72)}`));
+  const visibleRemoved = expanded ? removed : removed.slice(0, 2);
+  const visibleAdded = expanded ? added : added.slice(0, 2);
+  const previewLines = visibleRemoved.map((line) => `  - ${expanded ? line || "(blank)" : previewText(line || "(blank)", 72)}`)
+    .concat(visibleAdded.map((line) => `  + ${expanded ? line || "(blank)" : previewText(line || "(blank)", 72)}`));
   const hiddenCount = Math.max(0, removed.length + added.length - previewLines.length);
 
   return [
-    `- revision diff: +${added.length} -${removed.length} changed lines vs current ${hiddenCount > 0 ? `(${hiddenCount} more hidden)` : ""}`.trim(),
+    `- revision diff${expanded ? " (expanded)" : ""}: +${added.length} -${removed.length} changed lines vs current ${hiddenCount > 0 ? `(${hiddenCount} more hidden, press u to expand)` : expanded ? "(press u to collapse)" : ""}`.trim(),
     ...previewLines,
   ];
 }
@@ -3585,6 +3591,16 @@ export async function runTerminalApp(
 
       if (key.name === "l") {
         updateState(selectTrackArtifact(state, cycleArtifact(state.tracks.data?.planningWorkspace?.selectedArtifact ?? "spec", 1)));
+        return;
+      }
+
+      if (key.name === "u") {
+        const showRevisionDiffDetail = !(state.showRevisionDiffDetail ?? false);
+        updateState({
+          ...state,
+          showRevisionDiffDetail,
+          statusLine: showRevisionDiffDetail ? "Expanded revision diff shown." : "Compact revision diff shown.",
+        });
         return;
       }
 

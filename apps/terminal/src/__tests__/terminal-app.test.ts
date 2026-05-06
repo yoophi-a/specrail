@@ -15,6 +15,7 @@ import {
   editTextWithTerminalEditor,
   loadTerminalPreferences,
   renderAppShell,
+  renderRevisionDiffLines,
   refreshTerminalState,
   resolveTrackDefaultWorkspacePath,
   runTerminalApp,
@@ -555,7 +556,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
         },
         artifacts: {
           spec: "# Spec\nTerminal shell",
-          plan: "# Plan\nAdd navigation",
+          plan: "# Plan\nAdd navigation\nKeep brief\nOld outro",
           tasks: "# Tasks\n- Build it",
         },
         planningContext: { planningSessionId: "plan-1", hasPendingChanges: true },
@@ -571,7 +572,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
             spec: [],
             plan: [
               { id: "rev-2", trackId: "track-1", artifact: "plan", version: 2, createdBy: "user", content: "# Plan\nShip it", approvalRequestId: "approval-2", approvedAt: "2026-04-10T12:10:00.000Z", createdAt: "2026-04-10T12:09:30.000Z" },
-              { id: "rev-1", trackId: "track-1", artifact: "plan", version: 1, createdBy: "agent", content: "# Plan\nAdd keyboard navigation", approvalRequestId: "approval-1", createdAt: "2026-04-10T12:00:30.000Z" },
+              { id: "rev-1", trackId: "track-1", artifact: "plan", version: 1, createdBy: "agent", content: "# Plan\nAdd keyboard navigation\nCapture risks\nNew outro", approvalRequestId: "approval-1", createdAt: "2026-04-10T12:00:30.000Z" },
             ],
             tasks: [],
           },
@@ -616,16 +617,41 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /\.\.\. 1 more sessions, press M to cycle/);
   assert.match(rendered, /Need approval\?/);
   assert.match(rendered, /revision focus \(plan 2\/2\): v1 by agent/);
-  assert.match(rendered, /revision diff: \+1 -1 changed lines vs current/);
+  assert.match(rendered, /revision diff: \+3 -3 changed lines vs current \(2 more hidden, press u to expand\)/);
   assert.match(rendered, /- Add navigation/);
+  assert.match(rendered, /- Keep brief/);
   assert.match(rendered, /\+ Add keyboard navigation/);
+  assert.match(rendered, /\+ Capture risks/);
+  assert.doesNotMatch(rendered, /^  - Old outro$/m);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
-  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for plan/);
+  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, u toggles expanded diff, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for plan/);
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
-  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, u diff, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, u toggles expanded diff, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
+});
+
+test("renderRevisionDiffLines supports compact and expanded changed-line views", () => {
+  const compact = renderRevisionDiffLines("A\nB\nC\nD", "A\nB2\nC2\nD2");
+  const expanded = renderRevisionDiffLines("A\nB\nC\nD", "A\nB2\nC2\nD2", true);
+
+  assert.deepEqual(compact, [
+    "- revision diff: +3 -3 changed lines vs current (2 more hidden, press u to expand)",
+    "  - B",
+    "  - C",
+    "  + B2",
+    "  + C2",
+  ]);
+  assert.deepEqual(expanded, [
+    "- revision diff (expanded): +3 -3 changed lines vs current (press u to collapse)",
+    "  - B",
+    "  - C",
+    "  - D",
+    "  + B2",
+    "  + C2",
+    "  + D2",
+  ]);
 });
 
 test("renderAppShell renders start composer folder session discovery controls", () => {
