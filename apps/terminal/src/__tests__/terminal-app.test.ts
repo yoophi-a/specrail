@@ -716,16 +716,18 @@ test("renderRevisionDiffPatch and exportRevisionDiffPatch write patch metadata a
   assert.match(patch, /^\+New step$/m);
 
   const directory = await mkdtemp(join(tmpdir(), "specrail-patch-export-test-"));
+  const outputDirectory = join(directory, "nested", "diffs");
   try {
     const filePath = await exportRevisionDiffPatch({
       trackId: "track/patch",
       artifact: "plan",
       revision,
       currentContent: "# Plan\nOld step\nKeep",
-      outputDirectory: directory,
+      outputDirectory,
     });
     const exported = await readFile(filePath, "utf8");
 
+    assert.ok(filePath.startsWith(outputDirectory));
     assert.match(filePath, /specrail-revision-diff-track-patch-plan-v3-rev-patch-1\.patch$/);
     assert.equal(exported, patch);
   } finally {

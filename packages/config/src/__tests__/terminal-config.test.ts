@@ -12,6 +12,7 @@ test("loadTerminalClientConfig returns defaults", () => {
     initialRunFilter: "all",
     preferencePath: null,
     messageTemplatesPath: null,
+    diffExportDirectory: null,
   });
 });
 
@@ -25,6 +26,7 @@ test("loadTerminalClientConfig reads terminal-specific environment values", () =
       SPECRAIL_TERMINAL_INITIAL_RUN_FILTER: "active",
       SPECRAIL_TERMINAL_PREFERENCES_PATH: ".specrail-terminal/preferences.json",
       SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH: ".specrail-terminal/message-templates.json",
+      SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: ".specrail-terminal/diffs",
     }),
     {
       apiBaseUrl: "http://localhost:9999",
@@ -34,6 +36,7 @@ test("loadTerminalClientConfig reads terminal-specific environment values", () =
       initialRunFilter: "active",
       preferencePath: ".specrail-terminal/preferences.json",
       messageTemplatesPath: ".specrail-terminal/message-templates.json",
+      diffExportDirectory: ".specrail-terminal/diffs",
     },
   );
 });

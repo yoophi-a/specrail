@@ -2127,6 +2127,7 @@ export async function exportRevisionDiffPatch(input: {
     .map(sanitizePatchFilenamePart)
     .join("-");
   const filePath = join(input.outputDirectory ?? process.cwd(), `${filename}.patch`);
+  await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, renderRevisionDiffPatch(input), "utf8");
   return filePath;
 }
@@ -2455,6 +2456,7 @@ export async function runTerminalApp(
         artifact,
         revision,
         currentContent: detail.artifacts[artifact],
+        outputDirectory: effectiveConfig.diffExportDirectory ?? undefined,
       });
       updateState({ ...state, statusLine: `Exported ${artifact} revision diff to ${filePath}.` });
     } catch (error) {
