@@ -14,6 +14,7 @@ import {
   createEmptyRunEventFeedState,
   editTextWithTerminalEditor,
   exportRevisionDiffPatch,
+  loadRevisionDiffExportManifest,
   loadTerminalPreferences,
   parsePlanningMessageTemplatesJson,
   renderAppShell,
@@ -238,6 +239,68 @@ test("runTerminalCommand ignores non-report commands and validates report usage"
   assert.equal(await runTerminalCommand({ argv: ["interactive"] }), false);
   await assert.rejects(() => runTerminalCommand({ argv: ["report"] }), /Usage: specrail-terminal report <runId>/);
   await assert.rejects(() => runTerminalCommand({ argv: ["report", "run-1", "--output"] }), /Usage: specrail-terminal report <runId>/);
+});
+
+test("runTerminalCommand lists revision diff export manifest entries", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-diff-exports-command-test-"));
+  const manifestPath = join(directory, "specrail-revision-diff-exports.jsonl");
+  const entry = {
+    exportedAt: "2026-04-10T12:10:00.000Z",
+    filePath: join(directory, "specrail-revision-diff-track-1-plan-v2-rev-2.patch"),
+    trackId: "track-1",
+    artifact: "plan",
+    revisionId: "rev-2",
+    version: 2,
+  };
+  const plainWrites: string[] = [];
+  const jsonWrites: string[] = [];
+
+  try {
+    await writeFile(manifestPath, `${JSON.stringify(entry)}\n`, "utf8");
+
+    assert.deepEqual(await loadRevisionDiffExportManifest(directory), [entry]);
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["diff-exports"],
+        env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
+        stdout: { write: (chunk) => plainWrites.push(chunk) },
+      }),
+      true,
+    );
+    assert.match(plainWrites.join(""), /2026-04-10T12:10:00.000Z\ttrack-1\tplan\tv2\trev-2/);
+
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["diff-exports", "--json"],
+        env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
+        stdout: { write: (chunk) => jsonWrites.push(chunk) },
+      }),
+      true,
+    );
+    assert.deepEqual(JSON.parse(jsonWrites.join("")), [entry]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("runTerminalCommand handles missing revision diff export manifests", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-diff-exports-empty-test-"));
+  const writes: string[] = [];
+
+  try {
+    assert.deepEqual(await loadRevisionDiffExportManifest(directory), []);
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["diff-exports"],
+        env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
+        stdout: { write: (chunk) => writes.push(chunk) },
+      }),
+      true,
+    );
+    assert.equal(writes.join(""), "No revision diff exports found.\n");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("SpecRailTerminalApiClient submits artifact revision proposals", async () => {

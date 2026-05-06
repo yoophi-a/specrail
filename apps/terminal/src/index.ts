@@ -21,6 +21,15 @@ export interface PlanningMessageTemplate {
   body: string;
 }
 
+export interface RevisionDiffExportManifestEntry {
+  exportedAt: string;
+  filePath: string;
+  trackId: string;
+  artifact: ArtifactKind;
+  revisionId: string;
+  version: number;
+}
+
 const EXECUTION_BACKEND_OPTIONS = ["codex", "claude_code"] as const;
 const PLANNING_SESSION_STATUS_OPTIONS = ["active", "waiting_user", "waiting_agent", "approved", "archived"] as const;
 const EXECUTION_PROFILE_OPTIONS: Record<string, string[]> = {
@@ -2153,6 +2162,37 @@ export async function exportRevisionDiffPatch(input: {
   return filePath;
 }
 
+export async function loadRevisionDiffExportManifest(outputDirectory = process.cwd()): Promise<RevisionDiffExportManifestEntry[]> {
+  const manifestPath = join(outputDirectory, "specrail-revision-diff-exports.jsonl");
+  let content: string;
+
+  try {
+    content = await readFile(manifestPath, "utf8");
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+
+  return content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as RevisionDiffExportManifestEntry);
+}
+
+function formatRevisionDiffExportManifest(entries: RevisionDiffExportManifestEntry[]): string {
+  if (entries.length === 0) {
+    return "No revision diff exports found.\n";
+  }
+
+  return `${entries
+    .map((entry) => [entry.exportedAt, entry.trackId, entry.artifact, `v${entry.version}`, entry.revisionId, entry.filePath].join("\t"))
+    .join("\n")}\n`;
+}
+
 function previewMultilineText(value: string, maxLength = 900): string {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) {
@@ -4006,6 +4046,16 @@ export interface TerminalCommandOptions {
 export async function runTerminalCommand(options: TerminalCommandOptions = {}): Promise<boolean> {
   const argv = options.argv ?? process.argv.slice(2);
   const [command, runId, ...args] = argv;
+
+  if (command === "diff-exports") {
+    const config = loadTerminalClientConfig(options.env ?? process.env);
+    const entries = await loadRevisionDiffExportManifest(config.diffExportDirectory ?? process.cwd());
+    const output = argv.includes("--json")
+      ? `${JSON.stringify(entries, null, 2)}\n`
+      : formatRevisionDiffExportManifest(entries);
+    (options.stdout ?? process.stdout).write(output);
+    return true;
+  }
 
   if (command !== "report") {
     return false;
