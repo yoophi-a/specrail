@@ -266,6 +266,13 @@ export interface PendingPlanningMessageActionState {
   message: string | null;
 }
 
+export interface PendingPlanningSessionSelectionState {
+  trackId: string;
+  selectedIndex: number;
+  submitting: boolean;
+  message: string | null;
+}
+
 export interface PendingWorkspaceCleanupActionState {
   runId: string;
   preview: WorkspaceCleanupPreviewResponse;
@@ -302,6 +309,7 @@ export interface TerminalAppState {
   pendingExecutionAction: PendingExecutionActionState | null;
   pendingProposalAction: PendingProposalActionState | null;
   pendingPlanningMessageAction?: PendingPlanningMessageActionState | null;
+  pendingPlanningSessionSelection?: PendingPlanningSessionSelectionState | null;
   pendingWorkspaceCleanupAction?: PendingWorkspaceCleanupActionState | null;
 }
 
@@ -1029,6 +1037,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
     ...renderPlanningMessageComposer(state.pendingPlanningMessageAction ?? null),
+    ...renderPlanningSessionSelection(state),
     ...renderWorkspaceCleanupComposer(state.pendingWorkspaceCleanupAction ?? null),
   ].join("\n");
 }
@@ -1057,6 +1066,13 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     ];
   }
 
+  if (state.pendingPlanningSessionSelection) {
+    return [
+      ...lines,
+      "Help: planning-session chooser — j/k or ↑/↓ selects a session, Enter loads messages, Esc aborts.",
+    ];
+  }
+
   if (state.pendingExecutionAction) {
     const promptHelp = state.pendingExecutionAction.kind === "cancel"
       ? "Enter confirms cancellation, Esc aborts."
@@ -1073,7 +1089,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "tracks":
       return [
         ...lines,
-        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, M cycles planning sessions, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
+        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, M opens planning-session chooser, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
       ];
     case "runs":
       return [
@@ -1153,6 +1169,32 @@ function renderPlanningMessageComposer(action: PendingPlanningMessageActionState
     `- body: ${action.body || "(required, type to edit)"}`,
     `- submit: Enter${action.submitting ? " (submitting...)" : ""}, abort: Esc, backspace deletes`,
     action.message ? `- note: ${action.message}` : "- note: append a planning handoff note without leaving the terminal",
+  ];
+}
+
+function renderPlanningSessionSelection(state: TerminalAppState): string[] {
+  const action = state.pendingPlanningSessionSelection;
+  if (!action) {
+    return [];
+  }
+
+  const workspace = state.tracks.data?.planningWorkspace;
+  const sessions = workspace?.planningSessions ?? [];
+  const lines = sessions.length > 0
+    ? sessions.map((session, index) => {
+      const prefix = index === action.selectedIndex ? "  >" : "   ";
+      const current = session.id === workspace?.selectedPlanningSessionId ? " | current" : "";
+      return `${prefix} ${index + 1}. ${session.id} | ${session.status} | updated ${session.updatedAt ?? session.createdAt ?? "unknown"}${current}`;
+    })
+    : ["  - none"];
+
+  return [
+    "",
+    "Planning session chooser",
+    `- track: ${action.trackId}`,
+    `- selected: ${sessions[action.selectedIndex]?.id ?? "none"}`,
+    ...lines,
+    `- note: ${action.message ?? "j/k select, Enter loads messages, Esc aborts"}`,
   ];
 }
 
@@ -1378,7 +1420,7 @@ function renderTrackDetail(
     `- revision preview: ${selectedRevision ? previewText(selectedRevision.content, 120) : "none"}`,
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
     `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
-    `- planning actions: h/l switches artifact focus, [/] cycles revisions, M cycles planning sessions, v proposes a new revision for ${selectedArtifact}`,
+    `- planning actions: h/l switches artifact focus, [/] cycles revisions, M opens planning-session chooser, v proposes a new revision for ${selectedArtifact}`,
     `- execution actions: press s to start a run for this track${detail.planningContext?.hasPendingChanges ? " (currently blocked until approvals land)" : ""}`,
   ];
 }
@@ -2202,6 +2244,7 @@ export async function runTerminalApp(
         message: null,
       },
       pendingPlanningMessageAction: null,
+      pendingPlanningSessionSelection: null,
       statusLine: `Composing ${artifact} revision proposal for ${detail.track.id}.`,
     });
   };
@@ -2229,6 +2272,7 @@ export async function runTerminalApp(
       ...state,
       pendingExecutionAction: null,
       pendingProposalAction: null,
+      pendingPlanningSessionSelection: null,
       pendingPlanningMessageAction: {
         trackId: detail.track.id,
         planningSessionId,
@@ -2254,6 +2298,10 @@ export async function runTerminalApp(
 
   const updatePlanningMessageComposer = (next: PendingPlanningMessageActionState | null, statusLine = state.statusLine) => {
     updateState({ ...state, pendingPlanningMessageAction: next, statusLine });
+  };
+
+  const updatePlanningSessionSelection = (next: PendingPlanningSessionSelectionState | null, statusLine = state.statusLine) => {
+    updateState({ ...state, pendingPlanningSessionSelection: next, statusLine });
   };
 
   const updateWorkspaceCleanupComposer = (next: PendingWorkspaceCleanupActionState | null, statusLine = state.statusLine) => {
@@ -2538,9 +2586,9 @@ export async function runTerminalApp(
     updateProposalComposer({ ...action, createdBy, message: `Proposal author set to ${createdBy}.` }, `Proposal author set to ${createdBy}.`);
   };
 
-  const cyclePlanningSession = async (delta: number) => {
+  const openPlanningSessionSelection = () => {
     if (state.screen !== "tracks") {
-      updateState({ ...state, statusLine: "Switch to the tracks screen to cycle planning sessions." });
+      updateState({ ...state, statusLine: "Switch to the tracks screen to select planning sessions." });
       return;
     }
 
@@ -2551,23 +2599,65 @@ export async function runTerminalApp(
       return;
     }
 
-    if (workspace.planningSessions.length <= 1) {
-      updateState({ ...state, statusLine: `Track ${detail.track.id} has no alternate planning sessions.` });
+    if (workspace.planningSessions.length === 0) {
+      updateState({ ...state, statusLine: `Track ${detail.track.id} has no planning sessions.` });
       return;
     }
 
     const currentIndex = Math.max(0, workspace.planningSessions.findIndex((session) => session.id === workspace.selectedPlanningSessionId));
-    const nextSession = workspace.planningSessions[(currentIndex + delta + workspace.planningSessions.length) % workspace.planningSessions.length];
-    if (!nextSession) {
+    updateState({
+      ...state,
+      pendingExecutionAction: null,
+      pendingProposalAction: null,
+      pendingPlanningMessageAction: null,
+      pendingPlanningSessionSelection: {
+        trackId: detail.track.id,
+        selectedIndex: currentIndex,
+        submitting: false,
+        message: null,
+      },
+      pendingWorkspaceCleanupAction: null,
+      statusLine: `Selecting planning session for ${detail.track.id}.`,
+    });
+  };
+
+  const movePlanningSessionSelection = (delta: number) => {
+    const action = state.pendingPlanningSessionSelection;
+    const sessions = state.tracks.data?.planningWorkspace?.planningSessions ?? [];
+    if (!action || action.submitting || sessions.length === 0) {
       return;
     }
 
-    updateState({ ...state, statusLine: `Loading planning messages for ${nextSession.id}...` });
+    const selectedIndex = (action.selectedIndex + delta + sessions.length) % sessions.length;
+    updatePlanningSessionSelection({ ...action, selectedIndex, message: null }, `Planning session ${sessions[selectedIndex]?.id ?? "unknown"} highlighted.`);
+  };
+
+  const submitPlanningSessionSelection = async () => {
+    const action = state.pendingPlanningSessionSelection;
+    const detail = state.tracks.data;
+    const workspace = detail?.planningWorkspace;
+    if (!action || action.submitting || !detail || !workspace) {
+      return;
+    }
+
+    const nextSession = workspace.planningSessions[action.selectedIndex];
+    if (!nextSession) {
+      updatePlanningSessionSelection({ ...action, message: "Select a planning session first." }, "Select a planning session first.");
+      return;
+    }
+
+    state = {
+      ...state,
+      pendingPlanningSessionSelection: { ...action, submitting: true, message: `Loading ${nextSession.id}...` },
+      statusLine: `Loading planning messages for ${nextSession.id}...`,
+    };
+    render();
 
     try {
       const planningMessages = await client.loadPlanningMessages(nextSession.id);
       updateState({
         ...state,
+        pendingPlanningSessionSelection: null,
         tracks: {
           ...state.tracks,
           data: {
@@ -2586,6 +2676,7 @@ export async function runTerminalApp(
         ...state,
         error: error instanceof Error ? error.message : "Failed to load planning messages.",
         statusLine: error instanceof Error ? error.message : "Failed to load planning messages.",
+        pendingPlanningSessionSelection: { ...action, submitting: false, message: "Failed to load planning messages." },
       });
     }
   };
@@ -3073,6 +3164,28 @@ export async function runTerminalApp(
         }
       }
 
+      if (state.pendingPlanningSessionSelection) {
+        if (key.name === "escape") {
+          updateState({ ...state, pendingPlanningSessionSelection: null, statusLine: "Planning session selection cancelled." });
+          return;
+        }
+
+        if (key.name === "return" || key.name === "enter") {
+          void submitPlanningSessionSelection();
+          return;
+        }
+
+        if (key.name === "j" || key.name === "down") {
+          movePlanningSessionSelection(1);
+          return;
+        }
+
+        if (key.name === "k" || key.name === "up") {
+          movePlanningSessionSelection(-1);
+          return;
+        }
+      }
+
       if (state.pendingWorkspaceCleanupAction) {
         if (key.name === "escape") {
           updateState({ ...state, pendingWorkspaceCleanupAction: null, statusLine: "Workspace cleanup action cancelled." });
@@ -3106,7 +3219,7 @@ export async function runTerminalApp(
       }
 
       if (input === "M") {
-        void cyclePlanningSession(1);
+        openPlanningSessionSelection();
         return;
       }
 
