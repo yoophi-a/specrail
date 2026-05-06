@@ -77,10 +77,11 @@ Use the terminal entrypoint as a thin CLI wrapper when an operator wants the der
 SPECRAIL_API_BASE_URL=http://127.0.0.1:4000 pnpm --filter @specrail/terminal exec tsx src/index.ts report <runId> > run-report.md
 SPECRAIL_API_BASE_URL=http://127.0.0.1:4000 pnpm --filter @specrail/terminal exec tsx src/index.ts report <runId> --output artifacts/run-report.md
 SPECRAIL_TERMINAL_DIFF_EXPORT_DIR=artifacts/diffs pnpm --filter @specrail/terminal exec tsx src/index.ts diff-exports
-SPECRAIL_TERMINAL_DIFF_EXPORT_DIR=artifacts/diffs pnpm --filter @specrail/terminal exec tsx src/index.ts diff-exports --json
+SPECRAIL_TERMINAL_DIFF_EXPORT_DIR=artifacts/diffs pnpm --filter @specrail/terminal exec tsx src/index.ts diff-exports --limit 5
+SPECRAIL_TERMINAL_DIFF_EXPORT_DIR=artifacts/diffs pnpm --filter @specrail/terminal exec tsx src/index.ts diff-exports --json --limit 5
 ```
 
-Without `--output`, the report command streams the read-only API response to stdout so callers can redirect, copy, or attach the Markdown as needed. With `--output`, parent directories are created automatically and the report is written to that file. `diff-exports` reads `specrail-revision-diff-exports.jsonl` from `SPECRAIL_TERMINAL_DIFF_EXPORT_DIR` or the process working directory and prints either a tab-separated list or JSON for automation.
+Without `--output`, the report command streams the read-only API response to stdout so callers can redirect, copy, or attach the Markdown as needed. With `--output`, parent directories are created automatically and the report is written to that file. `diff-exports` reads `specrail-revision-diff-exports.jsonl` from `SPECRAIL_TERMINAL_DIFF_EXPORT_DIR` or the process working directory and prints newest-first results as either a tab-separated list or JSON for automation; use `--limit <n>` to keep output compact.
 
 This is intentionally still lightweight:
 

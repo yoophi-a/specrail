@@ -4048,8 +4048,20 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
   const [command, runId, ...args] = argv;
 
   if (command === "diff-exports") {
+    const limitFlagIndex = argv.indexOf("--limit");
+    const limitValue = limitFlagIndex >= 0 ? argv[limitFlagIndex + 1]?.trim() : null;
+    const parsedLimit = limitValue ? Number(limitValue) : null;
+
+    if (limitFlagIndex >= 0 && (!limitValue || typeof parsedLimit !== "number" || !Number.isInteger(parsedLimit) || parsedLimit <= 0)) {
+      throw new Error("Usage: specrail-terminal diff-exports [--json] [--limit <positive-number>]");
+    }
+
+    const limit = parsedLimit;
+
     const config = loadTerminalClientConfig(options.env ?? process.env);
-    const entries = await loadRevisionDiffExportManifest(config.diffExportDirectory ?? process.cwd());
+    const entries = [...(await loadRevisionDiffExportManifest(config.diffExportDirectory ?? process.cwd()))]
+      .reverse()
+      .slice(0, limit ?? undefined);
     const output = argv.includes("--json")
       ? `${JSON.stringify(entries, null, 2)}\n`
       : formatRevisionDiffExportManifest(entries);

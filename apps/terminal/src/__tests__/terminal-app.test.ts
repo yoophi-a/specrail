@@ -244,6 +244,14 @@ test("runTerminalCommand ignores non-report commands and validates report usage"
 test("runTerminalCommand lists revision diff export manifest entries", async () => {
   const directory = await mkdtemp(join(tmpdir(), "specrail-diff-exports-command-test-"));
   const manifestPath = join(directory, "specrail-revision-diff-exports.jsonl");
+  const olderEntry = {
+    exportedAt: "2026-04-10T12:05:00.000Z",
+    filePath: join(directory, "specrail-revision-diff-track-1-spec-v1-rev-1.patch"),
+    trackId: "track-1",
+    artifact: "spec",
+    revisionId: "rev-1",
+    version: 1,
+  };
   const entry = {
     exportedAt: "2026-04-10T12:10:00.000Z",
     filePath: join(directory, "specrail-revision-diff-track-1-plan-v2-rev-2.patch"),
@@ -256,9 +264,9 @@ test("runTerminalCommand lists revision diff export manifest entries", async () 
   const jsonWrites: string[] = [];
 
   try {
-    await writeFile(manifestPath, `${JSON.stringify(entry)}\n`, "utf8");
+    await writeFile(manifestPath, `${JSON.stringify(olderEntry)}\n${JSON.stringify(entry)}\n`, "utf8");
 
-    assert.deepEqual(await loadRevisionDiffExportManifest(directory), [entry]);
+    assert.deepEqual(await loadRevisionDiffExportManifest(directory), [olderEntry, entry]);
     assert.equal(
       await runTerminalCommand({
         argv: ["diff-exports"],
@@ -268,16 +276,21 @@ test("runTerminalCommand lists revision diff export manifest entries", async () 
       true,
     );
     assert.match(plainWrites.join(""), /2026-04-10T12:10:00.000Z\ttrack-1\tplan\tv2\trev-2/);
+    assert.ok(plainWrites.join("").indexOf("rev-2") < plainWrites.join("").indexOf("rev-1"));
 
     assert.equal(
       await runTerminalCommand({
-        argv: ["diff-exports", "--json"],
+        argv: ["diff-exports", "--json", "--limit", "1"],
         env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
         stdout: { write: (chunk) => jsonWrites.push(chunk) },
       }),
       true,
     );
     assert.deepEqual(JSON.parse(jsonWrites.join("")), [entry]);
+    await assert.rejects(
+      () => runTerminalCommand({ argv: ["diff-exports", "--limit", "0"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
+      /Usage: specrail-terminal diff-exports/,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
