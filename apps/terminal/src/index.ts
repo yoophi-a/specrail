@@ -2199,6 +2199,21 @@ function formatPlanningMessageTemplates(templates: readonly PlanningMessageTempl
     .join("\n")}\n`;
 }
 
+function renderTerminalCommandHelp(): string {
+  return [
+    "Usage: specrail-terminal [command]",
+    "",
+    "Commands:",
+    "  report <runId> [--output <file>]            Print or write a completed-run Markdown report.",
+    "  diff-exports [--json] [--limit <n>]          List revision diff export manifest entries.",
+    "  message-templates [--json] [--output <file>] List or export planning-message templates.",
+    "  help                                        Show this help output.",
+    "",
+    "Without a command, the interactive terminal UI starts.",
+    "",
+  ].join("\n");
+}
+
 function previewMultilineText(value: string, maxLength = 900): string {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) {
@@ -4052,6 +4067,11 @@ export interface TerminalCommandOptions {
 export async function runTerminalCommand(options: TerminalCommandOptions = {}): Promise<boolean> {
   const argv = options.argv ?? process.argv.slice(2);
   const [command, runId, ...args] = argv;
+
+  if (command === "help" || command === "--help" || command === "-h") {
+    (options.stdout ?? process.stdout).write(renderTerminalCommandHelp());
+    return true;
+  }
 
   if (command === "diff-exports") {
     const limitFlagIndex = argv.indexOf("--limit");

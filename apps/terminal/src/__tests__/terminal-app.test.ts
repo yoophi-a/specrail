@@ -211,6 +211,24 @@ test("runTerminalCommand writes report command output to stdout", async () => {
   assert.deepEqual(writes, ["# Run Report — run-1\n"]);
 });
 
+test("runTerminalCommand prints command help", async () => {
+  const writes: string[] = [];
+
+  assert.equal(
+    await runTerminalCommand({
+      argv: ["--help"],
+      stdout: { write: (chunk) => writes.push(chunk) },
+    }),
+    true,
+  );
+
+  const output = writes.join("");
+  assert.match(output, /Usage: specrail-terminal \[command\]/);
+  assert.match(output, /report <runId> \[--output <file>\]/);
+  assert.match(output, /diff-exports \[--json\] \[--limit <n>\]/);
+  assert.match(output, /message-templates \[--json\] \[--output <file>\]/);
+});
+
 test("runTerminalCommand writes report command output to an explicit file", async () => {
   const directory = await mkdtemp(join(tmpdir(), "specrail-report-output-test-"));
   const outputPath = join(directory, "nested", "run-1-report.md");

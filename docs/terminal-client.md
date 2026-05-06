@@ -74,6 +74,7 @@ The tracks screen now also acts as the first planning-workspace inspector:
 Use the terminal entrypoint as a thin CLI wrapper when an operator wants the derived run report in a shell pipeline or explicit file:
 
 ```sh
+pnpm --filter @specrail/terminal exec tsx src/index.ts --help
 SPECRAIL_API_BASE_URL=http://127.0.0.1:4000 pnpm --filter @specrail/terminal exec tsx src/index.ts report <runId> > run-report.md
 SPECRAIL_API_BASE_URL=http://127.0.0.1:4000 pnpm --filter @specrail/terminal exec tsx src/index.ts report <runId> --output artifacts/run-report.md
 SPECRAIL_TERMINAL_DIFF_EXPORT_DIR=artifacts/diffs pnpm --filter @specrail/terminal exec tsx src/index.ts diff-exports
@@ -84,7 +85,7 @@ SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH=.specrail-terminal/message-templates.js
 pnpm --filter @specrail/terminal exec tsx src/index.ts message-templates --output .specrail-terminal/message-templates.json
 ```
 
-Without `--output`, the report command streams the read-only API response to stdout so callers can redirect, copy, or attach the Markdown as needed. With `--output`, parent directories are created automatically and the report is written to that file. `diff-exports` reads `specrail-revision-diff-exports.jsonl` from `SPECRAIL_TERMINAL_DIFF_EXPORT_DIR` or the process working directory and prints newest-first results as either a tab-separated list or JSON for automation; use `--limit <n>` to keep output compact. `message-templates` loads the same built-in or `SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH` templates used by the interactive composer and prints either tab-separated metadata or JSON. With `--output <file>`, it writes the loaded templates as pretty JSON and creates parent directories automatically, which is useful for bootstrapping a custom template file from the built-ins.
+Use `help`, `--help`, or `-h` to print the available non-interactive commands. Without `--output`, the report command streams the read-only API response to stdout so callers can redirect, copy, or attach the Markdown as needed. With `--output`, parent directories are created automatically and the report is written to that file. `diff-exports` reads `specrail-revision-diff-exports.jsonl` from `SPECRAIL_TERMINAL_DIFF_EXPORT_DIR` or the process working directory and prints newest-first results as either a tab-separated list or JSON for automation; use `--limit <n>` to keep output compact. `message-templates` loads the same built-in or `SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH` templates used by the interactive composer and prints either tab-separated metadata or JSON. With `--output <file>`, it writes the loaded templates as pretty JSON and creates parent directories automatically, which is useful for bootstrapping a custom template file from the built-ins.
 
 This is intentionally still lightweight:
 
