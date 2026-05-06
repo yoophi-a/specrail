@@ -1060,7 +1060,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, u diff, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, u diff, U export diff, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderContextualHelp(state),
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
@@ -1125,7 +1125,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "tracks":
       return [
         ...lines,
-        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, u toggles expanded diff, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
+        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
       ];
     case "runs":
       return [
@@ -1477,7 +1477,7 @@ function renderTrackDetail(
     ...(selectedRevision ? renderRevisionDiffLines(detail.artifacts[selectedArtifact], selectedRevision.content, showRevisionDiffDetail) : ["- revision diff: none"]),
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
     `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
-    `- planning actions: h/l switches artifact focus, [/] cycles revisions, u toggles expanded diff, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for ${selectedArtifact}`,
+    `- planning actions: h/l switches artifact focus, [/] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for ${selectedArtifact}`,
     `- execution actions: press s to start a run for this track${detail.planningContext?.hasPendingChanges ? " (currently blocked until approvals land)" : ""}`,
   ];
 }
@@ -1949,6 +1949,77 @@ export function renderRevisionDiffLines(currentContent: string, revisionContent:
   ];
 }
 
+function sanitizePatchFilenamePart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
+}
+
+function collectChangedLinePairs(currentContent: string, revisionContent: string): Array<{ before?: string; after?: string; lineNumber: number }> {
+  const currentLines = currentContent.split(/\r?\n/);
+  const revisionLines = revisionContent.split(/\r?\n/);
+  const maxLength = Math.max(currentLines.length, revisionLines.length);
+  const changes: Array<{ before?: string; after?: string; lineNumber: number }> = [];
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const before = currentLines[index];
+    const after = revisionLines[index];
+    if (before === after) {
+      continue;
+    }
+
+    changes.push({ before, after, lineNumber: index + 1 });
+  }
+
+  return changes;
+}
+
+export function renderRevisionDiffPatch(input: {
+  trackId: string;
+  artifact: ArtifactKind;
+  revision: ArtifactRevisionSummary;
+  currentContent: string;
+}): string {
+  const changes = collectChangedLinePairs(input.currentContent, input.revision.content);
+  const header = [
+    `# SpecRail revision diff`,
+    `track: ${input.trackId}`,
+    `artifact: ${input.artifact}`,
+    `revision: ${input.revision.id}`,
+    `version: ${input.revision.version}`,
+    `createdBy: ${input.revision.createdBy}`,
+    `createdAt: ${input.revision.createdAt}`,
+    `approvedAt: ${input.revision.approvedAt ?? "pending"}`,
+    "",
+    `--- current/${input.artifact}`,
+    `+++ revision/${input.artifact}@${input.revision.id}`,
+  ];
+
+  const body = changes.length === 0
+    ? ["# no changes"]
+    : changes.flatMap((change) => [
+      `@@ line ${change.lineNumber} @@`,
+      ...(change.before !== undefined ? [`-${change.before}`] : []),
+      ...(change.after !== undefined ? [`+${change.after}`] : []),
+    ]);
+
+  return [...header, ...body, ""].join("\n");
+}
+
+export async function exportRevisionDiffPatch(input: {
+  trackId: string;
+  artifact: ArtifactKind;
+  revision: ArtifactRevisionSummary;
+  currentContent: string;
+  outputDirectory?: string;
+}): Promise<string> {
+  const version = `v${input.revision.version}`;
+  const filename = ["specrail", "revision-diff", input.trackId, input.artifact, version, input.revision.id]
+    .map(sanitizePatchFilenamePart)
+    .join("-");
+  const filePath = join(input.outputDirectory ?? process.cwd(), `${filename}.patch`);
+  await writeFile(filePath, renderRevisionDiffPatch(input), "utf8");
+  return filePath;
+}
+
 function previewMultilineText(value: string, maxLength = 900): string {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) {
@@ -2234,6 +2305,46 @@ export async function runTerminalApp(
         pendingTrackAction: null,
         error: error instanceof Error ? error.message : `Failed to ${decision} approval request.`,
         statusLine: error instanceof Error ? error.message : `Failed to ${decision} approval request.`,
+      });
+    }
+  };
+
+  const exportSelectedRevisionDiff = async () => {
+    if (state.screen !== "tracks") {
+      updateState({ ...state, statusLine: "Switch to the tracks screen to export a revision diff." });
+      return;
+    }
+
+    const detail = state.tracks.data;
+    const workspace = detail?.planningWorkspace;
+    if (!detail || detail.track.id !== state.tracks.selectedId || !workspace) {
+      updateState({ ...state, statusLine: "Track planning detail is still loading. Press r and try again." });
+      return;
+    }
+
+    const artifact = workspace.selectedArtifact;
+    const revision = workspace.revisions[artifact].find((candidate) => candidate.id === workspace.selectedRevisionId)
+      ?? workspace.revisions[artifact][0]
+      ?? null;
+
+    if (!revision) {
+      updateState({ ...state, statusLine: `No ${artifact} revision available to export.` });
+      return;
+    }
+
+    try {
+      const filePath = await exportRevisionDiffPatch({
+        trackId: detail.track.id,
+        artifact,
+        revision,
+        currentContent: detail.artifacts[artifact],
+      });
+      updateState({ ...state, statusLine: `Exported ${artifact} revision diff to ${filePath}.` });
+    } catch (error) {
+      updateState({
+        ...state,
+        error: error instanceof Error ? error.message : "Failed to export revision diff.",
+        statusLine: error instanceof Error ? error.message : "Failed to export revision diff.",
       });
     }
   };
@@ -3601,6 +3712,11 @@ export async function runTerminalApp(
           showRevisionDiffDetail,
           statusLine: showRevisionDiffDetail ? "Expanded revision diff shown." : "Compact revision diff shown.",
         });
+        return;
+      }
+
+      if (input === "U") {
+        void exportSelectedRevisionDiff();
         return;
       }
 

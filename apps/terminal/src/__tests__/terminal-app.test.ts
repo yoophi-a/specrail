@@ -13,9 +13,11 @@ import {
   createExecutionActionDraft,
   createEmptyRunEventFeedState,
   editTextWithTerminalEditor,
+  exportRevisionDiffPatch,
   loadTerminalPreferences,
   renderAppShell,
   renderRevisionDiffLines,
+  renderRevisionDiffPatch,
   refreshTerminalState,
   resolveTrackDefaultWorkspacePath,
   runTerminalApp,
@@ -624,12 +626,12 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /\+ Capture risks/);
   assert.doesNotMatch(rendered, /^  - Old outro$/m);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
-  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, u toggles expanded diff, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for plan/);
+  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for plan/);
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, u diff, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
-  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, u toggles expanded diff, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, u diff, U export diff, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
 });
 
 test("renderRevisionDiffLines supports compact and expanded changed-line views", () => {
@@ -652,6 +654,49 @@ test("renderRevisionDiffLines supports compact and expanded changed-line views",
     "  + C2",
     "  + D2",
   ]);
+});
+
+test("renderRevisionDiffPatch and exportRevisionDiffPatch write patch metadata and changes", async () => {
+  const revision = {
+    id: "rev/patch:1",
+    trackId: "track/patch",
+    artifact: "plan" as const,
+    version: 3,
+    createdBy: "agent",
+    content: "# Plan\nNew step\nKeep",
+    createdAt: "2026-04-10T12:00:00.000Z",
+  };
+  const patch = renderRevisionDiffPatch({
+    trackId: "track/patch",
+    artifact: "plan",
+    revision,
+    currentContent: "# Plan\nOld step\nKeep",
+  });
+
+  assert.match(patch, /track: track\/patch/);
+  assert.match(patch, /revision: rev\/patch:1/);
+  assert.match(patch, /--- current\/plan/);
+  assert.match(patch, /\+\+\+ revision\/plan@rev\/patch:1/);
+  assert.match(patch, /@@ line 2 @@/);
+  assert.match(patch, /^-Old step$/m);
+  assert.match(patch, /^\+New step$/m);
+
+  const directory = await mkdtemp(join(tmpdir(), "specrail-patch-export-test-"));
+  try {
+    const filePath = await exportRevisionDiffPatch({
+      trackId: "track/patch",
+      artifact: "plan",
+      revision,
+      currentContent: "# Plan\nOld step\nKeep",
+      outputDirectory: directory,
+    });
+    const exported = await readFile(filePath, "utf8");
+
+    assert.match(filePath, /specrail-revision-diff-track-patch-plan-v3-rev-patch-1\.patch$/);
+    assert.equal(exported, patch);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("renderAppShell renders start composer folder session discovery controls", () => {
