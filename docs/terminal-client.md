@@ -57,7 +57,7 @@ The tracks screen now also acts as the first planning-workspace inspector:
 
 - loads planning sessions for the selected track
 - lets operators cycle the selected planning session with `M`
-- shows the latest messages from the selected planning session
+- shows the selected planning-session position and latest messages from the selected planning session
 - has typed API-client support for appending planning messages through the existing planning-session message endpoint
 - lets operators open a lightweight planning-message composer with `m`, edit a body, cycle author/kind/related artifact, and append handoff notes without leaving the terminal
 - summarizes revision focus for `spec`, `plan`, and `tasks`

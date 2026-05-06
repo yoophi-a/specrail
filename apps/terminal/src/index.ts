@@ -1353,6 +1353,10 @@ function renderTrackDetail(
   const selectedApproval = pendingRequests.find((request) => request.id === workspace?.selectedApprovalRequestId) ?? pendingRequests[0] ?? null;
   const selectedRevisionIndex = selectedRevision ? workspace?.revisions[selectedArtifact]?.findIndex((revision) => revision.id === selectedRevision.id) ?? -1 : -1;
   const selectedArtifactRevisionCount = workspace?.revisions[selectedArtifact]?.length ?? 0;
+  const selectedPlanningSessionIndex = workspace?.planningSessions.findIndex((session) => session.id === workspace.selectedPlanningSessionId) ?? -1;
+  const planningSessionSelection = workspace && workspace.planningSessions.length > 0 && selectedPlanningSessionIndex >= 0
+    ? `${workspace.selectedPlanningSessionId} (${selectedPlanningSessionIndex + 1}/${workspace.planningSessions.length})`
+    : detail.planningContext?.planningSessionId ?? "none";
 
   return [
     `- id: ${detail.track.id}`,
@@ -1361,7 +1365,7 @@ function renderTrackDetail(
     `- priority: ${detail.track.priority ?? "medium"}`,
     `- approvals: spec=${detail.track.specStatus ?? "unknown"}, plan=${detail.track.planStatus ?? "unknown"}`,
     `- updated: ${detail.track.updatedAt ?? "unknown"}`,
-    `- planning session: ${detail.planningContext?.planningSessionId ?? "none"}`,
+    `- planning session: ${planningSessionSelection}`,
     `- planning context updated: ${detail.planningContext?.updatedAt ?? "unknown"}`,
     `- pending planning changes: ${detail.planningContext?.hasPendingChanges ? "yes" : "no"}`,
     `- execution context signal: ${detail.planningContext?.hasPendingChanges ? "new approvals needed before new runs" : "current approved context is runnable"}`,

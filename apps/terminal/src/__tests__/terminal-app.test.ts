@@ -545,7 +545,10 @@ test("renderAppShell renders track list and selected detail preview", () => {
         },
         planningContext: { planningSessionId: "plan-1", hasPendingChanges: true },
         planningWorkspace: {
-          planningSessions: [{ id: "plan-1", trackId: "track-1", status: "active", updatedAt: "2026-04-10T12:00:00.000Z" }],
+          planningSessions: [
+            { id: "plan-1", trackId: "track-1", status: "active", updatedAt: "2026-04-10T12:00:00.000Z" },
+            { id: "plan-2", trackId: "track-1", status: "archived", updatedAt: "2026-04-10T12:05:00.000Z" },
+          ],
           planningMessages: [{ id: "msg-1", planningSessionId: "plan-1", authorType: "user", kind: "question", relatedArtifact: "plan", body: "Need approval?", createdAt: "2026-04-10T12:01:00.000Z" }],
           revisions: {
             spec: [],
@@ -589,7 +592,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /SpecRail Terminal/);
   assert.match(rendered, /\[TRACKS\]/);
   assert.match(rendered, /> track-1 \| project\? \| ready \| high \| Terminal shell/);
-  assert.match(rendered, /planning session: plan-1/);
+  assert.match(rendered, /planning session: plan-1 \(1\/2\)/);
   assert.match(rendered, /pending planning changes: yes/);
   assert.match(rendered, /execution context signal: new approvals needed before new runs/);
   assert.match(rendered, /planning sessions:/);
