@@ -22,6 +22,38 @@ const EXECUTION_PROFILE_OPTIONS: Record<string, string[]> = {
 const REFRESH_INTERVAL_STEP_MS = 1_000;
 const MAX_REFRESH_INTERVAL_MS = 60_000;
 
+const PLANNING_MESSAGE_TEMPLATES = [
+  {
+    name: "handoff",
+    kind: "note",
+    relatedArtifact: "plan",
+    body: "Handoff:\n- Current state:\n- Next step:\n- Blocker/risk:",
+  },
+  {
+    name: "question",
+    kind: "question",
+    relatedArtifact: "spec",
+    body: "Question:\n- What needs a decision?\n- Options considered:\n- Recommended answer:",
+  },
+  {
+    name: "decision",
+    kind: "decision",
+    relatedArtifact: "plan",
+    body: "Decision:\n- Chosen direction:\n- Reason:\n- Follow-up:",
+  },
+  {
+    name: "test note",
+    kind: "note",
+    relatedArtifact: "tasks",
+    body: "Test note:\n- Command:\n- Result:\n- Remaining coverage:",
+  },
+] as const satisfies ReadonlyArray<{
+  name: string;
+  kind: PendingPlanningMessageActionState["kind"];
+  relatedArtifact: PendingPlanningMessageActionState["relatedArtifact"];
+  body: string;
+}>;
+
 function nextPlanningSessionStatus(status: PlanningSessionStatus): PlanningSessionStatus {
   const currentIndex = PLANNING_SESSION_STATUS_OPTIONS.findIndex((candidate) => candidate === status);
   return PLANNING_SESSION_STATUS_OPTIONS[(currentIndex + 1 + PLANNING_SESSION_STATUS_OPTIONS.length) % PLANNING_SESSION_STATUS_OPTIONS.length] ?? status;
@@ -271,6 +303,7 @@ export interface PendingPlanningMessageActionState {
   kind: "message" | "question" | "decision" | "note";
   relatedArtifact: ArtifactKind | "none";
   body: string;
+  templateIndex: number;
   submitting: boolean;
   message: string | null;
 }
@@ -1220,8 +1253,9 @@ function renderPlanningMessageComposer(action: PendingPlanningMessageActionState
     `- author: ${action.authorType} (press g to cycle)`,
     `- kind: ${action.kind} (press y to cycle)`,
     `- related artifact: ${action.relatedArtifact} (press h/l to cycle)`,
+    `- template: ${PLANNING_MESSAGE_TEMPLATES[action.templateIndex % PLANNING_MESSAGE_TEMPLATES.length]?.name ?? "handoff"} (press Ctrl+T to apply/cycle)`,
     ...bodyLines,
-    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, newline: Ctrl+N, editor: Ctrl+E, abort: Esc, backspace deletes`,
+    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, template: Ctrl+T, newline: Ctrl+N, editor: Ctrl+E, abort: Esc, backspace deletes`,
     action.message ? `- note: ${action.message}` : "- note: append a planning handoff note without leaving the terminal",
   ];
 }
@@ -2529,6 +2563,7 @@ export async function runTerminalApp(
         kind: "message",
         relatedArtifact: workspace.selectedArtifact ?? "none",
         body: "",
+        templateIndex: 0,
         submitting: false,
         message: null,
       },
@@ -3162,6 +3197,28 @@ export async function runTerminalApp(
     }
   };
 
+  const applyPlanningMessageTemplate = () => {
+    const action = state.pendingPlanningMessageAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const template = PLANNING_MESSAGE_TEMPLATES[action.templateIndex % PLANNING_MESSAGE_TEMPLATES.length] ?? PLANNING_MESSAGE_TEMPLATES[0];
+    const body = action.body.trim().length > 0 ? `${action.body}\n\n${template.body}` : template.body;
+    const templateIndex = (action.templateIndex + 1) % PLANNING_MESSAGE_TEMPLATES.length;
+    updatePlanningMessageComposer(
+      {
+        ...action,
+        kind: template.kind,
+        relatedArtifact: template.relatedArtifact,
+        body,
+        templateIndex,
+        message: `Applied ${template.name} template.`,
+      },
+      `Applied ${template.name} planning-message template.`,
+    );
+  };
+
   const cyclePlanningMessageAuthor = () => {
     const action = state.pendingPlanningMessageAction;
     if (!action || action.submitting) {
@@ -3558,6 +3615,11 @@ export async function runTerminalApp(
 
         if (key.ctrl && key.name === "e") {
           void editPlanningMessageBodyWithEditor();
+          return;
+        }
+
+        if (key.ctrl && key.name === "t") {
+          applyPlanningMessageTemplate();
           return;
         }
 

@@ -790,6 +790,7 @@ test("renderAppShell renders planning message composer state", () => {
       kind: "note",
       relatedArtifact: "tasks",
       body: "Capture handoff context.\nInclude next action.",
+      templateIndex: 1,
       submitting: false,
       message: "Ready to append.",
     },
@@ -800,6 +801,7 @@ test("renderAppShell renders planning message composer state", () => {
   assert.match(rendered, /author: agent \(press g to cycle\)/);
   assert.match(rendered, /kind: note \(press y to cycle\)/);
   assert.match(rendered, /related artifact: tasks \(press h\/l to cycle\)/);
+  assert.match(rendered, /template: question \(press Ctrl\+T to apply\/cycle\)/);
   assert.match(rendered, /- body:/);
   assert.match(rendered, /  Capture handoff context\./);
   assert.match(rendered, /  Include next action\./);
@@ -1464,17 +1466,18 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
     stdin.key("\r", "return");
     await waitFor(() => stdout.output.includes("Planning message body is required."));
     assert.deepEqual(messageBodies, []);
-    stdin.key("y");
-    stdin.key("G");
-    stdin.key("o");
-    stdin.key("", "n", true);
-    await waitFor(() => stdout.output.includes("(blank)"));
-    stdin.key("N");
-    stdin.key("o");
-    stdin.key("w");
+    stdin.key("", "t", true);
+    await waitFor(() => stdout.output.includes("Applied handoff planning-message template."));
+    assert.match(stdout.output, /kind: note/);
+    assert.match(stdout.output, /Handoff:/);
     stdin.key("\r", "return");
     await waitFor(() => stdout.output.includes("Appended planning message msg-terminal-1 to plan-msg-next."));
-    assert.deepEqual(messageBodies, [{ authorType: "user", kind: "question", body: "Go\nNow", relatedArtifact: "plan" }]);
+    assert.deepEqual(messageBodies, [{
+      authorType: "user",
+      kind: "note",
+      body: "Handoff:\n- Current state:\n- Next step:\n- Blocker/risk:",
+      relatedArtifact: "plan",
+    }]);
   } finally {
     stdin.key("q");
     await app;
