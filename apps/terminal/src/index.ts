@@ -2193,6 +2193,12 @@ function formatRevisionDiffExportManifest(entries: RevisionDiffExportManifestEnt
     .join("\n")}\n`;
 }
 
+function formatPlanningMessageTemplates(templates: readonly PlanningMessageTemplate[]): string {
+  return `${templates
+    .map((template, index) => [String(index + 1), template.name, template.kind, template.relatedArtifact].join("\t"))
+    .join("\n")}\n`;
+}
+
 function previewMultilineText(value: string, maxLength = 900): string {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) {
@@ -4065,6 +4071,16 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
     const output = argv.includes("--json")
       ? `${JSON.stringify(entries, null, 2)}\n`
       : formatRevisionDiffExportManifest(entries);
+    (options.stdout ?? process.stdout).write(output);
+    return true;
+  }
+
+  if (command === "message-templates") {
+    const config = loadTerminalClientConfig(options.env ?? process.env);
+    const templates = await loadPlanningMessageTemplates(config.messageTemplatesPath ?? null);
+    const output = argv.includes("--json")
+      ? `${JSON.stringify(templates, null, 2)}\n`
+      : formatPlanningMessageTemplates(templates);
     (options.stdout ?? process.stdout).write(output);
     return true;
   }

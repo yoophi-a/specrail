@@ -316,6 +316,60 @@ test("runTerminalCommand handles missing revision diff export manifests", async 
   }
 });
 
+test("runTerminalCommand lists planning message templates", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-message-templates-command-test-"));
+  const templatesPath = join(directory, "message-templates.json");
+  const template = {
+    name: "Team handoff",
+    kind: "note",
+    relatedArtifact: "tasks",
+    body: "Team handoff:\n- State:\n- Owner:",
+  };
+  const plainWrites: string[] = [];
+  const jsonWrites: string[] = [];
+
+  try {
+    await writeFile(templatesPath, JSON.stringify([template]), "utf8");
+
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["message-templates"],
+        env: { SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH: templatesPath },
+        stdout: { write: (chunk) => plainWrites.push(chunk) },
+      }),
+      true,
+    );
+    assert.equal(plainWrites.join(""), "1\tTeam handoff\tnote\ttasks\n");
+
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["message-templates", "--json"],
+        env: { SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH: templatesPath },
+        stdout: { write: (chunk) => jsonWrites.push(chunk) },
+      }),
+      true,
+    );
+    assert.deepEqual(JSON.parse(jsonWrites.join("")), [template]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("runTerminalCommand surfaces invalid planning message template files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-message-templates-invalid-test-"));
+  const templatesPath = join(directory, "message-templates.json");
+
+  try {
+    await writeFile(templatesPath, JSON.stringify([{ name: "Broken", kind: "memo", relatedArtifact: "plan", body: "Body" }]), "utf8");
+    await assert.rejects(
+      () => runTerminalCommand({ argv: ["message-templates"], env: { SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH: templatesPath } }),
+      /kind must be one of message, question, decision, note/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("SpecRailTerminalApiClient submits artifact revision proposals", async () => {
   const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
     const url = String(input);
