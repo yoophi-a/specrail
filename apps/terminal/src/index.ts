@@ -339,6 +339,10 @@ interface PlanningMessagesResponse {
   messages: PlanningMessage[];
 }
 
+interface PlanningSessionResponse {
+  planningSession: PlanningSessionSummary;
+}
+
 interface PlanningMessageResponse {
   message: PlanningMessage;
 }
@@ -495,6 +499,15 @@ export class SpecRailTerminalApiClient {
   async loadPlanningMessages(planningSessionId: string): Promise<PlanningMessage[]> {
     const payload = await this.request<PlanningMessagesResponse>(`/planning-sessions/${encodeURIComponent(planningSessionId)}/messages`);
     return payload.messages;
+  }
+
+  async createPlanningSession(trackId: string, status = "active"): Promise<PlanningSessionSummary> {
+    const payload = await this.request<PlanningSessionResponse>(`/tracks/${encodeURIComponent(trackId)}/planning-sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    return payload.planningSession;
   }
 
   async proposeArtifactRevision(input: {
@@ -1032,7 +1045,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, M session, v propose, m message, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderContextualHelp(state),
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
@@ -1089,7 +1102,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "tracks":
       return [
         ...lines,
-        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, M opens planning-session chooser, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
+        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, M opens planning-session chooser, N creates planning session, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
       ];
     case "runs":
       return [
@@ -1425,7 +1438,7 @@ function renderTrackDetail(
     ...(selectedRevision ? renderRevisionDiffLines(detail.artifacts[selectedArtifact], selectedRevision.content) : ["- revision diff: none"]),
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
     `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
-    `- planning actions: h/l switches artifact focus, [/] cycles revisions, M opens planning-session chooser, v proposes a new revision for ${selectedArtifact}`,
+    `- planning actions: h/l switches artifact focus, [/] cycles revisions, M opens planning-session chooser, N creates a planning session, v proposes a new revision for ${selectedArtifact}`,
     `- execution actions: press s to start a run for this track${detail.planningContext?.hasPendingChanges ? " (currently blocked until approvals land)" : ""}`,
   ];
 }
@@ -2721,6 +2734,52 @@ export async function runTerminalApp(
     }
   };
 
+  const createPlanningSessionForSelectedTrack = async () => {
+    if (state.screen !== "tracks") {
+      updateState({ ...state, statusLine: "Switch to the tracks screen to create a planning session." });
+      return;
+    }
+
+    const detail = state.tracks.data;
+    if (!detail || detail.track.id !== state.tracks.selectedId) {
+      updateState({ ...state, statusLine: "Track detail is still loading. Press r and try again." });
+      return;
+    }
+
+    updateState({ ...state, statusLine: `Creating planning session for ${detail.track.id}...` });
+
+    try {
+      const planningSession = await client.createPlanningSession(detail.track.id, "active");
+      const refreshedDetail = await client.loadTrackDetail(detail.track.id);
+      const workspace = refreshedDetail.planningWorkspace;
+      if (!workspace) {
+        throw new Error("Track planning workspace was unavailable after session creation.");
+      }
+      const planningMessages = await client.loadPlanningMessages(planningSession.id);
+      updateState({
+        ...state,
+        tracks: {
+          ...state.tracks,
+          data: {
+            ...refreshedDetail,
+            planningWorkspace: {
+              ...workspace,
+              selectedPlanningSessionId: planningSession.id,
+              planningMessages,
+            },
+          },
+        },
+        statusLine: `Created planning session ${planningSession.id}.`,
+      });
+    } catch (error) {
+      updateState({
+        ...state,
+        error: error instanceof Error ? error.message : "Failed to create planning session.",
+        statusLine: error instanceof Error ? error.message : "Failed to create planning session.",
+      });
+    }
+  };
+
   const submitProposalAction = async () => {
     const action = state.pendingProposalAction;
     if (!action || action.submitting) {
@@ -3265,6 +3324,11 @@ export async function runTerminalApp(
 
       if (input === "M") {
         openPlanningSessionSelection();
+        return;
+      }
+
+      if (input === "N") {
+        void createPlanningSessionForSelectedTrack();
         return;
       }
 

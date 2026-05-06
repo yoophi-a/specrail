@@ -605,12 +605,12 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /- Add navigation/);
   assert.match(rendered, /\+ Add keyboard navigation/);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
-  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, M opens planning-session chooser, v proposes a new revision for plan/);
+  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, M opens planning-session chooser, N creates a planning session, v proposes a new revision for plan/);
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, M session, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
-  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, M opens planning-session chooser, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, M opens planning-session chooser, N creates planning session, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
 });
 
 test("renderAppShell renders start composer folder session discovery controls", () => {
@@ -1368,6 +1368,88 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
     stdin.key("\r", "return");
     await waitFor(() => stdout.output.includes("Appended planning message msg-terminal-1 to plan-msg-next."));
     assert.deepEqual(messageBodies, [{ authorType: "user", kind: "question", body: "Go\nNow", relatedArtifact: "plan" }]);
+  } finally {
+    stdin.key("q");
+    await app;
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("runTerminalApp creates a planning session from the tracks screen", async () => {
+  const createBodies: unknown[] = [];
+  let planningSessions = [{ id: "plan-existing", trackId: "track-create", status: "active", updatedAt: "2026-04-10T12:00:00.000Z" }];
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (request.method === "GET" && url.pathname === "/projects") {
+      sendJson(response, { projects: [] });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/tracks") {
+      sendJson(response, { tracks: [{ id: "track-create", title: "Create planning", status: "ready" }] });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/runs") {
+      sendJson(response, { runs: [] });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/tracks/track-create") {
+      sendJson(response, {
+        track: { id: "track-create", title: "Create planning", status: "ready" },
+        artifacts: { spec: "# Spec", plan: "# Plan", tasks: "# Tasks" },
+        planningContext: { planningSessionId: "plan-existing", hasPendingChanges: false },
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/tracks/track-create/planning-sessions") {
+      sendJson(response, { planningSessions });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/tracks/track-create/planning-sessions") {
+      createBodies.push(await readRequestJson(request));
+      planningSessions = [...planningSessions, { id: "plan-created", trackId: "track-create", status: "active", updatedAt: "2026-04-10T12:10:00.000Z" }];
+      sendJson(response, { planningSession: planningSessions.at(-1) }, 201);
+      return;
+    }
+
+    if (request.method === "GET" && /^\/planning-sessions\/(plan-existing|plan-created)\/messages$/.test(url.pathname)) {
+      sendJson(response, { messages: [] });
+      return;
+    }
+
+    if (request.method === "GET" && /^\/tracks\/track-create\/artifacts\/(spec|plan|tasks)$/.test(url.pathname)) {
+      sendJson(response, { revisions: [], approvalRequests: [] });
+      return;
+    }
+
+    sendJson(response, { error: { message: `Unexpected request: ${request.method} ${url.pathname}` } }, 404);
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  assert(address);
+  const { port } = address as AddressInfo;
+
+  const stdin = new FakeTerminalStdin();
+  const stdout = new FakeTerminalStdout();
+  const app = runTerminalApp(
+    { apiBaseUrl: `http://127.0.0.1:${port}`, refreshIntervalMs: 0, initialScreen: "tracks", initialProjectId: null, initialRunFilter: "all", preferencePath: null },
+    { stdin, stdout } as never,
+  );
+
+  try {
+    await waitFor(() => stdout.output.includes("track-create"));
+    stdin.key("N");
+    await waitFor(() => stdout.output.includes("Created planning session plan-created."));
+    assert.deepEqual(createBodies, [{ status: "active" }]);
+    assert.match(stdout.output, /planning session: plan-created \(2\/2\)/);
+    assert.match(stdout.output, /> plan-created \| active/);
   } finally {
     stdin.key("q");
     await app;
