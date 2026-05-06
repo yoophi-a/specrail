@@ -370,6 +370,40 @@ test("runTerminalCommand surfaces invalid planning message template files", asyn
   }
 });
 
+test("runTerminalCommand exports planning message templates to a file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-message-templates-export-test-"));
+  const templatesPath = join(directory, "message-templates.json");
+  const outputPath = join(directory, "nested", "starter-templates.json");
+  const template = {
+    name: "Team question",
+    kind: "question",
+    relatedArtifact: "spec",
+    body: "Question:\n- Context:\n- Decision needed:",
+  };
+  const writes: string[] = [];
+
+  try {
+    await writeFile(templatesPath, JSON.stringify([template]), "utf8");
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["message-templates", "--output", outputPath],
+        env: { SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH: templatesPath },
+        stdout: { write: (chunk) => writes.push(chunk) },
+      }),
+      true,
+    );
+
+    assert.deepEqual(writes, []);
+    assert.deepEqual(JSON.parse(await readFile(outputPath, "utf8")), [template]);
+    await assert.rejects(
+      () => runTerminalCommand({ argv: ["message-templates", "--output"] }),
+      /Usage: specrail-terminal message-templates/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("SpecRailTerminalApiClient submits artifact revision proposals", async () => {
   const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
     const url = String(input);

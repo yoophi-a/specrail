@@ -4078,6 +4078,19 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
   if (command === "message-templates") {
     const config = loadTerminalClientConfig(options.env ?? process.env);
     const templates = await loadPlanningMessageTemplates(config.messageTemplatesPath ?? null);
+    const outputFlagIndex = argv.findIndex((arg) => arg === "--output" || arg === "-o");
+    const outputPath = outputFlagIndex >= 0 ? argv[outputFlagIndex + 1]?.trim() : null;
+
+    if (outputFlagIndex >= 0 && !outputPath) {
+      throw new Error("Usage: specrail-terminal message-templates [--json] [--output <file>]");
+    }
+
+    if (outputPath) {
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, `${JSON.stringify(templates, null, 2)}\n`, "utf8");
+      return true;
+    }
+
     const output = argv.includes("--json")
       ? `${JSON.stringify(templates, null, 2)}\n`
       : formatPlanningMessageTemplates(templates);
