@@ -2193,6 +2193,31 @@ function formatRevisionDiffExportManifest(entries: RevisionDiffExportManifestEnt
     .join("\n")}\n`;
 }
 
+function filterRevisionDiffExportManifest(
+  entries: readonly RevisionDiffExportManifestEntry[],
+  filters: { trackId?: string | null; artifact?: ArtifactKind | null },
+): RevisionDiffExportManifestEntry[] {
+  return entries
+    .filter((entry) => (filters.trackId ? entry.trackId === filters.trackId : true))
+    .filter((entry) => (filters.artifact ? entry.artifact === filters.artifact : true));
+}
+
+function parseRevisionDiffExportFilters(argv: readonly string[], usage: string): { trackId: string | null; artifact: ArtifactKind | null } {
+  const trackFlagIndex = argv.indexOf("--track");
+  const trackId = trackFlagIndex >= 0 ? argv[trackFlagIndex + 1]?.trim() : null;
+  const artifactFlagIndex = argv.indexOf("--artifact");
+  const artifact = artifactFlagIndex >= 0 ? argv[artifactFlagIndex + 1]?.trim() : null;
+
+  if (trackFlagIndex >= 0 && !trackId) {
+    throw new Error(usage);
+  }
+  if (artifactFlagIndex >= 0 && (!artifact || artifact === "none" || !isPlanningMessageTemplateArtifact(artifact))) {
+    throw new Error(usage);
+  }
+
+  return { trackId, artifact: artifact ? (artifact as ArtifactKind) : null };
+}
+
 function formatPlanningMessageTemplates(templates: readonly PlanningMessageTemplate[]): string {
   return `${templates
     .map((template, index) => [String(index + 1), template.name, template.kind, template.relatedArtifact].join("\t"))
@@ -2207,7 +2232,8 @@ function renderTerminalCommandHelp(): string {
     "  report <runId> [--output <file>]            Print or write a completed-run Markdown report.",
     "  diff-exports [--json] [--limit <n>] [--track <trackId>] [--artifact <kind>]",
     "                                              List revision diff export manifest entries.",
-    "  diff-export <index>                         Print one listed revision diff export patch.",
+    "  diff-export <index> [--track <trackId>] [--artifact <kind>]",
+    "                                              Print one listed revision diff export patch.",
     "  message-templates [--json] [--output <file>] List or export planning-message templates.",
     "  help                                        Show this help output.",
     "",
@@ -4080,32 +4106,19 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
     const limitFlagIndex = argv.indexOf("--limit");
     const limitValue = limitFlagIndex >= 0 ? argv[limitFlagIndex + 1]?.trim() : null;
     const parsedLimit = limitValue ? Number(limitValue) : null;
-    const trackFlagIndex = argv.indexOf("--track");
-    const trackId = trackFlagIndex >= 0 ? argv[trackFlagIndex + 1]?.trim() : null;
-    const artifactFlagIndex = argv.indexOf("--artifact");
-    const artifact = artifactFlagIndex >= 0 ? argv[artifactFlagIndex + 1]?.trim() : null;
+    const filters = parseRevisionDiffExportFilters(argv, usage);
 
     if (limitFlagIndex >= 0 && (!limitValue || typeof parsedLimit !== "number" || !Number.isInteger(parsedLimit) || parsedLimit <= 0)) {
-      throw new Error(usage);
-    }
-    if (trackFlagIndex >= 0 && !trackId) {
-      throw new Error(usage);
-    }
-    if (artifactFlagIndex >= 0 && !isPlanningMessageTemplateArtifact(artifact)) {
-      throw new Error(usage);
-    }
-    if (artifact === "none") {
       throw new Error(usage);
     }
 
     const limit = parsedLimit;
 
     const config = loadTerminalClientConfig(options.env ?? process.env);
-    const entries = [...(await loadRevisionDiffExportManifest(config.diffExportDirectory ?? process.cwd()))]
-      .reverse()
-      .filter((entry) => (trackId ? entry.trackId === trackId : true))
-      .filter((entry) => (artifact ? entry.artifact === artifact : true))
-      .slice(0, limit ?? undefined);
+    const entries = filterRevisionDiffExportManifest(
+      [...(await loadRevisionDiffExportManifest(config.diffExportDirectory ?? process.cwd()))].reverse(),
+      filters,
+    ).slice(0, limit ?? undefined);
     const output = argv.includes("--json")
       ? `${JSON.stringify(entries, null, 2)}\n`
       : formatRevisionDiffExportManifest(entries);
@@ -4114,15 +4127,20 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
   }
 
   if (command === "diff-export") {
+    const usage = "Usage: specrail-terminal diff-export <positive-index> [--track <trackId>] [--artifact <spec|plan|tasks>]";
     const indexValue = runId?.trim();
     const parsedIndex = indexValue ? Number(indexValue) : null;
+    const filters = parseRevisionDiffExportFilters(argv, usage);
 
     if (!indexValue || typeof parsedIndex !== "number" || !Number.isInteger(parsedIndex) || parsedIndex <= 0) {
-      throw new Error("Usage: specrail-terminal diff-export <positive-index>");
+      throw new Error(usage);
     }
 
     const config = loadTerminalClientConfig(options.env ?? process.env);
-    const entries = [...(await loadRevisionDiffExportManifest(config.diffExportDirectory ?? process.cwd()))].reverse();
+    const entries = filterRevisionDiffExportManifest(
+      [...(await loadRevisionDiffExportManifest(config.diffExportDirectory ?? process.cwd()))].reverse(),
+      filters,
+    );
     const entry = entries[parsedIndex - 1];
 
     if (!entry) {
