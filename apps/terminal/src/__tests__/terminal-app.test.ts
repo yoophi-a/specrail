@@ -682,7 +682,7 @@ test("renderAppShell renders planning message composer state", () => {
       authorType: "agent",
       kind: "note",
       relatedArtifact: "tasks",
-      body: "Capture handoff context.",
+      body: "Capture handoff context.\nInclude next action.",
       submitting: false,
       message: "Ready to append.",
     },
@@ -693,8 +693,11 @@ test("renderAppShell renders planning message composer state", () => {
   assert.match(rendered, /author: agent \(press g to cycle\)/);
   assert.match(rendered, /kind: note \(press y to cycle\)/);
   assert.match(rendered, /related artifact: tasks \(press h\/l to cycle\)/);
-  assert.match(rendered, /body: Capture handoff context\./);
-  assert.match(rendered, /Help: planning message composer/);
+  assert.match(rendered, /- body:/);
+  assert.match(rendered, /  Capture handoff context\./);
+  assert.match(rendered, /  Include next action\./);
+  assert.match(rendered, /newline: Ctrl\+N/);
+  assert.match(rendered, /Help: planning message composer.*Ctrl\+N inserts newline/);
 });
 
 test("renderAppShell renders run event monitor details", () => {
@@ -1357,9 +1360,14 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
     stdin.key("y");
     stdin.key("G");
     stdin.key("o");
+    stdin.key("", "n", true);
+    await waitFor(() => stdout.output.includes("(blank)"));
+    stdin.key("N");
+    stdin.key("o");
+    stdin.key("w");
     stdin.key("\r", "return");
     await waitFor(() => stdout.output.includes("Appended planning message msg-terminal-1 to plan-msg-next."));
-    assert.deepEqual(messageBodies, [{ authorType: "user", kind: "question", body: "Go", relatedArtifact: "plan" }]);
+    assert.deepEqual(messageBodies, [{ authorType: "user", kind: "question", body: "Go\nNow", relatedArtifact: "plan" }]);
   } finally {
     stdin.key("q");
     await app;
@@ -1382,8 +1390,8 @@ class FakeTerminalStdin extends EventEmitter {
     return this;
   }
 
-  key(input: string, name = input): void {
-    this.emit("keypress", input, { name });
+  key(input: string, name = input, ctrl = false): void {
+    this.emit("keypress", input, { name, ctrl });
   }
 }
 

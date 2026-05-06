@@ -1062,7 +1062,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
   if (state.pendingPlanningMessageAction) {
     return [
       ...lines,
-      "Help: planning message composer — type edits body, g cycles author, y cycles kind, h/l cycles related artifact, Enter submits, Esc aborts.",
+      "Help: planning message composer — type edits body, Ctrl+N inserts newline, g cycles author, y cycles kind, h/l cycles related artifact, Enter submits, Esc aborts.",
     ];
   }
 
@@ -1160,14 +1160,18 @@ function renderPlanningMessageComposer(action: PendingPlanningMessageActionState
     return [];
   }
 
+  const bodyLines = action.body.length > 0
+    ? ["- body:", ...action.body.split(/\r?\n/).map((line) => `  ${line || "(blank)"}`)]
+    : ["- body: (required, type to edit)"];
+
   return [
     "",
     `Planning message action: session ${action.planningSessionId} for track ${action.trackId}`,
     `- author: ${action.authorType} (press g to cycle)`,
     `- kind: ${action.kind} (press y to cycle)`,
     `- related artifact: ${action.relatedArtifact} (press h/l to cycle)`,
-    `- body: ${action.body || "(required, type to edit)"}`,
-    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, abort: Esc, backspace deletes`,
+    ...bodyLines,
+    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, newline: Ctrl+N, abort: Esc, backspace deletes`,
     action.message ? `- note: ${action.message}` : "- note: append a planning handoff note without leaving the terminal",
   ];
 }
@@ -3171,6 +3175,11 @@ export async function runTerminalApp(
 
         if (key.name === "backspace") {
           editPlanningMessageBody((value) => value.slice(0, -1));
+          return;
+        }
+
+        if (key.ctrl && key.name === "n") {
+          editPlanningMessageBody((value) => `${value}\n`);
           return;
         }
 
