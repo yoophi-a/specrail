@@ -210,9 +210,34 @@ test("runTerminalCommand writes report command output to stdout", async () => {
   assert.deepEqual(writes, ["# Run Report — run-1\n"]);
 });
 
+test("runTerminalCommand writes report command output to an explicit file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-report-output-test-"));
+  const outputPath = join(directory, "nested", "run-1-report.md");
+  const writes: string[] = [];
+
+  try {
+    const handled = await runTerminalCommand({
+      argv: ["report", "run-1", "--output", outputPath],
+      env: { SPECRAIL_API_BASE_URL: "http://example.test" },
+      stdout: { write: (chunk) => writes.push(chunk) },
+      fetchImpl: async (input) => {
+        assert.equal(String(input), "http://example.test/runs/run-1/report.md");
+        return new Response("# Run Report — run-1", { status: 200 });
+      },
+    });
+
+    assert.equal(handled, true);
+    assert.deepEqual(writes, []);
+    assert.equal(await readFile(outputPath, "utf8"), "# Run Report — run-1\n");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("runTerminalCommand ignores non-report commands and validates report usage", async () => {
   assert.equal(await runTerminalCommand({ argv: ["interactive"] }), false);
   await assert.rejects(() => runTerminalCommand({ argv: ["report"] }), /Usage: specrail-terminal report <runId>/);
+  await assert.rejects(() => runTerminalCommand({ argv: ["report", "run-1", "--output"] }), /Usage: specrail-terminal report <runId>/);
 });
 
 test("SpecRailTerminalApiClient submits artifact revision proposals", async () => {

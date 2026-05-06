@@ -4005,20 +4005,34 @@ export interface TerminalCommandOptions {
 
 export async function runTerminalCommand(options: TerminalCommandOptions = {}): Promise<boolean> {
   const argv = options.argv ?? process.argv.slice(2);
-  const [command, runId] = argv;
+  const [command, runId, ...args] = argv;
 
   if (command !== "report") {
     return false;
   }
 
   if (!runId?.trim()) {
-    throw new Error("Usage: specrail-terminal report <runId>");
+    throw new Error("Usage: specrail-terminal report <runId> [--output <file>]");
+  }
+
+  const outputFlagIndex = args.findIndex((arg) => arg === "--output" || arg === "-o");
+  const outputPath = outputFlagIndex >= 0 ? args[outputFlagIndex + 1]?.trim() : null;
+
+  if (outputFlagIndex >= 0 && !outputPath) {
+    throw new Error("Usage: specrail-terminal report <runId> [--output <file>]");
   }
 
   const config = loadTerminalClientConfig(options.env ?? process.env);
   const client = new SpecRailTerminalApiClient(config.apiBaseUrl, options.fetchImpl ?? fetch);
   const report = await client.loadRunReportMarkdown(runId);
   const output = report.endsWith("\n") ? report : `${report}\n`;
+
+  if (outputPath) {
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, output, "utf8");
+    return true;
+  }
+
   (options.stdout ?? process.stdout).write(output);
   return true;
 }

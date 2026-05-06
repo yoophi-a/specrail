@@ -71,13 +71,14 @@ The tracks screen now also acts as the first planning-workspace inspector:
 
 ## Non-interactive report export
 
-Use the terminal entrypoint as a thin CLI wrapper when an operator wants the derived run report in a shell pipeline:
+Use the terminal entrypoint as a thin CLI wrapper when an operator wants the derived run report in a shell pipeline or explicit file:
 
 ```sh
 SPECRAIL_API_BASE_URL=http://127.0.0.1:4000 pnpm --filter @specrail/terminal exec tsx src/index.ts report <runId> > run-report.md
+SPECRAIL_API_BASE_URL=http://127.0.0.1:4000 pnpm --filter @specrail/terminal exec tsx src/index.ts report <runId> --output artifacts/run-report.md
 ```
 
-The command does not persist report files itself; it streams the read-only API response to stdout so callers can redirect, copy, or attach the Markdown as needed.
+Without `--output`, the command streams the read-only API response to stdout so callers can redirect, copy, or attach the Markdown as needed. With `--output`, parent directories are created automatically and the report is written to that file.
 
 This is intentionally still lightweight:
 
