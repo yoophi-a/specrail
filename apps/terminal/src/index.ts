@@ -1388,11 +1388,16 @@ function renderPlanningSessionLines(workspace?: TrackPlanningWorkspace): string[
     return ["  - none"];
   }
 
-  return workspace.planningSessions.slice(0, 3).map((session) => {
+  const visibleLimit = 3;
+  const visibleSessions = workspace.planningSessions.slice(0, visibleLimit).map((session) => {
     const prefix = session.id === workspace.selectedPlanningSessionId ? "  >" : "   ";
     const messageCount = workspace.planningMessages.filter((message) => message.planningSessionId === session.id).length;
     return `${prefix} ${session.id} | ${session.status} | messages ${messageCount} | updated ${session.updatedAt ?? session.createdAt ?? "unknown"}`;
-  }).concat(renderPlanningMessageLines(workspace.planningMessages));
+  });
+  const hiddenCount = workspace.planningSessions.length - visibleSessions.length;
+  const overflowLines = hiddenCount > 0 ? [`  ... ${hiddenCount} more sessions, press M to cycle`] : [];
+
+  return visibleSessions.concat(overflowLines, renderPlanningMessageLines(workspace.planningMessages));
 }
 
 function renderPlanningMessageLines(messages: PlanningMessage[]): string[] {

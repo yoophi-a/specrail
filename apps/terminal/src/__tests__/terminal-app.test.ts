@@ -548,6 +548,8 @@ test("renderAppShell renders track list and selected detail preview", () => {
           planningSessions: [
             { id: "plan-1", trackId: "track-1", status: "active", updatedAt: "2026-04-10T12:00:00.000Z" },
             { id: "plan-2", trackId: "track-1", status: "archived", updatedAt: "2026-04-10T12:05:00.000Z" },
+            { id: "plan-3", trackId: "track-1", status: "archived", updatedAt: "2026-04-10T12:06:00.000Z" },
+            { id: "plan-4", trackId: "track-1", status: "archived", updatedAt: "2026-04-10T12:07:00.000Z" },
           ],
           planningMessages: [{ id: "msg-1", planningSessionId: "plan-1", authorType: "user", kind: "question", relatedArtifact: "plan", body: "Need approval?", createdAt: "2026-04-10T12:01:00.000Z" }],
           revisions: {
@@ -592,10 +594,11 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /SpecRail Terminal/);
   assert.match(rendered, /\[TRACKS\]/);
   assert.match(rendered, /> track-1 \| project\? \| ready \| high \| Terminal shell/);
-  assert.match(rendered, /planning session: plan-1 \(1\/2\)/);
+  assert.match(rendered, /planning session: plan-1 \(1\/4\)/);
   assert.match(rendered, /pending planning changes: yes/);
   assert.match(rendered, /execution context signal: new approvals needed before new runs/);
   assert.match(rendered, /planning sessions:/);
+  assert.match(rendered, /\.\.\. 1 more sessions, press M to cycle/);
   assert.match(rendered, /Need approval\?/);
   assert.match(rendered, /revision focus \(plan 2\/2\): v1 by agent/);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
