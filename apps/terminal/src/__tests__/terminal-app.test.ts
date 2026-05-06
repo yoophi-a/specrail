@@ -225,7 +225,7 @@ test("runTerminalCommand prints command help", async () => {
   const output = writes.join("");
   assert.match(output, /Usage: specrail-terminal \[command\]/);
   assert.match(output, /report <runId> \[--output <file>\]/);
-  assert.match(output, /diff-exports \[--json\] \[--limit <n>\]/);
+  assert.match(output, /diff-exports \[--json\] \[--limit <n>\] \[--track <trackId>\] \[--artifact <kind>\]/);
   assert.match(output, /diff-export <index>/);
   assert.match(output, /message-templates \[--json\] \[--output <file>\]/);
 });
@@ -308,6 +308,54 @@ test("runTerminalCommand lists revision diff export manifest entries", async () 
     assert.deepEqual(JSON.parse(jsonWrites.join("")), [entry]);
     await assert.rejects(
       () => runTerminalCommand({ argv: ["diff-exports", "--limit", "0"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
+      /Usage: specrail-terminal diff-exports/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("runTerminalCommand filters revision diff export manifest entries", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-diff-exports-filter-test-"));
+  const manifestPath = join(directory, "specrail-revision-diff-exports.jsonl");
+  const plainWrites: string[] = [];
+  const jsonWrites: string[] = [];
+
+  try {
+    await writeFile(
+      manifestPath,
+      [
+        JSON.stringify({ exportedAt: "2026-04-10T12:05:00.000Z", filePath: "/tmp/spec.patch", trackId: "track-1", artifact: "spec", revisionId: "rev-1", version: 1 }),
+        JSON.stringify({ exportedAt: "2026-04-10T12:10:00.000Z", filePath: "/tmp/plan.patch", trackId: "track-1", artifact: "plan", revisionId: "rev-2", version: 2 }),
+        JSON.stringify({ exportedAt: "2026-04-10T12:15:00.000Z", filePath: "/tmp/tasks.patch", trackId: "track-2", artifact: "tasks", revisionId: "rev-3", version: 3 }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["diff-exports", "--track", "track-1", "--artifact", "plan"],
+        env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
+        stdout: { write: (chunk) => plainWrites.push(chunk) },
+      }),
+      true,
+    );
+    assert.equal(plainWrites.join(""), "2026-04-10T12:10:00.000Z\ttrack-1\tplan\tv2\trev-2\t/tmp/plan.patch\n");
+
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["diff-exports", "--artifact", "tasks", "--limit", "1", "--json"],
+        env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
+        stdout: { write: (chunk) => jsonWrites.push(chunk) },
+      }),
+      true,
+    );
+    assert.deepEqual(JSON.parse(jsonWrites.join("")), [
+      { exportedAt: "2026-04-10T12:15:00.000Z", filePath: "/tmp/tasks.patch", trackId: "track-2", artifact: "tasks", revisionId: "rev-3", version: 3 },
+    ]);
+
+    await assert.rejects(
+      () => runTerminalCommand({ argv: ["diff-exports", "--artifact", "notes"] }),
       /Usage: specrail-terminal diff-exports/,
     );
   } finally {

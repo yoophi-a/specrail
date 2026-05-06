@@ -2205,7 +2205,8 @@ function renderTerminalCommandHelp(): string {
     "",
     "Commands:",
     "  report <runId> [--output <file>]            Print or write a completed-run Markdown report.",
-    "  diff-exports [--json] [--limit <n>]          List revision diff export manifest entries.",
+    "  diff-exports [--json] [--limit <n>] [--track <trackId>] [--artifact <kind>]",
+    "                                              List revision diff export manifest entries.",
     "  diff-export <index>                         Print one listed revision diff export patch.",
     "  message-templates [--json] [--output <file>] List or export planning-message templates.",
     "  help                                        Show this help output.",
@@ -4075,12 +4076,26 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
   }
 
   if (command === "diff-exports") {
+    const usage = "Usage: specrail-terminal diff-exports [--json] [--limit <positive-number>] [--track <trackId>] [--artifact <spec|plan|tasks>]";
     const limitFlagIndex = argv.indexOf("--limit");
     const limitValue = limitFlagIndex >= 0 ? argv[limitFlagIndex + 1]?.trim() : null;
     const parsedLimit = limitValue ? Number(limitValue) : null;
+    const trackFlagIndex = argv.indexOf("--track");
+    const trackId = trackFlagIndex >= 0 ? argv[trackFlagIndex + 1]?.trim() : null;
+    const artifactFlagIndex = argv.indexOf("--artifact");
+    const artifact = artifactFlagIndex >= 0 ? argv[artifactFlagIndex + 1]?.trim() : null;
 
     if (limitFlagIndex >= 0 && (!limitValue || typeof parsedLimit !== "number" || !Number.isInteger(parsedLimit) || parsedLimit <= 0)) {
-      throw new Error("Usage: specrail-terminal diff-exports [--json] [--limit <positive-number>]");
+      throw new Error(usage);
+    }
+    if (trackFlagIndex >= 0 && !trackId) {
+      throw new Error(usage);
+    }
+    if (artifactFlagIndex >= 0 && !isPlanningMessageTemplateArtifact(artifact)) {
+      throw new Error(usage);
+    }
+    if (artifact === "none") {
+      throw new Error(usage);
     }
 
     const limit = parsedLimit;
@@ -4088,6 +4103,8 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
     const config = loadTerminalClientConfig(options.env ?? process.env);
     const entries = [...(await loadRevisionDiffExportManifest(config.diffExportDirectory ?? process.cwd()))]
       .reverse()
+      .filter((entry) => (trackId ? entry.trackId === trackId : true))
+      .filter((entry) => (artifact ? entry.artifact === artifact : true))
       .slice(0, limit ?? undefined);
     const output = argv.includes("--json")
       ? `${JSON.stringify(entries, null, 2)}\n`
