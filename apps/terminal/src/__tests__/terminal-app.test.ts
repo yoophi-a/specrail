@@ -12,6 +12,7 @@ import {
   bootstrapTerminalState,
   createExecutionActionDraft,
   createEmptyRunEventFeedState,
+  editTextWithTerminalEditor,
   loadTerminalPreferences,
   renderAppShell,
   refreshTerminalState,
@@ -314,6 +315,20 @@ test("SpecRailTerminalApiClient appends planning messages", async () => {
   assert.equal(note.relatedArtifact, undefined);
   assert.equal(requests[0]?.url, "http://example.test/planning-sessions/plan-1/messages");
   assert.equal(requests[1]?.body?.includes("relatedArtifact"), false);
+});
+
+test("editTextWithTerminalEditor seeds and reads editor temp file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-editor-test-"));
+  const editorPath = join(directory, "editor.mjs");
+
+  try {
+    await writeFile(editorPath, "import { writeFile } from 'node:fs/promises';\nawait writeFile(process.argv.at(-1), 'Edited from editor\\nSecond line', 'utf8');\n", "utf8");
+    const edited = await editTextWithTerminalEditor("Initial body", `node ${editorPath}`);
+
+    assert.equal(edited, "Edited from editor\nSecond line");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("SpecRailTerminalApiClient previews and applies workspace cleanup with explicit confirmation", async () => {
@@ -696,8 +711,8 @@ test("renderAppShell renders planning message composer state", () => {
   assert.match(rendered, /- body:/);
   assert.match(rendered, /  Capture handoff context\./);
   assert.match(rendered, /  Include next action\./);
-  assert.match(rendered, /newline: Ctrl\+N/);
-  assert.match(rendered, /Help: planning message composer.*Ctrl\+N inserts newline/);
+  assert.match(rendered, /newline: Ctrl\+N, editor: Ctrl\+E/);
+  assert.match(rendered, /Help: planning message composer.*Ctrl\+E opens \$EDITOR/);
 });
 
 test("renderAppShell renders run event monitor details", () => {

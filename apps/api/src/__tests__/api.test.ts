@@ -98,6 +98,30 @@ async function waitForRunEvent(
   throw new Error(`timed out waiting for run event on ${runId}`);
 }
 
+async function readRunEventsText(baseUrl: string, runId: string): Promise<string> {
+  const deadline = Date.now() + 5000;
+
+  while (Date.now() < deadline) {
+    const eventsResponse = await fetch(`${baseUrl}/runs/${runId}/events`);
+    const body = await eventsResponse.text();
+
+    if (eventsResponse.status === 200) {
+      try {
+        JSON.parse(body);
+        return body;
+      } catch {
+        // The JSONL-backed event list can be read while the fake executor is
+        // appending a line; retry until the endpoint returns a complete JSON
+        // response before using it as the report mutation baseline.
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(`timed out reading stable run events for ${runId}`);
+}
+
 function parseSseEvents(buffer: string): Array<{ id: string; summary: string }> {
   return buffer
     .split("\n\n")
@@ -645,8 +669,7 @@ test("API serves completed run Markdown reports without mutating artifacts or ev
 
     await waitForRunEvent(baseUrl, runPayload.run.id, (event) => event.type === "message" && /STDOUT/.test(event.summary));
 
-    const eventsBeforeResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
-    const eventsBefore = await eventsBeforeResponse.text();
+    const eventsBefore = await readRunEventsText(baseUrl, runPayload.run.id);
     const specPath = path.join(paths.repoArtifactDir, "tracks", trackPayload.track.id, "spec.md");
     const specBefore = await readFile(specPath, "utf8");
 
@@ -667,8 +690,7 @@ test("API serves completed run Markdown reports without mutating artifacts or ev
     assert.match(report, new RegExp("Generated from `state/events/" + runPayload.run.id + "\\.jsonl`"));
     assert.match(report, /does not mutate `spec.md`, `plan.md`, or `tasks.md`/);
 
-    const eventsAfterResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/events`);
-    const eventsAfter = await eventsAfterResponse.text();
+    const eventsAfter = await readRunEventsText(baseUrl, runPayload.run.id);
     const specAfter = await readFile(specPath, "utf8");
     assert.equal(eventsAfter, eventsBefore);
     assert.equal(specAfter, specBefore);

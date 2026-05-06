@@ -1,5 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { emitKeypressEvents } from "node:readline";
 import process from "node:process";
 import { loadTerminalClientConfig, type SpecRailTerminalClientConfig } from "@specrail/config";
@@ -1086,7 +1088,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
   if (state.pendingPlanningMessageAction) {
     return [
       ...lines,
-      "Help: planning message composer — type edits body, Ctrl+N inserts newline, g cycles author, y cycles kind, h/l cycles related artifact, Enter submits, Esc aborts.",
+      "Help: planning message composer — type edits body, Ctrl+N inserts newline, Ctrl+E opens $EDITOR, g cycles author, y cycles kind, h/l cycles related artifact, Enter submits, Esc aborts.",
     ];
   }
 
@@ -1202,7 +1204,7 @@ function renderPlanningMessageComposer(action: PendingPlanningMessageActionState
     `- kind: ${action.kind} (press y to cycle)`,
     `- related artifact: ${action.relatedArtifact} (press h/l to cycle)`,
     ...bodyLines,
-    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, newline: Ctrl+N, abort: Esc, backspace deletes`,
+    `- submit: Enter${action.submitting ? " (submitting...)" : ""}, newline: Ctrl+N, editor: Ctrl+E, abort: Esc, backspace deletes`,
     action.message ? `- note: ${action.message}` : "- note: append a planning handoff note without leaving the terminal",
   ];
 }
@@ -1878,6 +1880,32 @@ function previewText(value: string, maxLength = 80): string {
   }
 
   return `${compact.slice(0, maxLength - 3)}...`;
+}
+
+function resolveTerminalEditor(): string {
+  return process.env.VISUAL?.trim() || process.env.EDITOR?.trim() || "vi";
+}
+
+export async function editTextWithTerminalEditor(initialText: string, editorCommand = resolveTerminalEditor()): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-terminal-message-"));
+  const filePath = join(directory, "planning-message.md");
+
+  try {
+    await writeFile(filePath, initialText, "utf8");
+    const result = spawnSync(editorCommand, [filePath], { shell: true, stdio: "inherit" });
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    if (result.status !== 0) {
+      throw new Error(`Editor exited with status ${result.status ?? "unknown"}.`);
+    }
+
+    return await readFile(filePath, "utf8");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 function renderRevisionDiffLines(currentContent: string, revisionContent: string): string[] {
@@ -2931,6 +2959,26 @@ export async function runTerminalApp(
     updatePlanningMessageComposer({ ...action, body: updater(action.body), message: null });
   };
 
+  const editPlanningMessageBodyWithEditor = async () => {
+    const action = state.pendingPlanningMessageAction;
+    if (!action || action.submitting) {
+      return;
+    }
+
+    const setRawMode = typeof io.stdin.setRawMode === "function" ? io.stdin.setRawMode.bind(io.stdin) : null;
+    updatePlanningMessageComposer({ ...action, message: `Opening ${resolveTerminalEditor()}...` }, "Opening editor for planning message body...");
+
+    try {
+      setRawMode?.(false);
+      const body = await editTextWithTerminalEditor(action.body);
+      updatePlanningMessageComposer({ ...action, body, message: "Planning message body updated from editor." }, "Planning message body updated from editor.");
+    } catch (error) {
+      updatePlanningMessageComposer({ ...action, message: error instanceof Error ? error.message : "Editor failed." }, error instanceof Error ? error.message : "Editor failed.");
+    } finally {
+      setRawMode?.(true);
+    }
+  };
+
   const cyclePlanningMessageAuthor = () => {
     const action = state.pendingPlanningMessageAction;
     if (!action || action.submitting) {
@@ -3322,6 +3370,11 @@ export async function runTerminalApp(
 
         if (key.ctrl && key.name === "n") {
           editPlanningMessageBody((value) => `${value}\n`);
+          return;
+        }
+
+        if (key.ctrl && key.name === "e") {
+          void editPlanningMessageBodyWithEditor();
           return;
         }
 
