@@ -22,6 +22,11 @@ const EXECUTION_PROFILE_OPTIONS: Record<string, string[]> = {
 const REFRESH_INTERVAL_STEP_MS = 1_000;
 const MAX_REFRESH_INTERVAL_MS = 60_000;
 
+function nextPlanningSessionStatus(status: PlanningSessionStatus): PlanningSessionStatus {
+  const currentIndex = PLANNING_SESSION_STATUS_OPTIONS.findIndex((candidate) => candidate === status);
+  return PLANNING_SESSION_STATUS_OPTIONS[(currentIndex + 1 + PLANNING_SESSION_STATUS_OPTIONS.length) % PLANNING_SESSION_STATUS_OPTIONS.length] ?? status;
+}
+
 export interface TrackListItem {
   id: string;
   projectId?: string;
@@ -517,6 +522,15 @@ export class SpecRailTerminalApiClient {
   async createPlanningSession(trackId: string, status: PlanningSessionStatus = "active"): Promise<PlanningSessionSummary> {
     const payload = await this.request<PlanningSessionResponse>(`/tracks/${encodeURIComponent(trackId)}/planning-sessions`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    return payload.planningSession;
+  }
+
+  async updatePlanningSession(planningSessionId: string, status: PlanningSessionStatus): Promise<PlanningSessionSummary> {
+    const payload = await this.request<PlanningSessionResponse>(`/planning-sessions/${encodeURIComponent(planningSessionId)}`, {
+      method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ status }),
     });
@@ -1060,7 +1074,7 @@ export function renderAppShell(state: TerminalAppState): string {
     ...body,
     "",
     `Status: ${state.statusLine}`,
-    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, u diff, U export diff, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
+    `Keys: 1 home, 2 tracks, 3 runs, 4 settings, j/k or ↑/↓ select, P project scope, +/- refresh, h/l artifact, [/] revision, u diff, U export diff, M session, N new session, T session status, v propose, m message, f run filter, d event detail, Space tail pause/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit | Refresh ${state.refreshIntervalMs}ms`,
     ...renderContextualHelp(state),
     ...renderExecutionActionComposer(state.pendingExecutionAction),
     ...renderProposalActionComposer(state.pendingProposalAction),
@@ -1125,7 +1139,7 @@ function renderContextualHelp(state: TerminalAppState): string[] {
     case "tracks":
       return [
         ...lines,
-        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
+        "Help: tracks — P cycles project scope, h/l switches artifact, [/] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N creates session, T cycles selected session status, v proposes, m appends planning message, a/x approves or rejects pending revisions, s starts run composer with folder-session discovery.",
       ];
     case "runs":
       return [
@@ -1477,7 +1491,7 @@ function renderTrackDetail(
     ...(selectedRevision ? renderRevisionDiffLines(detail.artifacts[selectedArtifact], selectedRevision.content, showRevisionDiffDetail) : ["- revision diff: none"]),
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,
     `- operator actions: ${selectedApproval ? "press a to approve or x to reject selected pending request" : "no pending approval actions"}`,
-    `- planning actions: h/l switches artifact focus, [/] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for ${selectedArtifact}`,
+    `- planning actions: h/l switches artifact focus, [/] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, T cycles selected session status, v proposes a new revision for ${selectedArtifact}`,
     `- execution actions: press s to start a run for this track${detail.planningContext?.hasPendingChanges ? " (currently blocked until approvals land)" : ""}`,
   ];
 }
@@ -2917,6 +2931,59 @@ export async function runTerminalApp(
     }
   };
 
+  const cycleSelectedPlanningSessionStatus = async () => {
+    if (state.screen !== "tracks") {
+      updateState({ ...state, statusLine: "Switch to the tracks screen to update a planning session." });
+      return;
+    }
+
+    const detail = state.tracks.data;
+    const workspace = detail?.planningWorkspace;
+    if (!detail || detail.track.id !== state.tracks.selectedId || !workspace) {
+      updateState({ ...state, statusLine: "Track planning detail is still loading. Press r and try again." });
+      return;
+    }
+
+    const currentSession = workspace.planningSessions.find((session) => session.id === workspace.selectedPlanningSessionId) ?? workspace.planningSessions[0] ?? null;
+    if (!currentSession) {
+      updateState({ ...state, statusLine: `Track ${detail.track.id} has no planning session to update.` });
+      return;
+    }
+
+    const nextStatus = nextPlanningSessionStatus(currentSession.status as PlanningSessionStatus);
+    updateState({ ...state, statusLine: `Updating planning session ${currentSession.id} to ${nextStatus}...` });
+
+    try {
+      const planningSession = await client.updatePlanningSession(currentSession.id, nextStatus);
+      const refreshedDetail = await client.loadTrackDetail(detail.track.id);
+      const workspace = refreshedDetail.planningWorkspace;
+      const planningMessages = await client.loadPlanningMessages(planningSession.id);
+      updateState({
+        ...state,
+        tracks: {
+          ...state.tracks,
+          data: workspace
+            ? {
+              ...refreshedDetail,
+              planningWorkspace: {
+                ...workspace,
+                selectedPlanningSessionId: planningSession.id,
+                planningMessages,
+              },
+            }
+            : refreshedDetail,
+        },
+        statusLine: `Updated planning session ${planningSession.id} to ${planningSession.status}.`,
+      });
+    } catch (error) {
+      updateState({
+        ...state,
+        error: error instanceof Error ? error.message : "Failed to update planning session.",
+        statusLine: error instanceof Error ? error.message : "Failed to update planning session.",
+      });
+    }
+  };
+
   const openPlanningSessionCreateComposer = () => {
     if (state.screen !== "tracks") {
       updateState({ ...state, statusLine: "Switch to the tracks screen to create a planning session." });
@@ -2952,8 +3019,7 @@ export async function runTerminalApp(
       return;
     }
 
-    const currentIndex = PLANNING_SESSION_STATUS_OPTIONS.findIndex((status) => status === action.status);
-    const status = PLANNING_SESSION_STATUS_OPTIONS[(currentIndex + 1 + PLANNING_SESSION_STATUS_OPTIONS.length) % PLANNING_SESSION_STATUS_OPTIONS.length] ?? action.status;
+    const status = nextPlanningSessionStatus(action.status);
     updateState({
       ...state,
       pendingPlanningSessionCreate: { ...action, status, message: `Planning session status set to ${status}.` },
@@ -3599,6 +3665,11 @@ export async function runTerminalApp(
 
       if (input === "N") {
         openPlanningSessionCreateComposer();
+        return;
+      }
+
+      if (input === "T") {
+        void cycleSelectedPlanningSessionStatus();
         return;
       }
 

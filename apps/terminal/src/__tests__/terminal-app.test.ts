@@ -320,6 +320,27 @@ test("SpecRailTerminalApiClient appends planning messages", async () => {
   assert.equal(requests[1]?.body?.includes("relatedArtifact"), false);
 });
 
+test("SpecRailTerminalApiClient updates planning session status", async () => {
+  const requests: Array<{ url: string; method?: string; body?: string }> = [];
+  const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
+    const url = String(input);
+    requests.push({ url, method: init?.method, body: init?.body?.toString() });
+
+    if (url.endsWith("/planning-sessions/plan-1") && init?.method === "PATCH") {
+      assert.equal(init.body?.toString(), JSON.stringify({ status: "waiting_agent" }));
+      return new Response(JSON.stringify({ planningSession: { id: "plan-1", trackId: "track-1", status: "waiting_agent" } }), { status: 200 });
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  const planningSession = await client.updatePlanningSession("plan-1", "waiting_agent");
+
+  assert.equal(planningSession.status, "waiting_agent");
+  assert.equal(requests[0]?.url, "http://example.test/planning-sessions/plan-1");
+  assert.equal(requests[0]?.method, "PATCH");
+});
+
 test("editTextWithTerminalEditor seeds and reads editor temp file", async () => {
   const directory = await mkdtemp(join(tmpdir(), "specrail-editor-test-"));
   const editorPath = join(directory, "editor.mjs");
@@ -626,12 +647,12 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /\+ Capture risks/);
   assert.doesNotMatch(rendered, /^  - Old outro$/m);
   assert.match(rendered, /pending approvals: plan -> rev-1 requested by agent/);
-  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, v proposes a new revision for plan/);
+  assert.match(rendered, /planning actions: h\/l switches artifact focus, \[\/\] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, T cycles selected session status, v proposes a new revision for plan/);
   assert.match(rendered, /press a to approve or x to reject selected pending request/);
   assert.match(rendered, /execution actions: press s to start a run for this track/);
   assert.match(rendered, /spec preview: # Spec Terminal shell/);
-  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, u diff, U export diff, M session, N new session, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
-  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N opens planning-session create composer, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
+  assert.match(rendered, /Keys: 1 home, 2 tracks, 3 runs, 4 settings, j\/k or ↑\/↓ select, P project scope, \+\/- refresh, h\/l artifact, \[\/\] revision, u diff, U export diff, M session, N new session, T session status, v propose, m message, f run filter, d event detail, Space tail pause\/resume, s start, e resume, c cancel, w cleanup, a approve, x reject, r refresh, q quit/);
+  assert.match(rendered, /Help: tracks — P cycles project scope, h\/l switches artifact, \[\/\] cycles revisions, u toggles expanded diff, U exports diff patch, M opens planning-session chooser, N creates session, T cycles selected session status, v proposes, m appends planning message, a\/x approves or rejects pending revisions, s starts run composer with folder-session discovery\./);
 });
 
 test("renderRevisionDiffLines supports compact and expanded changed-line views", () => {

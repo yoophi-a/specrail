@@ -192,6 +192,11 @@ export interface CreatePlanningSessionInput {
   status?: PlanningSessionStatus;
 }
 
+export interface UpdatePlanningSessionInput {
+  planningSessionId: string;
+  status: PlanningSessionStatus;
+}
+
 export interface AppendPlanningMessageInput {
   planningSessionId: string;
   authorType: PlanningMessage["authorType"];
@@ -690,6 +695,23 @@ export class SpecRailService {
 
     await this.dependencies.planningSessionRepository.create(session);
     return session;
+  }
+
+  async updatePlanningSession(input: UpdatePlanningSessionInput): Promise<PlanningSession> {
+    const session = await this.dependencies.planningSessionRepository.getById(input.planningSessionId);
+
+    if (!session) {
+      throw new NotFoundError(`Planning session not found: ${input.planningSessionId}`);
+    }
+
+    const nextSession: PlanningSession = {
+      ...session,
+      status: input.status,
+      updatedAt: this.now(),
+    };
+
+    await this.dependencies.planningSessionRepository.update(nextSession);
+    return nextSession;
   }
 
   getPlanningSession(sessionId: string): Promise<PlanningSession | null> {

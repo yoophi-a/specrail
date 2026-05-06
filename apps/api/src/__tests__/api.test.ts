@@ -502,6 +502,32 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     };
     assert.equal(planningSessionPayload.planningSession.trackId, trackPayload.track.id);
 
+    const planningSessionUpdateResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "waiting_agent" }),
+    });
+    assert.equal(planningSessionUpdateResponse.status, 200);
+    const planningSessionUpdatePayload = (await planningSessionUpdateResponse.json()) as {
+      planningSession: { id: string; status: string; updatedAt: string };
+    };
+    assert.equal(planningSessionUpdatePayload.planningSession.id, planningSessionPayload.planningSession.id);
+    assert.equal(planningSessionUpdatePayload.planningSession.status, "waiting_agent");
+
+    const invalidPlanningSessionUpdateResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "bogus" }),
+    });
+    await assertJsonResponseStatus(invalidPlanningSessionUpdateResponse, 422);
+
+    const missingPlanningSessionUpdateResponse = await fetch(`${baseUrl}/planning-sessions/missing-session`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "active" }),
+    });
+    await assertJsonResponseStatus(missingPlanningSessionUpdateResponse, 404);
+
     const planningMessageResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },

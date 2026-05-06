@@ -56,7 +56,7 @@ The run detail pane also highlights:
 The tracks screen now also acts as the first planning-workspace inspector:
 
 - loads planning sessions for the selected track
-- lets operators open a planning-session creation composer with `N`, cycle the initial status with `y`, submit with Enter, cancel with Esc, or open a planning-session chooser with `M`, move with `j/k`, submit with Enter, or cancel with Esc
+- lets operators open a planning-session creation composer with `N`, cycle the initial status with `y`, submit with Enter, cancel with Esc, cycle the selected session status with `T`, or open a planning-session chooser with `M`, move with `j/k`, submit with Enter, or cancel with Esc
 - shows the selected planning-session position, an overflow hint for hidden sessions, and latest messages from the selected planning session
 - has typed API-client support for appending planning messages through the existing planning-session message endpoint
 - lets operators open a lightweight planning-message composer with `m`, edit a multiline body with `Ctrl+N`, open `$EDITOR` for longer notes with `Ctrl+E`, cycle author/kind/related artifact, and append handoff notes without leaving the terminal
@@ -93,4 +93,4 @@ Good next steps after the current planning/run-operation baseline:
 
 - make terminal planning-message authoring more ergonomic for longer notes, such as adding paste-mode controls or editor templates
 - add richer revision diff/compare views before approval, such as side-by-side paging or patch export destinations outside the current working directory
-- consider richer terminal controls for planning-session metadata if operators need editing beyond the initial status selector
+- consider richer terminal controls for planning-session metadata if operators need fields beyond status

@@ -169,6 +169,10 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(planningSession.trackId, track.id);
   assert.equal(planningSession.status, "active");
 
+  const updatedPlanningSession = await service.updatePlanningSession({ planningSessionId: planningSession.id, status: "waiting_agent" });
+  assert.equal(updatedPlanningSession.status, "waiting_agent");
+  assert.notEqual(updatedPlanningSession.updatedAt, planningSession.updatedAt);
+
   const planningMessage = await service.appendPlanningMessage({
     planningSessionId: planningSession.id,
     authorType: "user",

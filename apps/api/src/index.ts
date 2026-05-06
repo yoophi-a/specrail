@@ -105,6 +105,10 @@ interface CreatePlanningSessionRequestBody {
   status?: PlanningSessionStatus;
 }
 
+interface UpdatePlanningSessionRequestBody {
+  status?: PlanningSessionStatus;
+}
+
 interface AppendPlanningMessageRequestBody {
   authorType: PlanningMessage["authorType"];
   kind?: PlanningMessageKind;
@@ -677,6 +681,21 @@ function assertValidCreatePlanningSessionBody(body: CreatePlanningSessionRequest
 
   if (details.length > 0) {
     throw new RequestValidationError("invalid planning session payload", details);
+  }
+}
+
+function assertValidUpdatePlanningSessionBody(body: UpdatePlanningSessionRequestBody): asserts body is { status: PlanningSessionStatus } {
+  const details: ApiErrorDetail[] = [];
+
+  if (!isPlanningSessionStatus(body.status)) {
+    details.push({
+      field: "status",
+      message: `status must be one of: ${PLANNING_SESSION_STATUSES.join(", ")}`,
+    });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("invalid planning session update payload", details);
   }
 }
 
@@ -1292,6 +1311,18 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           return;
         }
 
+        sendJson(response, 200, { planningSession });
+        return;
+      }
+
+      if (method === "PATCH" && segments.length === 2 && segments[0] === "planning-sessions") {
+        const body = await readJson<UpdatePlanningSessionRequestBody>(request);
+        assertValidUpdatePlanningSessionBody(body);
+
+        const planningSession = await deps.service.updatePlanningSession({
+          planningSessionId: segments[1] ?? "",
+          status: body.status,
+        });
         sendJson(response, 200, { planningSession });
         return;
       }
