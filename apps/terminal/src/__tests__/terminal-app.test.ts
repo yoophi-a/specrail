@@ -724,12 +724,24 @@ test("renderRevisionDiffPatch and exportRevisionDiffPatch write patch metadata a
       revision,
       currentContent: "# Plan\nOld step\nKeep",
       outputDirectory,
+      writeManifest: true,
+      exportedAt: "2026-04-10T12:10:00.000Z",
     });
     const exported = await readFile(filePath, "utf8");
+    const manifest = await readFile(join(outputDirectory, "specrail-revision-diff-exports.jsonl"), "utf8");
+    const manifestEntry = JSON.parse(manifest.trim()) as Record<string, unknown>;
 
     assert.ok(filePath.startsWith(outputDirectory));
     assert.match(filePath, /specrail-revision-diff-track-patch-plan-v3-rev-patch-1\.patch$/);
     assert.equal(exported, patch);
+    assert.deepEqual(manifestEntry, {
+      exportedAt: "2026-04-10T12:10:00.000Z",
+      filePath,
+      trackId: "track/patch",
+      artifact: "plan",
+      revisionId: "rev/patch:1",
+      version: 3,
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

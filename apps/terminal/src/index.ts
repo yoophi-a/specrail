@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { emitKeypressEvents } from "node:readline";
@@ -2121,14 +2121,35 @@ export async function exportRevisionDiffPatch(input: {
   revision: ArtifactRevisionSummary;
   currentContent: string;
   outputDirectory?: string;
+  writeManifest?: boolean;
+  exportedAt?: string;
 }): Promise<string> {
+  const outputDirectory = input.outputDirectory ?? process.cwd();
   const version = `v${input.revision.version}`;
   const filename = ["specrail", "revision-diff", input.trackId, input.artifact, version, input.revision.id]
     .map(sanitizePatchFilenamePart)
     .join("-");
-  const filePath = join(input.outputDirectory ?? process.cwd(), `${filename}.patch`);
+  const filePath = join(outputDirectory, `${filename}.patch`);
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, renderRevisionDiffPatch(input), "utf8");
+
+  if (input.writeManifest) {
+    const manifestPath = join(outputDirectory, "specrail-revision-diff-exports.jsonl");
+    await mkdir(dirname(manifestPath), { recursive: true });
+    await appendFile(
+      manifestPath,
+      `${JSON.stringify({
+        exportedAt: input.exportedAt ?? new Date().toISOString(),
+        filePath,
+        trackId: input.trackId,
+        artifact: input.artifact,
+        revisionId: input.revision.id,
+        version: input.revision.version,
+      })}\n`,
+      "utf8",
+    );
+  }
+
   return filePath;
 }
 
@@ -2457,6 +2478,7 @@ export async function runTerminalApp(
         revision,
         currentContent: detail.artifacts[artifact],
         outputDirectory: effectiveConfig.diffExportDirectory ?? undefined,
+        writeManifest: true,
       });
       updateState({ ...state, statusLine: `Exported ${artifact} revision diff to ${filePath}.` });
     } catch (error) {
