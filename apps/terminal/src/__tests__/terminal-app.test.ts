@@ -226,7 +226,7 @@ test("runTerminalCommand prints command help", async () => {
   assert.match(output, /Usage: specrail-terminal \[command\]/);
   assert.match(output, /report <runId> \[--output <file>\]/);
   assert.match(output, /diff-exports \[--json\] \[--limit <n>\] \[--track <trackId>\] \[--artifact <kind>\]/);
-  assert.match(output, /diff-export <index> \[--track <trackId>\] \[--artifact <kind>\]/);
+  assert.match(output, /diff-export <index> \[--track <trackId>\] \[--artifact <kind>\] \[--output <file>\]/);
   assert.match(output, /message-templates \[--json\] \[--output <file>\]/);
 });
 
@@ -456,6 +456,41 @@ test("runTerminalCommand applies revision diff export filters before detail sele
 
     await assert.rejects(
       () => runTerminalCommand({ argv: ["diff-export", "1", "--artifact", "none"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
+      /Usage: specrail-terminal diff-export/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("runTerminalCommand writes revision diff export patch content to an explicit file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "specrail-diff-export-output-test-"));
+  const patchPath = join(directory, "selected.patch");
+  const outputPath = join(directory, "nested", "copied.patch");
+  const manifestPath = join(directory, "specrail-revision-diff-exports.jsonl");
+  const writes: string[] = [];
+
+  try {
+    await writeFile(patchPath, "selected patch", "utf8");
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify({ exportedAt: "2026-04-10T12:05:00.000Z", filePath: patchPath, trackId: "track-1", artifact: "spec", revisionId: "rev-1", version: 1 })}\n`,
+      "utf8",
+    );
+
+    assert.equal(
+      await runTerminalCommand({
+        argv: ["diff-export", "1", "-o", outputPath],
+        env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
+        stdout: { write: (chunk) => writes.push(chunk) },
+      }),
+      true,
+    );
+
+    assert.deepEqual(writes, []);
+    assert.equal(await readFile(outputPath, "utf8"), "selected patch\n");
+    await assert.rejects(
+      () => runTerminalCommand({ argv: ["diff-export", "1", "--output"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
       /Usage: specrail-terminal diff-export/,
     );
   } finally {

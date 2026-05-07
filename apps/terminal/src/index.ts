@@ -2232,7 +2232,7 @@ function renderTerminalCommandHelp(): string {
     "  report <runId> [--output <file>]            Print or write a completed-run Markdown report.",
     "  diff-exports [--json] [--limit <n>] [--track <trackId>] [--artifact <kind>]",
     "                                              List revision diff export manifest entries.",
-    "  diff-export <index> [--track <trackId>] [--artifact <kind>]",
+    "  diff-export <index> [--track <trackId>] [--artifact <kind>] [--output <file>]",
     "                                              Print one listed revision diff export patch.",
     "  message-templates [--json] [--output <file>] List or export planning-message templates.",
     "  help                                        Show this help output.",
@@ -4127,12 +4127,17 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
   }
 
   if (command === "diff-export") {
-    const usage = "Usage: specrail-terminal diff-export <positive-index> [--track <trackId>] [--artifact <spec|plan|tasks>]";
+    const usage = "Usage: specrail-terminal diff-export <positive-index> [--track <trackId>] [--artifact <spec|plan|tasks>] [--output <file>]";
     const indexValue = runId?.trim();
     const parsedIndex = indexValue ? Number(indexValue) : null;
     const filters = parseRevisionDiffExportFilters(argv, usage);
+    const outputFlagIndex = argv.findIndex((arg) => arg === "--output" || arg === "-o");
+    const outputPath = outputFlagIndex >= 0 ? argv[outputFlagIndex + 1]?.trim() : null;
 
     if (!indexValue || typeof parsedIndex !== "number" || !Number.isInteger(parsedIndex) || parsedIndex <= 0) {
+      throw new Error(usage);
+    }
+    if (outputFlagIndex >= 0 && !outputPath) {
       throw new Error(usage);
     }
 
@@ -4148,7 +4153,15 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
     }
 
     const patch = await readFile(entry.filePath, "utf8");
-    (options.stdout ?? process.stdout).write(patch.endsWith("\n") ? patch : `${patch}\n`);
+    const output = patch.endsWith("\n") ? patch : `${patch}\n`;
+
+    if (outputPath) {
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, output, "utf8");
+      return true;
+    }
+
+    (options.stdout ?? process.stdout).write(output);
     return true;
   }
 
