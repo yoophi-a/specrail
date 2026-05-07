@@ -41,7 +41,7 @@ SpecRail borrows the prompt-kit interaction patterns that fit this architecture:
 - system-message style callouts for planning/run context
 - message/chat-container style cards for the planning context summary
 - steps/tool style cards for run event timelines and live SSE updates
-- source-style links for read-only Markdown run reports
+- source-style links for read-only Markdown run reports, including a browser-native download affordance backed by the report endpoint's `Content-Disposition` filename hint
 
 If SpecRail later introduces a dedicated React operator frontend, these classes and layout sections are the migration seams for replacing the raw implementation with actual prompt-kit/shadcn components.
 

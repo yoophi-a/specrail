@@ -270,6 +270,7 @@ test("API serves the hosted operator UI shell", async () => {
     assert.match(body, /Run report/);
     assert.match(body, /data-run-report/);
     assert.match(body, /report\.md/);
+    assert.match(body, /download>↗ Open\/download Markdown run report/);
     assert.match(body, /Recent events/);
     assert.match(body, /EventSource/);
     assert.match(body, /events\/stream/);
