@@ -2,7 +2,7 @@
 
 This roadmap reflects the implemented MVP baseline and the next practical gaps to turn into issues.
 
-## Baseline status as of 2026-05-02
+## Baseline status as of 2026-05-08
 
 ### Done
 - workspace bootstrap
@@ -46,8 +46,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - production auth system
 - production deployment manifests
 - worktree/git branch orchestration beyond metadata
-- hosted GitHub app/webhook automation implementation
-- web UI
+- database-backed GitHub terminal relay queue for multi-process deployments
+- production health/metrics aggregation beyond injectable sinks
 
 ## Next milestone candidates
 
@@ -89,6 +89,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ### Milestone E — Hosted operator UI / GitHub entrypoints
 - minimal GitHub issue-comment command/webhook architecture is defined as a thin frontend over existing project, track, planning, run, event, and report APIs
+- GitHub issue-comment webhook frontend accepts `/specrail run`, validates signatures, resolves repository/project scope, authorizes actors, starts runs, and can relay terminal outcome comments with report links
 - first hosted operator UI slice is served from `GET /operator` with HTML/script helpers isolated in `apps/api/src/operator-ui.ts`
 - hosted UI loads project, track, and run summary state from the existing HTTP API
 - hosted UI can create/update projects through existing project APIs
@@ -119,14 +120,15 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 ## Suggested issue framing from the current baseline
 
-1. **Add completed-run report artifact download options**
-   - keep `GET /runs/:runId/report.md` as the read-only source, but add explicit download/copy affordances where clients can support them.
-   - consider `Content-Disposition` filename hints or a lightweight terminal copy/open command without introducing report persistence.
-
-2. **Broaden provider-neutral event normalization coverage**
+1. **Broaden provider-neutral event normalization coverage**
    - audit Codex and Claude Code payload fields that still leak provider-specific structure into first-class UI decisions.
    - promote stable fields into shared event summaries/status metadata while preserving provider details in `payload` for debugging.
 
-3. **Implement the minimal GitHub issue-comment entrypoint**
-   - add the `github` binding/source support and an `apps/github` webhook frontend from the architecture slice.
-   - validate webhook signatures, authorize `/specrail run`, reuse/create track bindings, start runs, and post terminal outcome comments with report links.
+2. **Harden GitHub terminal relay operations for production deployments**
+   - evaluate whether the JSON-file relay queue is sufficient for the intended deployment topology.
+   - add a database-backed or external-queue-backed relay option before supporting multi-process GitHub webhook workers.
+   - keep GitHub as a thin frontend and preserve `GET /runs/:runId/report.md` as the canonical completed-run report export.
+
+3. **Add production deployment manifests**
+   - define a deployable topology for API, GitHub webhook, Telegram, and terminal relay workers.
+   - document required secret handling, persistent storage, reverse-proxy auth, and health checks.
