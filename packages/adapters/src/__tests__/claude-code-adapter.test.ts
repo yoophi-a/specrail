@@ -518,6 +518,7 @@ test("ClaudeCodeAdapter normalizes lifecycle and fallback stream events into sha
       timestamp: "2026-04-10T12:00:02.000Z",
       source: "claude_code",
       summary: "Failed Claude Code session run-claude-3-claude",
+      status: "failed",
       payload: {
         sessionRef: "run-claude-3-claude",
         provider: "claude_code",

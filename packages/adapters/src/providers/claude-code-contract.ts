@@ -216,6 +216,7 @@ export function normalizeClaudeCodeEvent(event: ClaudeCodeLifecycleEvent): Execu
     timestamp: event.timestamp,
     source: CLAUDE_CODE_BACKEND,
     summary: `${toLifecycleVerb(event.kind)} Claude Code session ${event.sessionRef}`,
+    status: event.kind === "resumed" ? "running" : event.kind,
     payload: {
       sessionRef: event.sessionRef,
       provider: CLAUDE_CODE_BACKEND,
@@ -398,6 +399,7 @@ function normalizeClaudeResultEvent(input: {
       timestamp: input.timestamp,
       source: CLAUDE_CODE_BACKEND,
       summary: `Claude requested approval for ${denial.tool_name ?? "tool"}`,
+      status: "waiting_approval",
       payload: {
         ...input.basePayload,
         toolName: denial.tool_name,
@@ -416,6 +418,7 @@ function normalizeClaudeResultEvent(input: {
     timestamp: input.timestamp,
     source: CLAUDE_CODE_BACKEND,
     summary: input.event.is_error ? `Claude result error ${input.sessionRef}` : `Claude result ${input.sessionRef}`,
+    status: input.event.is_error ? "failed" : "completed",
     payload: {
       ...input.basePayload,
       result: input.event.result,

@@ -255,6 +255,7 @@ export class CodexAdapter implements ExecutorAdapter {
           timestamp,
           source: this.name,
           summary: "Run started",
+          status: "running",
           payload: { status: "running", sessionRef, pid: spawned.pid },
         },
         ...(lifecycleEvent ? [lifecycleEvent] : []),
@@ -433,6 +434,7 @@ export class CodexAdapter implements ExecutorAdapter {
       timestamp,
       source: this.name,
       summary: `Cancelled Codex session ${sessionRef}`,
+      status: "cancelled",
       payload: {
         sessionRef,
         status: "cancelled",
@@ -503,6 +505,7 @@ export class CodexAdapter implements ExecutorAdapter {
         timestamp: event.timestamp,
         source: this.name,
         summary: `${event.kind === "completed" ? "Completed" : "Failed"} Codex session ${event.sessionRef}`,
+        status: event.kind === "completed" ? "completed" : "failed",
         payload: {
           sessionRef: event.sessionRef,
           provider: this.name,
@@ -521,6 +524,7 @@ export class CodexAdapter implements ExecutorAdapter {
       timestamp: event.timestamp,
       source: this.name,
       summary: `${event.kind === "resumed" ? "Resumed" : "Cancelled"} Codex session ${event.sessionRef}`,
+      status: event.kind === "resumed" ? "running" : "cancelled",
       payload: {
         sessionRef: event.sessionRef,
         provider: this.name,

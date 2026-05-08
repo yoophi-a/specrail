@@ -422,6 +422,7 @@ test("CodexAdapter normalizes lifecycle and stream events into shared execution 
       timestamp: "2026-04-09T00:00:02.000Z",
       source: "codex",
       summary: "Failed Codex session run-1-codex",
+      status: "failed",
       payload: {
         sessionRef: "run-1-codex",
         provider: "codex",

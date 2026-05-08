@@ -358,33 +358,46 @@ function pathMatchesWorkspace(candidatePath: string, executionWorkspacePath: str
   );
 }
 
+function readEventStatus(event: ExecutionEvent): ExecutionStatus | null {
+  if (
+    event.status === "created" ||
+    event.status === "queued" ||
+    event.status === "running" ||
+    event.status === "waiting_approval" ||
+    event.status === "completed" ||
+    event.status === "failed" ||
+    event.status === "cancelled"
+  ) {
+    return event.status;
+  }
+
+  const payloadStatus = event.payload?.status;
+  if (
+    payloadStatus === "created" ||
+    payloadStatus === "queued" ||
+    payloadStatus === "running" ||
+    payloadStatus === "waiting_approval" ||
+    payloadStatus === "completed" ||
+    payloadStatus === "failed" ||
+    payloadStatus === "cancelled"
+  ) {
+    return payloadStatus;
+  }
+
+  return null;
+}
+
 function readExecutionStatus(event: ExecutionEvent): ExecutionStatus | null {
   if (event.type === "approval_requested") {
     return "waiting_approval";
   }
 
   if (event.type === "approval_resolved") {
-    const status = event.payload?.status;
-    if (status === "running" || status === "cancelled") {
-      return status;
-    }
-
-    return "running";
+    return readEventStatus(event) ?? "running";
   }
 
   if (event.type === "task_status_changed") {
-    const status = event.payload?.status;
-    if (
-      status === "created" ||
-      status === "queued" ||
-      status === "running" ||
-      status === "waiting_approval" ||
-      status === "completed" ||
-      status === "failed" ||
-      status === "cancelled"
-    ) {
-      return status;
-    }
+    return readEventStatus(event);
   }
 
   return null;

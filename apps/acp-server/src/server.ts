@@ -615,7 +615,7 @@ export class SpecRailAcpServer {
           toolName: this.readString(event.payload?.toolName),
           toolUseId: this.readString(event.payload?.toolUseId),
           exitCode: this.readNumber(event.payload?.exitCode),
-          status: this.readString(event.payload?.status),
+          status: this.readString(event.status ?? event.payload?.status),
         });
       case "approval_requested":
         return withProvider({
@@ -634,7 +634,7 @@ export class SpecRailAcpServer {
       case "task_status_changed":
         return withProvider({
           kind: "task_status_changed",
-          status: this.readString(event.payload?.status),
+          status: this.readString(event.status ?? event.payload?.status),
         });
       case "message":
         return withProvider({
@@ -646,12 +646,12 @@ export class SpecRailAcpServer {
         return withProvider({
           kind: "summary",
           subtype: event.subtype,
-          status: this.readString(event.payload?.status),
+          status: this.readString(event.status ?? event.payload?.status),
         });
       case "test_result":
         return withProvider({
           kind: "test_result",
-          status: this.readString(event.payload?.status),
+          status: this.readString(event.status ?? event.payload?.status),
           passed: this.readNumber(event.payload?.passed),
           failed: this.readNumber(event.payload?.failed),
         });
@@ -666,7 +666,7 @@ export class SpecRailAcpServer {
           kind: "shell_command",
           command: this.readString(event.payload?.command),
           exitCode: this.readNumber(event.payload?.exitCode),
-          status: this.readString(event.payload?.status),
+          status: this.readString(event.status ?? event.payload?.status),
         });
       default:
         return undefined;
@@ -679,7 +679,7 @@ export class SpecRailAcpServer {
         kind: "codex",
         sessionRef: this.readString(event.payload?.sessionRef),
         stream: this.readString(event.payload?.stream),
-        lifecycleStatus: this.readString(event.payload?.status),
+        lifecycleStatus: this.readString(event.status ?? event.payload?.status),
         terminal: this.readBoolean(event.payload?.terminal),
         exitCode: this.readNumber(event.payload?.exitCode),
         signal: this.readString(event.payload?.signal),
@@ -698,7 +698,7 @@ export class SpecRailAcpServer {
       providerEventType: this.readString(event.payload?.providerEventType),
       providerEventSubtype: this.readString(event.payload?.providerEventSubtype),
       model: this.readString(event.payload?.model),
-      lifecycleStatus: this.readString(event.payload?.status),
+      lifecycleStatus: this.readString(event.status ?? event.payload?.status),
       durationMs: this.readNumber(event.payload?.durationMs),
       durationApiMs: this.readNumber(event.payload?.durationApiMs),
       totalCostUsd: this.readNumber(event.payload?.totalCostUsd),
@@ -798,7 +798,7 @@ export class SpecRailAcpServer {
   }
 
   private readSessionStatus(event: ExecutionEvent): Execution["status"] | null {
-    const status = event.payload?.status;
+    const status = event.status ?? event.payload?.status;
     if (
       status === "created" ||
       status === "queued" ||

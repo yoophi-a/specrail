@@ -166,6 +166,7 @@ test("normalizeClaudeCodeEvent preserves shared event semantics for lifecycle an
       timestamp: "2026-04-10T10:06:00.000Z",
       source: "claude_code",
       summary: "Completed Claude Code session run-claude-2-claude",
+      status: "completed",
       payload: {
         sessionRef: "run-claude-2-claude",
         provider: "claude_code",
@@ -280,6 +281,7 @@ test("normalizeClaudeCodeStructuredStreamEvent promotes Claude stream-json event
         timestamp: "2026-04-10T10:08:00.000Z",
         source: "claude_code",
         summary: "Claude requested approval for Bash",
+        status: "waiting_approval",
         payload: {
           sessionRef: "run-claude-3-claude",
           providerSessionId: "claude-session-345",
@@ -300,6 +302,7 @@ test("normalizeClaudeCodeStructuredStreamEvent promotes Claude stream-json event
         timestamp: "2026-04-10T10:08:00.000Z",
         source: "claude_code",
         summary: "Claude result error run-claude-3-claude",
+        status: "failed",
         payload: {
           sessionRef: "run-claude-3-claude",
           providerSessionId: "claude-session-345",

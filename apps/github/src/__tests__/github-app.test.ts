@@ -612,7 +612,8 @@ test("createGitHubRestIssueCommentClient rejects invalid repository names and pr
   });
 });
 
-test("getTerminalStatusFromRunEvent derives terminal status from payloads and summaries", () => {
+test("getTerminalStatusFromRunEvent derives terminal status from top-level status, payloads, and summaries", () => {
+  assert.equal(getTerminalStatusFromRunEvent({ type: "task_status_changed", status: "completed", payload: { status: "running" } }), "completed");
   assert.equal(getTerminalStatusFromRunEvent({ type: "task_status_changed", payload: { status: "completed" } }), "completed");
   assert.equal(getTerminalStatusFromRunEvent({ type: "task_status_changed", payload: { status: "failed" } }), "failed");
   assert.equal(getTerminalStatusFromRunEvent({ type: "task_status_changed", summary: "Run cancelled" }), "cancelled");

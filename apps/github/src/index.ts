@@ -98,6 +98,7 @@ export interface GitHubSpecRailPort {
 export interface GitHubRunEvent {
   type: string;
   summary?: string;
+  status?: GitHubRunOutcomeStatus;
   payload?: { status?: string };
 }
 
@@ -697,6 +698,10 @@ function isTerminalGitHubRunStatus(status: GitHubRunOutcomeStatus): status is "c
 }
 
 export function getTerminalStatusFromRunEvent(event: GitHubRunEvent): "completed" | "failed" | "cancelled" | undefined {
+  if (event.status === "completed" || event.status === "failed" || event.status === "cancelled") {
+    return event.status;
+  }
+
   const payloadStatus = event.payload?.status;
   if (payloadStatus === "completed" || payloadStatus === "failed" || payloadStatus === "cancelled") {
     return payloadStatus;

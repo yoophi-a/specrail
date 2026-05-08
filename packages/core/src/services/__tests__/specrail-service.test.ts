@@ -1474,7 +1474,7 @@ test("SpecRailService lists tracks and runs with basic filters", async () => {
     timestamp: "2026-04-09T05:20:00.000Z",
     source: "codex",
     summary: "Run completed",
-    payload: { status: "completed" },
+    status: "completed",
   });
 
   const tracks = await service.listTracks();

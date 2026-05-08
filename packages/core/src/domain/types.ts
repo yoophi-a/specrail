@@ -257,5 +257,7 @@ export interface ExecutionEvent {
   timestamp: string;
   source: string;
   summary: string;
+  /** Provider-neutral lifecycle status for clients that should not inspect provider payloads. */
+  status?: ExecutionStatus;
   payload?: Record<string, unknown>;
 }
