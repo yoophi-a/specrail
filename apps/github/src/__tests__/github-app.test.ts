@@ -16,6 +16,7 @@ import {
   createGitHubRestIssueCommentClient,
   createGitHubWebhookHttpServer,
   JsonFileGitHubRelayJobQueue,
+  DirectoryGitHubRelayJobQueue,
   createSpecRailHttpClient,
   executeGitHubRunCommand,
   formatGitHubTerminalOutcomeComment,
@@ -843,11 +844,13 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
     SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "yoophi-a/specrail=project-specrail, other/repo = project-other",
     GITHUB_ALLOWED_ACTORS: "octocat,@hubot",
     SPECRAIL_OPERATOR_BASE_URL: "https://specrail.example.test",
+    GITHUB_RELAY_QUEUE_DIR: "/var/lib/specrail/github-relay-queue",
   });
 
   assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project-specrail", "other/repo": "project-other" });
   assert.deepEqual(config.allowedActors, ["octocat", "@hubot"]);
   assert.equal(config.operatorBaseUrl, "https://specrail.example.test");
+  assert.equal(config.githubRelayQueueDir, "/var/lib/specrail/github-relay-queue");
   assert.equal(resolveGitHubProjectId(config, "yoophi-a/specrail"), "project-specrail");
   assert.equal(resolveGitHubProjectId(config, "missing/repo"), undefined);
   assert.equal(isGitHubActorAuthorized(config, "octocat"), true);
@@ -985,6 +988,44 @@ test("createGitHubRestIssueCommentClient accepts token providers", async () => {
   });
 
   assert.deepEqual(requests, [{ authorization: "Bearer provider-token" }]);
+});
+
+test("DirectoryGitHubRelayJobQueue claims jobs atomically across queue instances", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-dir-"));
+  const queue = new DirectoryGitHubRelayJobQueue(dir);
+  const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+
+  const firstWorker = new DirectoryGitHubRelayJobQueue(dir);
+  const secondWorker = new DirectoryGitHubRelayJobQueue(dir);
+  const [firstClaim, secondClaim] = await Promise.all([
+    firstWorker.claimNext(new Date(created.createdAt)),
+    secondWorker.claimNext(new Date(created.createdAt)),
+  ]);
+
+  const claimedJobs = [firstClaim, secondClaim].filter((job): job is NonNullable<typeof job> => Boolean(job));
+  assert.equal(claimedJobs.length, 1);
+  assert.equal(claimedJobs[0]?.id, created.id);
+  assert.equal((await queue.list())[0]?.status, "running");
+});
+
+test("DirectoryGitHubRelayJobQueue retries failures and preserves completed jobs", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-dir-"));
+  const queue = new DirectoryGitHubRelayJobQueue(dir);
+  const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+  const claimed = await queue.claimNext(new Date(created.createdAt));
+  assert.equal(claimed?.id, created.id);
+
+  const failedAt = new Date(Date.parse(created.createdAt) + 1_000);
+  await queue.fail(created.id, new Error("GitHub unavailable"), failedAt);
+  const [retryable] = await queue.list();
+  assert.equal(retryable?.status, "pending");
+  assert.equal(retryable?.attempts, 1);
+  assert.equal(retryable?.lastError, "GitHub unavailable");
+
+  const retryClaim = await queue.claimNext(new Date(Date.parse(retryable?.nextAttemptAt ?? "") + 1));
+  assert.equal(retryClaim?.id, created.id);
+  await queue.complete(created.id);
+  assert.equal((await queue.list())[0]?.status, "completed");
 });
 
 test("JsonFileGitHubRelayJobQueue persists relay jobs across instances", async () => {

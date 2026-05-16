@@ -32,7 +32,7 @@ services:
       GITHUB_WEBHOOK_PATH: /github/webhook
       SPECRAIL_API_BASE_URL: http://specrail-api:4000
       GITHUB_FOLLOW_TERMINAL_EVENTS: "true"
-      GITHUB_RELAY_QUEUE_PATH: /var/lib/specrail-github/github-relay-queue.json
+      GITHUB_RELAY_QUEUE_DIR: /var/lib/specrail-github/relay-queue
     volumes:
       - specrail-github-relay:/var/lib/specrail-github
     expose:
@@ -105,9 +105,9 @@ Use the reverse-proxy guidance in [Hosted Operator UI deployment](./operator-ui-
 
 ## Durable relay queue behavior
 
-The `specrail-github-relay` volume stores `GITHUB_RELAY_QUEUE_PATH`. Keep this storage persistent so queued terminal outcome comments survive container restarts.
+The `specrail-github-relay` volume stores `GITHUB_RELAY_QUEUE_DIR`. Keep this storage persistent so queued terminal outcome comments survive container restarts.
 
-When `GITHUB_FOLLOW_TERMINAL_EVENTS=true`, `GITHUB_RELAY_QUEUE_PATH` is set, and GitHub comment credentials are configured, the GitHub app polls the queue every 5 seconds. Jobs remain queued/retryable until the linked run reaches `completed`, `failed`, or `cancelled`, at which point the app posts one terminal outcome comment.
+When `GITHUB_FOLLOW_TERMINAL_EVENTS=true`, `GITHUB_RELAY_QUEUE_DIR` is set, and GitHub comment credentials are configured, the GitHub app polls the queue every 5 seconds. Jobs remain queued/retryable until the linked run reaches `completed`, `failed`, or `cancelled`, at which point the app posts one terminal outcome comment. The directory queue uses per-job JSON files plus atomic renames for safe multi-worker claims on a shared POSIX-compatible volume.
 
 ## Related docs
 

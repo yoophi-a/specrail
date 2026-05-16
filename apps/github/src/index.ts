@@ -1,5 +1,5 @@
 import { createHmac, createSign, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -25,6 +25,7 @@ export interface GitHubAppConfig {
   githubPrivateKey?: string;
   followTerminalEvents: boolean;
   githubRelayQueuePath?: string;
+  githubRelayQueueDir?: string;
   repositoryProjects: Record<string, string>;
   allowedActors: string[];
   allowedOrganizations: string[];
@@ -314,6 +315,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubPrivateKey: normalizePrivateKey(env.GITHUB_PRIVATE_KEY),
     followTerminalEvents: env.GITHUB_FOLLOW_TERMINAL_EVENTS === "true",
     githubRelayQueuePath: env.GITHUB_RELAY_QUEUE_PATH,
+    githubRelayQueueDir: env.GITHUB_RELAY_QUEUE_DIR,
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
     allowedOrganizations: parseCsvList(env.GITHUB_ALLOWED_ORGS),
@@ -607,7 +609,11 @@ export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRai
   const tokenProvider = createGitHubTokenProviderFromConfig(config);
   const github = input.github ?? (tokenProvider ? createGitHubRestIssueCommentClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
   const authorization = tokenProvider ? createGitHubRestAuthorizationClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined;
-  const relayQueue = config.githubRelayQueuePath ? new JsonFileGitHubRelayJobQueue(config.githubRelayQueuePath) : undefined;
+  const relayQueue = config.githubRelayQueueDir
+    ? new DirectoryGitHubRelayJobQueue(config.githubRelayQueueDir)
+    : config.githubRelayQueuePath
+      ? new JsonFileGitHubRelayJobQueue(config.githubRelayQueuePath)
+      : undefined;
   const server = createGitHubWebhookHttpServer({
     config,
     specRail,
@@ -920,6 +926,165 @@ export class JsonFileGitHubRelayJobQueue implements GitHubRelayJobQueue {
   private async writeJobs(jobs: GitHubTerminalRelayJob[]): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, `${JSON.stringify(jobs, null, 2)}\n`, "utf8");
+  }
+}
+
+
+const directoryRelayStatuses = ["pending", "running", "completed", "failed"] as const satisfies readonly GitHubTerminalRelayJob["status"][];
+
+type DirectoryRelayStatus = (typeof directoryRelayStatuses)[number];
+
+function isMissingFileError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+function relayJobFileName(jobId: string): string {
+  return `${jobId}.json`;
+}
+
+function parseRelayJobFileName(fileName: string): string | undefined {
+  return fileName.endsWith(".json") ? fileName.slice(0, -".json".length) : undefined;
+}
+
+export class DirectoryGitHubRelayJobQueue implements GitHubRelayJobQueue {
+  constructor(private readonly directoryPath: string) {}
+
+  async enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string; operatorUrl?: string }): Promise<GitHubTerminalRelayJob> {
+    const now = new Date();
+    const job: GitHubTerminalRelayJob = {
+      id: createRelayJobId(input, now),
+      repositoryFullName: input.repositoryFullName,
+      issueNumber: input.issueNumber,
+      runId: input.runId,
+      ...(input.reportUrl ? { reportUrl: input.reportUrl } : {}),
+      ...(input.operatorUrl ? { operatorUrl: input.operatorUrl } : {}),
+      status: "pending",
+      attempts: 0,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      nextAttemptAt: now.toISOString(),
+    };
+    await this.writeJob("pending", job);
+    return job;
+  }
+
+  async claimNext(now: Date = new Date()): Promise<GitHubTerminalRelayJob | undefined> {
+    const pendingJobs = (await this.readJobsByStatus("pending"))
+      .filter((job) => !job.nextAttemptAt || Date.parse(job.nextAttemptAt) <= now.getTime())
+      .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+
+    for (const pendingJob of pendingJobs) {
+      const claimedJob: GitHubTerminalRelayJob = {
+        ...pendingJob,
+        status: "running",
+        updatedAt: now.toISOString(),
+      };
+      try {
+        await this.moveJobFile("pending", "running", claimedJob);
+        return claimedJob;
+      } catch (error) {
+        if (isMissingFileError(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    return undefined;
+  }
+
+  async complete(jobId: string, now: Date = new Date()): Promise<void> {
+    const job = await this.readJob("running", jobId);
+    await this.moveJobFile("running", "completed", {
+      ...job,
+      status: "completed",
+      updatedAt: now.toISOString(),
+    });
+  }
+
+  async fail(jobId: string, error: unknown, now: Date = new Date()): Promise<void> {
+    const job = await this.readJob("running", jobId);
+    const attempts = job.attempts + 1;
+    const failedJob: GitHubTerminalRelayJob = {
+      ...job,
+      attempts,
+      status: attempts >= 3 ? "failed" : "pending",
+      updatedAt: now.toISOString(),
+      lastError: error instanceof Error ? error.message : String(error),
+      nextAttemptAt: new Date(now.getTime() + Math.min(60_000, 1_000 * 2 ** attempts)).toISOString(),
+    };
+    await this.moveJobFile("running", failedJob.status, failedJob);
+  }
+
+  async list(): Promise<GitHubTerminalRelayJob[]> {
+    const groups = await Promise.all(directoryRelayStatuses.map((status) => this.readJobsByStatus(status)));
+    return groups.flat().sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+  }
+
+  private statusDirectory(status: DirectoryRelayStatus): string {
+    return path.join(this.directoryPath, status);
+  }
+
+  private jobPath(status: DirectoryRelayStatus, jobId: string): string {
+    return path.join(this.statusDirectory(status), relayJobFileName(jobId));
+  }
+
+  private async readJob(status: DirectoryRelayStatus, jobId: string): Promise<GitHubTerminalRelayJob> {
+    try {
+      return JSON.parse(await readFile(this.jobPath(status, jobId), "utf8")) as GitHubTerminalRelayJob;
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        throw new Error(`GitHub relay job not found: ${jobId}`);
+      }
+      throw error;
+    }
+  }
+
+  private async readJobsByStatus(status: DirectoryRelayStatus): Promise<GitHubTerminalRelayJob[]> {
+    let files: string[];
+    try {
+      files = await readdir(this.statusDirectory(status));
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        return [];
+      }
+      throw error;
+    }
+
+    const jobs = await Promise.all(
+      files.map(async (fileName) => {
+        const jobId = parseRelayJobFileName(fileName);
+        if (!jobId) {
+          return undefined;
+        }
+        try {
+          return await this.readJob(status, jobId);
+        } catch (error) {
+          if (error instanceof Error && error.message === `GitHub relay job not found: ${jobId}`) {
+            return undefined;
+          }
+          throw error;
+        }
+      }),
+    );
+    return jobs.filter((job): job is GitHubTerminalRelayJob => Boolean(job));
+  }
+
+  private async writeJob(status: DirectoryRelayStatus, job: GitHubTerminalRelayJob): Promise<void> {
+    await mkdir(this.statusDirectory(status), { recursive: true });
+    const destination = this.jobPath(status, job.id);
+    const temporary = `${destination}.${process.pid}.${Date.now()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(job, null, 2)}\n`, "utf8");
+    await rename(temporary, destination);
+  }
+
+  private async moveJobFile(from: DirectoryRelayStatus, to: DirectoryRelayStatus, job: GitHubTerminalRelayJob): Promise<void> {
+    await mkdir(this.statusDirectory(to), { recursive: true });
+    const fromPath = this.jobPath(from, job.id);
+    const toPath = this.jobPath(to, job.id);
+    await rename(fromPath, toPath);
+    const temporary = `${toPath}.${process.pid}.${Date.now()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(job, null, 2)}\n`, "utf8");
+    await rename(temporary, toPath);
   }
 }
 

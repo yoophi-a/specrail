@@ -21,7 +21,7 @@ Do not debug by copying secrets or raw payloads into logs. Diagnostics intention
 | `unauthorized_actor` diagnostic + metric | `202 { accepted: false, reason: "unauthorized_actor" }` | Sender did not pass configured actor/org/team allowlists. | Check `GITHUB_ALLOWED_ACTORS`, `GITHUB_ALLOWED_ORGS`, `GITHUB_ALLOWED_TEAMS`, and the sender login. Do not log private membership details. |
 | `github_authorization_failed` diagnostic + metric | `502 { error: "github_authorization_failed" }` | GitHub org/team membership lookup failed unexpectedly. | Check GitHub API reachability, token provider configuration, app installation permissions, and sanitized error message. |
 | `specrail_request_failed` metric | `502 { error: "specrail_request_failed" }` | SpecRail API request failed while finding/creating bindings, tracks, or runs. | Check `SPECRAIL_API_BASE_URL`, API health, project id, and server logs for the corresponding request path/status. |
-| `github_relay_enqueue_failed` metric | `502 { error: "github_relay_enqueue_failed" }` | Terminal outcome relay job could not be queued after run creation. | Check `GITHUB_FOLLOW_TERMINAL_EVENTS`, `GITHUB_RELAY_QUEUE_PATH`, queue file permissions, and disk availability. |
+| `github_relay_enqueue_failed` metric | `502 { error: "github_relay_enqueue_failed" }` | Terminal outcome relay job could not be queued after run creation. | Check `GITHUB_FOLLOW_TERMINAL_EVENTS`, `GITHUB_RELAY_QUEUE_DIR`/`GITHUB_RELAY_QUEUE_PATH`, queue storage permissions, and disk availability. |
 
 Webhook-level rejections such as invalid signatures, unsupported events, unsupported actions, unsupported commands, bad JSON, and missing context are not command authorization diagnostics. Validate webhook delivery settings before investigating SpecRail orchestration.
 
@@ -58,7 +58,7 @@ Webhook-level rejections such as invalid signatures, unsupported events, unsuppo
 ### Terminal comment relay does not post
 
 1. Confirm `GITHUB_FOLLOW_TERMINAL_EVENTS=true`.
-2. If `GITHUB_RELAY_QUEUE_PATH` is configured, check the durable queue file exists, is writable by the app, and is processed by `processGitHubRelayQueue`.
+2. If `GITHUB_RELAY_QUEUE_DIR` is configured, check the durable queue directory exists, has `pending/`, `running/`, `completed/`, or `failed/` job files as expected, and is writable by the app. If using legacy `GITHUB_RELAY_QUEUE_PATH`, check the queue file exists and is writable.
 3. Confirm the run reached a terminal state: `completed`, `failed`, or `cancelled`.
 4. Confirm GitHub issue comment credentials are configured and can post to the repository.
 5. Non-terminal statuses are intentionally no-ops.

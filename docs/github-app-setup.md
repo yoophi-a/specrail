@@ -55,7 +55,8 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_INSTALLATION_ID` | unset | GitHub App installation id used for installation-token exchange. |
 | `GITHUB_PRIVATE_KEY` | unset | GitHub App private key PEM. Escaped newlines (`\\n`) are normalized at startup. |
 | `GITHUB_FOLLOW_TERMINAL_EVENTS` | `false` | When `true` and a GitHub comment client is supplied, schedule background following of the created run event stream and post one terminal outcome comment. |
-| `GITHUB_RELAY_QUEUE_PATH` | unset | Optional JSON-file durable queue path for terminal outcome relay jobs. When unset, the app uses the in-process scheduler fallback. |
+| `GITHUB_RELAY_QUEUE_DIR` | unset | Preferred durable queue directory for terminal outcome relay jobs. Uses per-job JSON files and atomic claim renames for multi-process workers on the same POSIX-compatible filesystem. Takes precedence over `GITHUB_RELAY_QUEUE_PATH`. |
+| `GITHUB_RELAY_QUEUE_PATH` | unset | Legacy optional JSON-file durable queue path for terminal outcome relay jobs. Use only for local development or single-process deployments. When no durable queue is configured, the app uses the in-process scheduler fallback. |
 
 ## Running locally
 
@@ -92,7 +93,7 @@ The webhook endpoint returns JSON responses:
 ## Current limitations
 
 - REST issue-comment posting supports static tokens and GitHub App installation-token refresh. Private keys must be supplied securely by deployment secret management.
-- Durable terminal relay is JSON-file based when `GITHUB_RELAY_QUEUE_PATH` is set. Failed relay attempts are retained with `lastError`, attempt count, and retry timing; deployments should place this path on persistent storage. See [GitHub webhook production operations](./github-production-ops.md) for supervision and queue processing guidance.
+- Durable terminal relay uses the directory queue when `GITHUB_RELAY_QUEUE_DIR` is set, or the legacy JSON-file queue when `GITHUB_RELAY_QUEUE_PATH` is set. Failed relay attempts are retained with `lastError`, attempt count, and retry timing; deployments should place this storage on persistent media. See [GitHub webhook production operations](./github-production-ops.md) for supervision and queue processing guidance.
 - Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling/enqueue, not for the run to reach a terminal state.
 - Hosted operator run links are included in terminal comments only when `SPECRAIL_OPERATOR_BASE_URL` is configured; GitHub remains a thin frontend over SpecRail state. Do not expose unauthenticated operator URLs in GitHub comments. See [Hosted Operator UI deployment](./operator-ui-deployment.md) for auth and reverse-proxy guidance.
 - GitHub command outcome metrics are exposed through an injectable metrics sink with coarse reason labels only: accepted, unsupported repository, unauthorized actor, GitHub authorization failure, SpecRail request failure, and relay enqueue failure. See [GitHub command troubleshooting](./github-command-troubleshooting.md) for safe diagnostics and metric interpretation.
@@ -102,5 +103,5 @@ The webhook endpoint returns JSON responses:
 
 ## Recommended follow-ups
 
-1. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
+1. Add a database/external-queue implementation for horizontally scaled workers that do not share a POSIX-compatible filesystem.
 2. Add deployment-specific manifests for Kubernetes or other production orchestration targets.
