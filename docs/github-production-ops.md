@@ -57,6 +57,30 @@ With either `GITHUB_RELAY_QUEUE_DIR` or `GITHUB_RELAY_QUEUE_PATH` and GitHub com
 
 Use persistent storage for the queue path/directory so relay jobs survive process restarts. The location should be writable by the GitHub app user and should not live in ephemeral container scratch space unless a persistent volume is mounted there.
 
+## Queue backend selection
+
+Choose the terminal relay queue backend based on how webhook workers share state:
+
+| Deployment shape | Recommended backend | Why |
+| --- | --- | --- |
+| Local development or one webhook process | `GITHUB_RELAY_QUEUE_PATH` | Simple JSON-file persistence is enough when only one process can claim work. |
+| One host with multiple webhook processes | `GITHUB_RELAY_QUEUE_DIR` | Per-job files plus atomic renames avoid duplicate claims on a POSIX-compatible local filesystem. |
+| Multiple hosts with one shared POSIX-compatible volume | `GITHUB_RELAY_QUEUE_DIR` | The directory queue remains valid when the shared volume preserves atomic rename semantics. |
+| Multiple independent hosts with no shared filesystem | External database-backed queue | Workers need a common transactional state store for atomic claims, retry leases, completion, and failed-job retention. |
+
+The first external backend target should be a relational database table, not Redis or a provider-managed queue. SpecRail already treats file-backed state as durable operational history, and a database queue gives the closest future migration path: jobs remain inspectable, completion/failure records can be retained without a second audit store, and atomic claim semantics can be expressed with row locks or compare-and-swap updates. Redis and provider queues may still be useful later for high-throughput deployments, but they introduce retention and visibility differences that are unnecessary for the first horizontally scaled GitHub relay implementation.
+
+The recommended database contract is:
+
+- Store each relay job with the same fields as `GitHubTerminalRelayJob`: id, repository, issue number, run id, optional report/operator URLs, status, attempts, timestamps, next retry time, and sanitized last error.
+- Claim exactly one due job by moving it from `pending` to `running` inside a transaction, recording a lease deadline or updated timestamp so abandoned work can be retried safely.
+- Complete a job by marking it `completed` instead of deleting it, preserving the terminal relay audit trail.
+- Fail a job by recording a sanitized error, incrementing attempts, and either returning it to `pending` with exponential backoff or marking it `failed` after the retry limit.
+- Keep `list` read-only so operators can inspect queue state without changing claim eligibility.
+- Avoid exposing webhook secrets, GitHub tokens, private keys, raw payloads, or execution transcripts in queue rows, logs, or failed-job diagnostics.
+
+This database target is tracked as the implementation direction for [issue #434](https://github.com/yoophi-a/specrail/issues/434). The existing filesystem queues remain the supported implementation until that issue lands.
+
 ## Credential prerequisites
 
 Terminal outcome comments require a GitHub issue-comment client. Configure one of the supported token paths:
