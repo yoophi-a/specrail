@@ -1109,6 +1109,9 @@ export async function processGitHubRelayQueue(input: {
       reportUrl: job.reportUrl,
       operatorUrl: job.operatorUrl,
     });
+    if (!result.posted) {
+      throw new Error(`GitHub relay job ${job.id} did not post a terminal outcome: ${result.reason}`);
+    }
     await input.queue.complete(job.id, input.now);
     return { processed: true, jobId: job.id, result };
   } catch (error) {

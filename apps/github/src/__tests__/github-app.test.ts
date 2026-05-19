@@ -1099,6 +1099,35 @@ test("processGitHubRelayQueue records retryable failures", async () => {
   assert.ok(failed?.nextAttemptAt);
 });
 
+test("processGitHubRelayQueue retries when no terminal outcome is posted", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-"));
+  const queue = new JsonFileGitHubRelayJobQueue(path.join(dir, "queue.json"));
+  const job = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+
+  await assert.rejects(
+    processGitHubRelayQueue({
+      queue,
+      specRail: {
+        async *streamRunEvents() {
+          yield { type: "message", summary: "still running" };
+        },
+      },
+      github: {
+        async createIssueComment() {
+          throw new Error("should not post without a terminal event");
+        },
+      },
+    }),
+    /did not post a terminal outcome: no_terminal_event/u,
+  );
+
+  const [retryable] = await queue.list();
+  assert.equal(retryable?.id, job.id);
+  assert.equal(retryable?.status, "pending");
+  assert.equal(retryable?.attempts, 1);
+  assert.equal(retryable?.lastError, `GitHub relay job ${job.id} did not post a terminal outcome: no_terminal_event`);
+});
+
 test("GitHub webhook HTTP app enqueues durable terminal relay jobs", async () => {
   const { port } = createSpecRailPort();
   const queue = new JsonFileGitHubRelayJobQueue(path.join(await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-")), "queue.json"));
