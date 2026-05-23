@@ -58,10 +58,11 @@ Webhook-level rejections such as invalid signatures, unsupported events, unsuppo
 ### Terminal comment relay does not post
 
 1. Confirm `GITHUB_FOLLOW_TERMINAL_EVENTS=true`.
-2. If `GITHUB_RELAY_QUEUE_DIR` is configured, check the durable queue directory exists, has `pending/`, `running/`, `completed/`, or `failed/` job files as expected, and is writable by the app. If using legacy `GITHUB_RELAY_QUEUE_PATH`, check the queue file exists and is writable.
-3. Confirm the run reached a terminal state: `completed`, `failed`, or `cancelled`.
-4. Confirm GitHub issue comment credentials are configured and can post to the repository.
-5. Non-terminal statuses are intentionally no-ops.
+2. Confirm the selected relay queue backend. `GITHUB_RELAY_QUEUE_BACKEND=directory` requires `GITHUB_RELAY_QUEUE_DIR`, `json-file` requires `GITHUB_RELAY_QUEUE_PATH`, and `none` uses only the in-process scheduler fallback.
+3. If `GITHUB_RELAY_QUEUE_DIR` is configured, check the durable queue directory exists, has `pending/`, `running/`, `completed/`, or `failed/` job files as expected, and is writable by the app. If using legacy `GITHUB_RELAY_QUEUE_PATH`, check the queue file exists and is writable.
+4. Confirm the run reached a terminal state: `completed`, `failed`, or `cancelled`.
+5. Confirm GitHub issue comment credentials are configured and can post to the repository.
+6. Non-terminal statuses are intentionally no-ops.
 
 ## Safe diagnostics policy
 
