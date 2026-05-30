@@ -101,6 +101,8 @@ Every production relay queue backend must preserve these semantics:
 - `fail` records a sanitized error, increments attempts, and returns the job to pending with exponential backoff until the third failed attempt, after which it is marked failed.
 - `list` is an operational/audit surface; it must not mutate jobs.
 
+The shared adapter contract tests in `apps/github/src/__tests__/github-app.test.ts` cover these expectations for durable queue implementations. Add new production backends to that contract suite before relying on them operationally.
+
 The directory queue satisfies this contract for one host or a shared filesystem with atomic rename semantics. For horizontally scaled deployments across independent hosts, prefer an external database or queue implementation that exposes the same `GitHubRelayJobQueue` interface from `apps/github/src/index.ts`.
 
 ## Restart behavior
