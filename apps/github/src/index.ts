@@ -3,6 +3,8 @@ import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import pg from "pg";
+import type { QueryResultRow } from "pg";
 
 export const SPEC_RAIL_RUN_COMMAND = "/specrail run";
 
@@ -27,6 +29,8 @@ export interface GitHubAppConfig {
   githubRelayQueueBackend?: GitHubRelayQueueBackend;
   githubRelayQueuePath?: string;
   githubRelayQueueDir?: string;
+  githubRelayQueuePostgresUrl?: string;
+  githubRelayQueuePostgresTable?: string;
   repositoryProjects: Record<string, string>;
   allowedActors: string[];
   allowedOrganizations: string[];
@@ -181,7 +185,7 @@ export interface GitHubTerminalRelayJob {
   lastError?: string;
 }
 
-export type GitHubRelayQueueBackend = "none" | "directory" | "json-file";
+export type GitHubRelayQueueBackend = "none" | "directory" | "json-file" | "postgres";
 
 export interface GitHubRelayJobQueue {
   enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string; operatorUrl?: string }): Promise<GitHubTerminalRelayJob>;
@@ -189,6 +193,10 @@ export interface GitHubRelayJobQueue {
   complete(jobId: string, now?: Date): Promise<void>;
   fail(jobId: string, error: unknown, now?: Date): Promise<void>;
   list(): Promise<GitHubTerminalRelayJob[]>;
+}
+
+export interface GitHubRelayPostgresQueryClient {
+  query<T extends QueryResultRow = QueryResultRow>(sql: string, values?: readonly unknown[]): Promise<{ rows: T[] }>;
 }
 
 export interface GitHubTerminalOutcomeCommentInput {
@@ -245,7 +253,7 @@ function parseGitHubRelayQueueBackend(value: string | undefined): GitHubRelayQue
     return undefined;
   }
   const normalized = value.trim().toLowerCase().replace(/_/gu, "-");
-  if (normalized === "none" || normalized === "directory" || normalized === "json-file") {
+  if (normalized === "none" || normalized === "directory" || normalized === "json-file" || normalized === "postgres") {
     return normalized;
   }
   throw new Error(`invalid GITHUB_RELAY_QUEUE_BACKEND: ${value}`);
@@ -331,6 +339,8 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubRelayQueueBackend: parseGitHubRelayQueueBackend(env.GITHUB_RELAY_QUEUE_BACKEND),
     githubRelayQueuePath: env.GITHUB_RELAY_QUEUE_PATH,
     githubRelayQueueDir: env.GITHUB_RELAY_QUEUE_DIR,
+    githubRelayQueuePostgresUrl: env.GITHUB_RELAY_QUEUE_POSTGRES_URL ?? env.DATABASE_URL,
+    githubRelayQueuePostgresTable: env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE,
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
     allowedOrganizations: parseCsvList(env.GITHUB_ALLOWED_ORGS),
@@ -619,13 +629,16 @@ export const defaultGitHubCommandMetricsSink: GitHubCommandMetricsSink = {
 };
 
 export function resolveGitHubRelayQueueBackend(
-  config: Pick<GitHubAppConfig, "githubRelayQueueBackend" | "githubRelayQueueDir" | "githubRelayQueuePath">,
+  config: Pick<GitHubAppConfig, "githubRelayQueueBackend" | "githubRelayQueueDir" | "githubRelayQueuePath" | "githubRelayQueuePostgresUrl">,
 ): GitHubRelayQueueBackend {
   if (config.githubRelayQueueBackend) {
     return config.githubRelayQueueBackend;
   }
   if (config.githubRelayQueueDir) {
     return "directory";
+  }
+  if (config.githubRelayQueuePostgresUrl) {
+    return "postgres";
   }
   if (config.githubRelayQueuePath) {
     return "json-file";
@@ -634,7 +647,7 @@ export function resolveGitHubRelayQueueBackend(
 }
 
 export function createGitHubRelayJobQueueFromConfig(
-  config: Pick<GitHubAppConfig, "githubRelayQueueBackend" | "githubRelayQueueDir" | "githubRelayQueuePath">,
+  config: Pick<GitHubAppConfig, "githubRelayQueueBackend" | "githubRelayQueueDir" | "githubRelayQueuePath" | "githubRelayQueuePostgresUrl" | "githubRelayQueuePostgresTable">,
 ): GitHubRelayJobQueue | undefined {
   const backend = resolveGitHubRelayQueueBackend(config);
   if (backend === "none") {
@@ -645,6 +658,16 @@ export function createGitHubRelayJobQueueFromConfig(
       throw new Error("GITHUB_RELAY_QUEUE_DIR is required when GITHUB_RELAY_QUEUE_BACKEND=directory");
     }
     return new DirectoryGitHubRelayJobQueue(config.githubRelayQueueDir);
+  }
+  if (backend === "postgres") {
+    if (!config.githubRelayQueuePostgresUrl) {
+      throw new Error("GITHUB_RELAY_QUEUE_POSTGRES_URL or DATABASE_URL is required when GITHUB_RELAY_QUEUE_BACKEND=postgres");
+    }
+    const { Pool } = pg;
+    return new PostgresGitHubRelayJobQueue({
+      client: new Pool({ connectionString: config.githubRelayQueuePostgresUrl }),
+      tableName: config.githubRelayQueuePostgresTable,
+    });
   }
   if (!config.githubRelayQueuePath) {
     throw new Error("GITHUB_RELAY_QUEUE_PATH is required when GITHUB_RELAY_QUEUE_BACKEND=json-file");
@@ -1130,6 +1153,198 @@ export class DirectoryGitHubRelayJobQueue implements GitHubRelayJobQueue {
     const temporary = `${toPath}.${process.pid}.${Date.now()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(job, null, 2)}\n`, "utf8");
     await rename(temporary, toPath);
+  }
+}
+
+interface PostgresRelayJobRow extends QueryResultRow {
+  id: string;
+  repository_full_name: string;
+  issue_number: number;
+  run_id: string;
+  report_url: string | null;
+  operator_url: string | null;
+  status: GitHubTerminalRelayJob["status"];
+  attempts: number;
+  created_at: Date | string;
+  updated_at: Date | string;
+  next_attempt_at: Date | string | null;
+  last_error: string | null;
+}
+
+export interface PostgresGitHubRelayJobQueueOptions {
+  client: GitHubRelayPostgresQueryClient;
+  tableName?: string;
+}
+
+function assertSafePostgresIdentifier(identifier: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/u.test(identifier)) {
+    throw new Error(`invalid PostgreSQL relay queue table name: ${identifier}`);
+  }
+  return identifier;
+}
+
+function postgresDate(value: Date | string | null): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function postgresRelayJobFromRow(row: PostgresRelayJobRow): GitHubTerminalRelayJob {
+  return {
+    id: row.id,
+    repositoryFullName: row.repository_full_name,
+    issueNumber: row.issue_number,
+    runId: row.run_id,
+    ...(row.report_url ? { reportUrl: row.report_url } : {}),
+    ...(row.operator_url ? { operatorUrl: row.operator_url } : {}),
+    status: row.status,
+    attempts: row.attempts,
+    createdAt: postgresDate(row.created_at) ?? new Date(0).toISOString(),
+    updatedAt: postgresDate(row.updated_at) ?? new Date(0).toISOString(),
+    ...(postgresDate(row.next_attempt_at) ? { nextAttemptAt: postgresDate(row.next_attempt_at) } : {}),
+    ...(row.last_error ? { lastError: row.last_error } : {}),
+  };
+}
+
+const postgresRelayJobSelectColumns = [
+  "id",
+  "repository_full_name",
+  "issue_number",
+  "run_id",
+  "report_url",
+  "operator_url",
+  "status",
+  "attempts",
+  "created_at",
+  "updated_at",
+  "next_attempt_at",
+  "last_error",
+].join(", ");
+
+function postgresRelayJobReturningColumns(tableName: string): string {
+  return [
+    "id",
+    "repository_full_name",
+    "issue_number",
+    "run_id",
+    "report_url",
+    "operator_url",
+    "status",
+    "attempts",
+    "created_at",
+    "updated_at",
+    "next_attempt_at",
+    "last_error",
+  ]
+    .map((column) => `${tableName}.${column}`)
+    .join(", ");
+}
+
+export class PostgresGitHubRelayJobQueue implements GitHubRelayJobQueue {
+  private readonly tableName: string;
+
+  constructor(private readonly options: PostgresGitHubRelayJobQueueOptions) {
+    this.tableName = assertSafePostgresIdentifier(options.tableName ?? "github_relay_jobs");
+  }
+
+  async enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string; operatorUrl?: string }): Promise<GitHubTerminalRelayJob> {
+    const now = new Date();
+    const job: GitHubTerminalRelayJob = {
+      id: createRelayJobId(input, now),
+      repositoryFullName: input.repositoryFullName,
+      issueNumber: input.issueNumber,
+      runId: input.runId,
+      ...(input.reportUrl ? { reportUrl: input.reportUrl } : {}),
+      ...(input.operatorUrl ? { operatorUrl: input.operatorUrl } : {}),
+      status: "pending",
+      attempts: 0,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      nextAttemptAt: now.toISOString(),
+    };
+
+    const result = await this.options.client.query<PostgresRelayJobRow>(
+      `/* specrail:postgres-relay-enqueue */
+      INSERT INTO ${this.tableName} (
+        id, repository_full_name, issue_number, run_id, report_url, operator_url,
+        status, attempts, created_at, updated_at, next_attempt_at, last_error
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, 'pending', 0, $7, $7, $7, NULL)
+      RETURNING ${postgresRelayJobSelectColumns}`,
+      [job.id, job.repositoryFullName, job.issueNumber, job.runId, job.reportUrl ?? null, job.operatorUrl ?? null, job.createdAt],
+    );
+    return postgresRelayJobFromRow(this.requireSingleRow(result.rows, job.id));
+  }
+
+  async claimNext(now: Date = new Date()): Promise<GitHubTerminalRelayJob | undefined> {
+    const result = await this.options.client.query<PostgresRelayJobRow>(
+      `/* specrail:postgres-relay-claim-next */
+      WITH next_job AS (
+        SELECT id
+        FROM ${this.tableName}
+        WHERE status = 'pending'
+          AND (next_attempt_at IS NULL OR next_attempt_at <= $1)
+        ORDER BY created_at ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1
+      )
+      UPDATE ${this.tableName}
+      SET status = 'running', updated_at = $1
+      FROM next_job
+      WHERE ${this.tableName}.id = next_job.id
+      RETURNING ${postgresRelayJobReturningColumns(this.tableName)}`,
+      [now.toISOString()],
+    );
+    return result.rows[0] ? postgresRelayJobFromRow(result.rows[0]) : undefined;
+  }
+
+  async complete(jobId: string, now: Date = new Date()): Promise<void> {
+    const result = await this.options.client.query<PostgresRelayJobRow>(
+      `/* specrail:postgres-relay-complete */
+      UPDATE ${this.tableName}
+      SET status = 'completed', updated_at = $2
+      WHERE id = $1 AND status = 'running'
+      RETURNING ${postgresRelayJobReturningColumns(this.tableName)}`,
+      [jobId, now.toISOString()],
+    );
+    this.requireSingleRow(result.rows, jobId);
+  }
+
+  async fail(jobId: string, error: unknown, now: Date = new Date()): Promise<void> {
+    const lastError = error instanceof Error ? error.message : String(error);
+    const result = await this.options.client.query<PostgresRelayJobRow>(
+      `/* specrail:postgres-relay-fail */
+      UPDATE ${this.tableName}
+      SET
+        attempts = attempts + 1,
+        status = CASE WHEN attempts + 1 >= 3 THEN 'failed' ELSE 'pending' END,
+        updated_at = $2,
+        last_error = $3,
+        next_attempt_at = $2::timestamptz + (LEAST(60000, (1000 * POWER(2, attempts + 1))::int) * INTERVAL '1 millisecond')
+      WHERE id = $1 AND status = 'running'
+      RETURNING ${postgresRelayJobReturningColumns(this.tableName)}`,
+      [jobId, now.toISOString(), lastError],
+    );
+    this.requireSingleRow(result.rows, jobId);
+  }
+
+  async list(): Promise<GitHubTerminalRelayJob[]> {
+    const result = await this.options.client.query<PostgresRelayJobRow>(
+      `/* specrail:postgres-relay-list */
+      SELECT ${postgresRelayJobSelectColumns}
+      FROM ${this.tableName}
+      ORDER BY created_at ASC`,
+    );
+    return result.rows.map(postgresRelayJobFromRow);
+  }
+
+  private requireSingleRow(rows: PostgresRelayJobRow[], jobId: string): PostgresRelayJobRow {
+    const row = rows[0];
+    if (!row) {
+      throw new Error(`GitHub relay job not found: ${jobId}`);
+    }
+    return row;
   }
 }
 

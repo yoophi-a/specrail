@@ -53,7 +53,18 @@ GITHUB_FOLLOW_TERMINAL_EVENTS=true
 GITHUB_RELAY_QUEUE_PATH=/var/lib/specrail/github-relay-queue.json
 ```
 
-With either `GITHUB_RELAY_QUEUE_DIR` or `GITHUB_RELAY_QUEUE_PATH` and GitHub comment credentials configured, the webhook app creates a durable queue and polls it every 5 seconds. On each poll, `processGitHubRelayQueue` checks queued/retryable jobs, reads SpecRail run events, and posts exactly one terminal outcome comment when the run reaches `completed`, `failed`, or `cancelled`.
+For horizontally scaled webhook workers on independent hosts, use the PostgreSQL backend:
+
+```sh
+GITHUB_FOLLOW_TERMINAL_EVENTS=true
+GITHUB_RELAY_QUEUE_BACKEND=postgres
+GITHUB_RELAY_QUEUE_POSTGRES_URL=postgres://specrail:secret@postgres.example/specrail
+GITHUB_RELAY_QUEUE_POSTGRES_TABLE=github_relay_jobs
+```
+
+When `GITHUB_RELAY_QUEUE_BACKEND=postgres`, the app requires `GITHUB_RELAY_QUEUE_POSTGRES_URL` or `DATABASE_URL`. `GITHUB_RELAY_QUEUE_POSTGRES_TABLE` defaults to `github_relay_jobs`; only lowercase identifiers with letters, digits, and underscores are accepted.
+
+With `GITHUB_RELAY_QUEUE_DIR`, `GITHUB_RELAY_QUEUE_POSTGRES_URL`/`DATABASE_URL`, or `GITHUB_RELAY_QUEUE_PATH` and GitHub comment credentials configured, the webhook app creates a durable queue and polls it every 5 seconds. On each poll, `processGitHubRelayQueue` checks queued/retryable jobs, reads SpecRail run events, and posts exactly one terminal outcome comment when the run reaches `completed`, `failed`, or `cancelled`.
 
 Use persistent storage for the queue path/directory so relay jobs survive process restarts. The location should be writable by the GitHub app user and should not live in ephemeral container scratch space unless a persistent volume is mounted there.
 
@@ -66,11 +77,34 @@ Choose the terminal relay queue backend based on how webhook workers share state
 | Local development or one webhook process | `GITHUB_RELAY_QUEUE_PATH` | Simple JSON-file persistence is enough when only one process can claim work. |
 | One host with multiple webhook processes | `GITHUB_RELAY_QUEUE_DIR` | Per-job files plus atomic renames avoid duplicate claims on a POSIX-compatible local filesystem. |
 | Multiple hosts with one shared POSIX-compatible volume | `GITHUB_RELAY_QUEUE_DIR` | The directory queue remains valid when the shared volume preserves atomic rename semantics. |
-| Multiple independent hosts with no shared filesystem | External database-backed queue | Workers need a common transactional state store for atomic claims, retry leases, completion, and failed-job retention. |
+| Multiple independent hosts with no shared filesystem | `GITHUB_RELAY_QUEUE_BACKEND=postgres` | Workers use a common transactional table with `FOR UPDATE SKIP LOCKED` claims, retries, completion, and failed-job retention. |
 
-The first external backend target should be a relational database table, not Redis or a provider-managed queue. SpecRail already treats file-backed state as durable operational history, and a database queue gives the closest future migration path: jobs remain inspectable, completion/failure records can be retained without a second audit store, and atomic claim semantics can be expressed with row locks or compare-and-swap updates. Redis and provider queues may still be useful later for high-throughput deployments, but they introduce retention and visibility differences that are unnecessary for the first horizontally scaled GitHub relay implementation.
+PostgreSQL is the first external backend target. SpecRail already treats file-backed state as durable operational history, and a database queue gives the closest migration path: jobs remain inspectable, completion/failure records can be retained without a second audit store, and atomic claim semantics are expressed with row locks. Redis and provider queues may still be useful later for high-throughput deployments, but they introduce retention and visibility differences that are unnecessary for the first horizontally scaled GitHub relay implementation.
 
-The recommended database contract is:
+Create the PostgreSQL table before starting the app; SpecRail does not run this migration automatically:
+
+```sql
+CREATE TABLE github_relay_jobs (
+  id text PRIMARY KEY,
+  repository_full_name text NOT NULL,
+  issue_number integer NOT NULL,
+  run_id text NOT NULL,
+  report_url text,
+  operator_url text,
+  status text NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+  attempts integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  next_attempt_at timestamptz,
+  last_error text
+);
+
+CREATE INDEX github_relay_jobs_claim_idx
+  ON github_relay_jobs (status, next_attempt_at, created_at)
+  WHERE status = 'pending';
+```
+
+The database contract is:
 
 - Store each relay job with the same fields as `GitHubTerminalRelayJob`: id, repository, issue number, run id, optional report/operator URLs, status, attempts, timestamps, next retry time, and sanitized last error.
 - Claim exactly one due job by moving it from `pending` to `running` inside a transaction, recording a lease deadline or updated timestamp so abandoned work can be retried safely.
@@ -79,7 +113,7 @@ The recommended database contract is:
 - Keep `list` read-only so operators can inspect queue state without changing claim eligibility.
 - Avoid exposing webhook secrets, GitHub tokens, private keys, raw payloads, or execution transcripts in queue rows, logs, or failed-job diagnostics.
 
-This database target is tracked as the implementation direction for [issue #434](https://github.com/yoophi-a/specrail/issues/434). The existing filesystem queues remain the supported implementation until that issue lands.
+This database target is tracked as the implementation direction for [issue #434](https://github.com/yoophi-a/specrail/issues/434). The existing filesystem queues remain supported for deployments with appropriate shared storage.
 
 ## Credential prerequisites
 
@@ -103,11 +137,11 @@ Every production relay queue backend must preserve these semantics:
 
 The shared adapter contract tests in `apps/github/src/__tests__/github-app.test.ts` cover these expectations for durable queue implementations. Add new production backends to that contract suite before relying on them operationally.
 
-The directory queue satisfies this contract for one host or a shared filesystem with atomic rename semantics. For horizontally scaled deployments across independent hosts, prefer an external database or queue implementation that exposes the same `GitHubRelayJobQueue` interface from `apps/github/src/index.ts`.
+The directory queue satisfies this contract for one host or a shared filesystem with atomic rename semantics. For horizontally scaled deployments across independent hosts, prefer the PostgreSQL implementation or another external queue implementation that exposes the same `GitHubRelayJobQueue` interface from `apps/github/src/index.ts`.
 
 ## Restart behavior
 
-On restart, the app reloads the durable relay queue from `GITHUB_RELAY_QUEUE_DIR` or `GITHUB_RELAY_QUEUE_PATH`. Jobs that are still queued or retryable remain eligible for processing. Failed attempts retain `lastError`, attempt count, and retry timing in the queue backend.
+On restart, the app reloads the durable relay queue from `GITHUB_RELAY_QUEUE_DIR`, `GITHUB_RELAY_QUEUE_POSTGRES_URL`/`DATABASE_URL`, or `GITHUB_RELAY_QUEUE_PATH`. Jobs that are still queued or retryable remain eligible for processing. Failed attempts retain `lastError`, attempt count, and retry timing in the queue backend.
 
 Operational checks after a restart:
 
