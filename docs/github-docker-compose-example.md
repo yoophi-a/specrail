@@ -109,7 +109,7 @@ The `specrail-github-relay` volume stores `GITHUB_RELAY_QUEUE_DIR`. Keep this st
 
 When `GITHUB_FOLLOW_TERMINAL_EVENTS=true`, `GITHUB_RELAY_QUEUE_DIR` is set, and GitHub comment credentials are configured, the GitHub app polls the queue every 5 seconds. Jobs remain queued/retryable until the linked run reaches `completed`, `failed`, or `cancelled`, at which point the app posts one terminal outcome comment. The directory queue uses per-job JSON files plus atomic renames for safe multi-worker claims on a shared POSIX-compatible volume.
 
-Do not use this volume-backed queue as the coordination mechanism for webhook replicas on independent hosts unless the orchestrator provides shared storage with POSIX-compatible atomic rename behavior. For that deployment shape, use the database-backed relay queue planned in [issue #434](https://github.com/yoophi-a/specrail/issues/434) once it is implemented.
+Do not use this volume-backed queue as the coordination mechanism for webhook replicas on independent hosts unless the orchestrator provides shared storage with POSIX-compatible atomic rename behavior. For that deployment shape, use `GITHUB_RELAY_QUEUE_BACKEND=postgres` with a shared PostgreSQL table; see [GitHub webhook production operations](./github-production-ops.md#durable-terminal-relay-queue).
 
 ## Related docs
 

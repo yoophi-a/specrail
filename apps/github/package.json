@@ -16,6 +16,10 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@types/pg": "^8.20.0",
     "tsx": "^4.20.6"
+  },
+  "dependencies": {
+    "pg": "^8.21.0"
   }
 }

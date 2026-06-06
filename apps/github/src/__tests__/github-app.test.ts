@@ -6,6 +6,7 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import type { QueryResultRow } from "pg";
 import {
   authorizeGitHubActor,
   buildGitHubOperatorRunUrl,
@@ -18,6 +19,7 @@ import {
   createGitHubWebhookHttpServer,
   JsonFileGitHubRelayJobQueue,
   DirectoryGitHubRelayJobQueue,
+  PostgresGitHubRelayJobQueue,
   createSpecRailHttpClient,
   executeGitHubRunCommand,
   formatGitHubTerminalOutcomeComment,
@@ -35,6 +37,7 @@ import {
   verifyGitHubSignature256,
   type GitHubAcceptedRunCommandContext,
   type GitHubRelayJobQueue,
+  type GitHubRelayPostgresQueryClient,
   type GitHubSpecRailPort,
 } from "../index.js";
 
@@ -863,11 +866,17 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
 
 test("loadGitHubAppConfig reads explicit relay queue backend settings", () => {
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "json_file" }).githubRelayQueueBackend, "json-file");
+  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "postgres" }).githubRelayQueueBackend, "postgres");
+  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_URL: "postgres://specrail.example/relay" }).githubRelayQueuePostgresUrl, "postgres://specrail.example/relay");
+  assert.equal(loadGitHubAppConfig({ DATABASE_URL: "postgres://specrail.example/default" }).githubRelayQueuePostgresUrl, "postgres://specrail.example/default");
+  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_TABLE: "specrail_relay_jobs" }).githubRelayQueuePostgresTable, "specrail_relay_jobs");
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "redis" }), /invalid GITHUB_RELAY_QUEUE_BACKEND: redis/u);
 });
 
 test("resolveGitHubRelayQueueBackend preserves existing env precedence", () => {
   assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueueDir: "/tmp/relay", githubRelayQueuePath: "/tmp/relay.json" }), "directory");
+  assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueuePostgresUrl: "postgres://specrail.example/relay" }), "postgres");
+  assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueuePostgresUrl: "postgres://specrail.example/relay", githubRelayQueuePath: "/tmp/relay.json" }), "postgres");
   assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueuePath: "/tmp/relay.json" }), "json-file");
   assert.equal(resolveGitHubRelayQueueBackend({}), "none");
   assert.equal(
@@ -884,6 +893,7 @@ test("createGitHubRelayJobQueueFromConfig creates configured durable backends", 
   assert.equal(createGitHubRelayJobQueueFromConfig({}), undefined);
   assert.ok(createGitHubRelayJobQueueFromConfig({ githubRelayQueueDir: "/tmp/relay" }) instanceof DirectoryGitHubRelayJobQueue);
   assert.ok(createGitHubRelayJobQueueFromConfig({ githubRelayQueuePath: "/tmp/relay.json" }) instanceof JsonFileGitHubRelayJobQueue);
+  assert.ok(createGitHubRelayJobQueueFromConfig({ githubRelayQueuePostgresUrl: "postgres://specrail.example/relay" }) instanceof PostgresGitHubRelayJobQueue);
   assert.throws(
     () => createGitHubRelayJobQueueFromConfig({ githubRelayQueueBackend: "directory" }),
     /GITHUB_RELAY_QUEUE_DIR is required/u,
@@ -891,6 +901,14 @@ test("createGitHubRelayJobQueueFromConfig creates configured durable backends", 
   assert.throws(
     () => createGitHubRelayJobQueueFromConfig({ githubRelayQueueBackend: "json-file" }),
     /GITHUB_RELAY_QUEUE_PATH is required/u,
+  );
+  assert.throws(
+    () => createGitHubRelayJobQueueFromConfig({ githubRelayQueueBackend: "postgres" }),
+    /GITHUB_RELAY_QUEUE_POSTGRES_URL or DATABASE_URL is required/u,
+  );
+  assert.throws(
+    () => new PostgresGitHubRelayJobQueue({ client: new InMemoryPostgresRelayQueryClient(), tableName: "bad-table" }),
+    /invalid PostgreSQL relay queue table name/u,
   );
 });
 
@@ -1031,6 +1049,102 @@ interface RelayQueueContractHarness {
   reload(): GitHubRelayJobQueue;
 }
 
+interface InMemoryPostgresRelayJobRow {
+  id: string;
+  repository_full_name: string;
+  issue_number: number;
+  run_id: string;
+  report_url: string | null;
+  operator_url: string | null;
+  status: "pending" | "running" | "completed" | "failed";
+  attempts: number;
+  created_at: string;
+  updated_at: string;
+  next_attempt_at: string | null;
+  last_error: string | null;
+}
+
+class InMemoryPostgresRelayQueryClient implements GitHubRelayPostgresQueryClient {
+  private readonly jobs = new Map<string, InMemoryPostgresRelayJobRow>();
+
+  async query<T extends QueryResultRow = QueryResultRow>(sql: string, values: readonly unknown[] = []): Promise<{ rows: T[] }> {
+    if (sql.includes("specrail:postgres-relay-enqueue")) {
+      const [id, repositoryFullName, issueNumber, runId, reportUrl, operatorUrl, now] = values;
+      const row: InMemoryPostgresRelayJobRow = {
+        id: String(id),
+        repository_full_name: String(repositoryFullName),
+        issue_number: Number(issueNumber),
+        run_id: String(runId),
+        report_url: reportUrl ? String(reportUrl) : null,
+        operator_url: operatorUrl ? String(operatorUrl) : null,
+        status: "pending",
+        attempts: 0,
+        created_at: String(now),
+        updated_at: String(now),
+        next_attempt_at: String(now),
+        last_error: null,
+      };
+      this.jobs.set(row.id, row);
+      return this.rows([this.clone(row)]);
+    }
+
+    if (sql.includes("specrail:postgres-relay-claim-next")) {
+      const now = String(values[0]);
+      const nowMs = Date.parse(now);
+      const dueJob = [...this.jobs.values()]
+        .filter((job) => job.status === "pending" && (!job.next_attempt_at || Date.parse(job.next_attempt_at) <= nowMs))
+        .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at))[0];
+      if (!dueJob) {
+        return this.rows([]);
+      }
+      dueJob.status = "running";
+      dueJob.updated_at = now;
+      return this.rows([this.clone(dueJob)]);
+    }
+
+    if (sql.includes("specrail:postgres-relay-complete")) {
+      const [id, now] = values;
+      const job = this.jobs.get(String(id));
+      if (!job || job.status !== "running") {
+        return this.rows([]);
+      }
+      job.status = "completed";
+      job.updated_at = String(now);
+      return this.rows([this.clone(job)]);
+    }
+
+    if (sql.includes("specrail:postgres-relay-fail")) {
+      const [id, now, lastError] = values;
+      const job = this.jobs.get(String(id));
+      if (!job || job.status !== "running") {
+        return this.rows([]);
+      }
+      job.attempts += 1;
+      job.status = job.attempts >= 3 ? "failed" : "pending";
+      job.updated_at = String(now);
+      job.last_error = String(lastError);
+      job.next_attempt_at = new Date(Date.parse(String(now)) + Math.min(60_000, 1_000 * 2 ** job.attempts)).toISOString();
+      return this.rows([this.clone(job)]);
+    }
+
+    if (sql.includes("specrail:postgres-relay-list")) {
+      return {
+        rows: [...this.jobs.values()].sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at)).map((job) => this.clone(job)) as unknown as T[],
+      };
+    }
+
+    throw new Error(`unexpected PostgreSQL relay query: ${sql}`);
+  }
+
+  private clone(job: InMemoryPostgresRelayJobRow): InMemoryPostgresRelayJobRow {
+    return { ...job };
+  }
+
+  private rows<T extends QueryResultRow>(rows: InMemoryPostgresRelayJobRow[]): { rows: T[] } {
+    return { rows: rows as unknown as T[] };
+  }
+}
+
 function registerGitHubRelayQueueContractTests(name: string, createHarness: () => Promise<RelayQueueContractHarness>): void {
   test(`${name} persists enqueued relay job payloads for reload and audit`, async () => {
     const { queue, reload } = await createHarness();
@@ -1129,6 +1243,14 @@ registerGitHubRelayQueueContractTests("DirectoryGitHubRelayJobQueue", async () =
   };
 });
 
+registerGitHubRelayQueueContractTests("PostgresGitHubRelayJobQueue", async () => {
+  const client = new InMemoryPostgresRelayQueryClient();
+  return {
+    queue: new PostgresGitHubRelayJobQueue({ client }),
+    reload: () => new PostgresGitHubRelayJobQueue({ client }),
+  };
+});
+
 test("DirectoryGitHubRelayJobQueue claims jobs atomically across queue instances", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-dir-"));
   const queue = new DirectoryGitHubRelayJobQueue(dir);
@@ -1136,6 +1258,24 @@ test("DirectoryGitHubRelayJobQueue claims jobs atomically across queue instances
 
   const firstWorker = new DirectoryGitHubRelayJobQueue(dir);
   const secondWorker = new DirectoryGitHubRelayJobQueue(dir);
+  const [firstClaim, secondClaim] = await Promise.all([
+    firstWorker.claimNext(new Date(created.createdAt)),
+    secondWorker.claimNext(new Date(created.createdAt)),
+  ]);
+
+  const claimedJobs = [firstClaim, secondClaim].filter((job): job is NonNullable<typeof job> => Boolean(job));
+  assert.equal(claimedJobs.length, 1);
+  assert.equal(claimedJobs[0]?.id, created.id);
+  assert.equal((await queue.list())[0]?.status, "running");
+});
+
+test("PostgresGitHubRelayJobQueue claims jobs atomically across queue instances", async () => {
+  const client = new InMemoryPostgresRelayQueryClient();
+  const queue = new PostgresGitHubRelayJobQueue({ client });
+  const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+
+  const firstWorker = new PostgresGitHubRelayJobQueue({ client });
+  const secondWorker = new PostgresGitHubRelayJobQueue({ client });
   const [firstClaim, secondClaim] = await Promise.all([
     firstWorker.claimNext(new Date(created.createdAt)),
     secondWorker.claimNext(new Date(created.createdAt)),
