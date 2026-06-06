@@ -34,6 +34,7 @@ import {
   startGitHubWebhookApp,
   verifyGitHubSignature256,
   type GitHubAcceptedRunCommandContext,
+  type GitHubRelayJobQueue,
   type GitHubSpecRailPort,
 } from "../index.js";
 
@@ -1025,6 +1026,109 @@ test("createGitHubRestIssueCommentClient accepts token providers", async () => {
   assert.deepEqual(requests, [{ authorization: "Bearer provider-token" }]);
 });
 
+interface RelayQueueContractHarness {
+  queue: GitHubRelayJobQueue;
+  reload(): GitHubRelayJobQueue;
+}
+
+function registerGitHubRelayQueueContractTests(name: string, createHarness: () => Promise<RelayQueueContractHarness>): void {
+  test(`${name} persists enqueued relay job payloads for reload and audit`, async () => {
+    const { queue, reload } = await createHarness();
+    const created = await queue.enqueue({
+      repositoryFullName: "yoophi-a/specrail",
+      issueNumber: 123,
+      runId: "run-created",
+      reportUrl: "https://specrail.example.test/runs/run-created/report.md",
+      operatorUrl: "https://operator.example.test/operator?runId=run-created",
+    });
+
+    assert.match(created.id, /\S/u);
+    assert.equal(created.status, "pending");
+    assert.equal(created.attempts, 0);
+    assert.equal(created.repositoryFullName, "yoophi-a/specrail");
+    assert.equal(created.issueNumber, 123);
+    assert.equal(created.runId, "run-created");
+    assert.equal(created.reportUrl, "https://specrail.example.test/runs/run-created/report.md");
+    assert.equal(created.operatorUrl, "https://operator.example.test/operator?runId=run-created");
+    assert.ok(Date.parse(created.createdAt));
+    assert.ok(Date.parse(created.updatedAt));
+    assert.ok(created.nextAttemptAt && Date.parse(created.nextAttemptAt));
+
+    assert.deepEqual(await reload().list(), [created]);
+    assert.deepEqual(await queue.list(), await queue.list(), "list must be an audit surface without mutation");
+  });
+
+  test(`${name} claims one due job and preserves completed jobs`, async () => {
+    const { queue, reload } = await createHarness();
+    const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+    const claimed = await reload().claimNext(new Date(created.createdAt));
+
+    assert.equal(claimed?.id, created.id);
+    assert.equal(claimed?.status, "running");
+    assert.equal((await queue.claimNext(new Date(created.createdAt)))?.id, undefined);
+    assert.equal((await queue.list())[0]?.status, "running");
+
+    const completedAt = new Date(Date.parse(created.createdAt) + 1_000);
+    await reload().complete(created.id, completedAt);
+    const [completed] = await queue.list();
+    assert.equal(completed?.status, "completed");
+    assert.equal(completed?.attempts, 0);
+    assert.equal(completed?.updatedAt, completedAt.toISOString());
+    assert.equal(await queue.claimNext(new Date(Date.parse(created.createdAt) + 2_000)), undefined);
+  });
+
+  test(`${name} records retryable failures and stops after the third attempt`, async () => {
+    const { queue, reload } = await createHarness();
+    const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+    assert.equal((await queue.claimNext(new Date(created.createdAt)))?.id, created.id);
+
+    const firstFailureAt = new Date(Date.parse(created.createdAt) + 1_000);
+    await reload().fail(created.id, new Error("GitHub unavailable"), firstFailureAt);
+    const [retryable] = await queue.list();
+    assert.equal(retryable?.status, "pending");
+    assert.equal(retryable?.attempts, 1);
+    assert.equal(retryable?.lastError, "GitHub unavailable");
+    assert.equal(retryable?.updatedAt, firstFailureAt.toISOString());
+    assert.ok(retryable?.nextAttemptAt);
+
+    assert.equal(await reload().claimNext(new Date(Date.parse(retryable?.nextAttemptAt ?? "") - 1)), undefined);
+    assert.equal((await reload().claimNext(new Date(Date.parse(retryable?.nextAttemptAt ?? "") + 1)))?.id, created.id);
+
+    const secondFailureAt = new Date(Date.parse(retryable?.nextAttemptAt ?? "") + 2_000);
+    await queue.fail(created.id, "still unavailable", secondFailureAt);
+    const [secondRetry] = await reload().list();
+    assert.equal(secondRetry?.status, "pending");
+    assert.equal(secondRetry?.attempts, 2);
+    assert.equal(secondRetry?.lastError, "still unavailable");
+    assert.equal((await queue.claimNext(new Date(Date.parse(secondRetry?.nextAttemptAt ?? "") + 1)))?.id, created.id);
+
+    const thirdFailureAt = new Date(Date.parse(secondRetry?.nextAttemptAt ?? "") + 2_000);
+    await reload().fail(created.id, new Error("permanent failure"), thirdFailureAt);
+    const [failed] = await queue.list();
+    assert.equal(failed?.status, "failed");
+    assert.equal(failed?.attempts, 3);
+    assert.equal(failed?.lastError, "permanent failure");
+    assert.equal(await reload().claimNext(new Date(Date.parse(failed?.nextAttemptAt ?? "") + 1)), undefined);
+  });
+}
+
+registerGitHubRelayQueueContractTests("JsonFileGitHubRelayJobQueue", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-"));
+  const queuePath = path.join(dir, "queue.json");
+  return {
+    queue: new JsonFileGitHubRelayJobQueue(queuePath),
+    reload: () => new JsonFileGitHubRelayJobQueue(queuePath),
+  };
+});
+
+registerGitHubRelayQueueContractTests("DirectoryGitHubRelayJobQueue", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-dir-"));
+  return {
+    queue: new DirectoryGitHubRelayJobQueue(dir),
+    reload: () => new DirectoryGitHubRelayJobQueue(dir),
+  };
+});
+
 test("DirectoryGitHubRelayJobQueue claims jobs atomically across queue instances", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-dir-"));
   const queue = new DirectoryGitHubRelayJobQueue(dir);
@@ -1041,40 +1145,6 @@ test("DirectoryGitHubRelayJobQueue claims jobs atomically across queue instances
   assert.equal(claimedJobs.length, 1);
   assert.equal(claimedJobs[0]?.id, created.id);
   assert.equal((await queue.list())[0]?.status, "running");
-});
-
-test("DirectoryGitHubRelayJobQueue retries failures and preserves completed jobs", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-dir-"));
-  const queue = new DirectoryGitHubRelayJobQueue(dir);
-  const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
-  const claimed = await queue.claimNext(new Date(created.createdAt));
-  assert.equal(claimed?.id, created.id);
-
-  const failedAt = new Date(Date.parse(created.createdAt) + 1_000);
-  await queue.fail(created.id, new Error("GitHub unavailable"), failedAt);
-  const [retryable] = await queue.list();
-  assert.equal(retryable?.status, "pending");
-  assert.equal(retryable?.attempts, 1);
-  assert.equal(retryable?.lastError, "GitHub unavailable");
-
-  const retryClaim = await queue.claimNext(new Date(Date.parse(retryable?.nextAttemptAt ?? "") + 1));
-  assert.equal(retryClaim?.id, created.id);
-  await queue.complete(created.id);
-  assert.equal((await queue.list())[0]?.status, "completed");
-});
-
-test("JsonFileGitHubRelayJobQueue persists relay jobs across instances", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-"));
-  const queuePath = path.join(dir, "queue.json");
-  const queue = new JsonFileGitHubRelayJobQueue(queuePath);
-  const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created", reportUrl: "https://specrail.example.test/runs/run-created/report.md" });
-
-  const reloaded = new JsonFileGitHubRelayJobQueue(queuePath);
-  assert.deepEqual(await reloaded.list(), [created]);
-
-  const claimed = await reloaded.claimNext(new Date(created.createdAt));
-  assert.equal(claimed?.id, created.id);
-  assert.equal((await reloaded.list())[0]?.status, "running");
 });
 
 test("processGitHubRelayQueue posts terminal comments and completes jobs", async () => {
