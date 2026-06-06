@@ -12,6 +12,7 @@ import {
   buildGitHubSignature256,
   createGitHubAppInstallationTokenProvider,
   createGitHubAppJwt,
+  createGitHubRelayJobQueueFromConfig,
   createGitHubRestAuthorizationClient,
   createGitHubRestIssueCommentClient,
   createGitHubWebhookHttpServer,
@@ -28,6 +29,7 @@ import {
   postGitHubTerminalOutcomeComment,
   processGitHubRelayQueue,
   relayGitHubRunTerminalOutcome,
+  resolveGitHubRelayQueueBackend,
   resolveGitHubProjectId,
   startGitHubWebhookApp,
   verifyGitHubSignature256,
@@ -856,6 +858,39 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
   assert.equal(isGitHubActorAuthorized(config, "octocat"), true);
   assert.equal(isGitHubActorAuthorized(config, "hubot"), true);
   assert.equal(isGitHubActorAuthorized(config, "mallory"), false);
+});
+
+test("loadGitHubAppConfig reads explicit relay queue backend settings", () => {
+  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "json_file" }).githubRelayQueueBackend, "json-file");
+  assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "redis" }), /invalid GITHUB_RELAY_QUEUE_BACKEND: redis/u);
+});
+
+test("resolveGitHubRelayQueueBackend preserves existing env precedence", () => {
+  assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueueDir: "/tmp/relay", githubRelayQueuePath: "/tmp/relay.json" }), "directory");
+  assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueuePath: "/tmp/relay.json" }), "json-file");
+  assert.equal(resolveGitHubRelayQueueBackend({}), "none");
+  assert.equal(
+    resolveGitHubRelayQueueBackend({
+      githubRelayQueueBackend: "json-file",
+      githubRelayQueueDir: "/tmp/relay",
+      githubRelayQueuePath: "/tmp/relay.json",
+    }),
+    "json-file",
+  );
+});
+
+test("createGitHubRelayJobQueueFromConfig creates configured durable backends", () => {
+  assert.equal(createGitHubRelayJobQueueFromConfig({}), undefined);
+  assert.ok(createGitHubRelayJobQueueFromConfig({ githubRelayQueueDir: "/tmp/relay" }) instanceof DirectoryGitHubRelayJobQueue);
+  assert.ok(createGitHubRelayJobQueueFromConfig({ githubRelayQueuePath: "/tmp/relay.json" }) instanceof JsonFileGitHubRelayJobQueue);
+  assert.throws(
+    () => createGitHubRelayJobQueueFromConfig({ githubRelayQueueBackend: "directory" }),
+    /GITHUB_RELAY_QUEUE_DIR is required/u,
+  );
+  assert.throws(
+    () => createGitHubRelayJobQueueFromConfig({ githubRelayQueueBackend: "json-file" }),
+    /GITHUB_RELAY_QUEUE_PATH is required/u,
+  );
 });
 
 test("GitHub webhook HTTP app uses mapped repository project ids", async () => {

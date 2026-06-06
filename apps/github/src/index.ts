@@ -24,6 +24,7 @@ export interface GitHubAppConfig {
   githubInstallationId?: string;
   githubPrivateKey?: string;
   followTerminalEvents: boolean;
+  githubRelayQueueBackend?: GitHubRelayQueueBackend;
   githubRelayQueuePath?: string;
   githubRelayQueueDir?: string;
   repositoryProjects: Record<string, string>;
@@ -180,6 +181,8 @@ export interface GitHubTerminalRelayJob {
   lastError?: string;
 }
 
+export type GitHubRelayQueueBackend = "none" | "directory" | "json-file";
+
 export interface GitHubRelayJobQueue {
   enqueue(input: { repositoryFullName: string; issueNumber: number; runId: string; reportUrl?: string; operatorUrl?: string }): Promise<GitHubTerminalRelayJob>;
   claimNext(now?: Date): Promise<GitHubTerminalRelayJob | undefined>;
@@ -235,6 +238,17 @@ function parseCsvList(value: string | undefined): string[] {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function parseGitHubRelayQueueBackend(value: string | undefined): GitHubRelayQueueBackend | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase().replace(/_/gu, "-");
+  if (normalized === "none" || normalized === "directory" || normalized === "json-file") {
+    return normalized;
+  }
+  throw new Error(`invalid GITHUB_RELAY_QUEUE_BACKEND: ${value}`);
 }
 
 function normalizePrivateKey(value: string | undefined): string | undefined {
@@ -314,6 +328,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubInstallationId: env.GITHUB_INSTALLATION_ID,
     githubPrivateKey: normalizePrivateKey(env.GITHUB_PRIVATE_KEY),
     followTerminalEvents: env.GITHUB_FOLLOW_TERMINAL_EVENTS === "true",
+    githubRelayQueueBackend: parseGitHubRelayQueueBackend(env.GITHUB_RELAY_QUEUE_BACKEND),
     githubRelayQueuePath: env.GITHUB_RELAY_QUEUE_PATH,
     githubRelayQueueDir: env.GITHUB_RELAY_QUEUE_DIR,
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
@@ -603,17 +618,47 @@ export const defaultGitHubCommandMetricsSink: GitHubCommandMetricsSink = {
   },
 };
 
+export function resolveGitHubRelayQueueBackend(
+  config: Pick<GitHubAppConfig, "githubRelayQueueBackend" | "githubRelayQueueDir" | "githubRelayQueuePath">,
+): GitHubRelayQueueBackend {
+  if (config.githubRelayQueueBackend) {
+    return config.githubRelayQueueBackend;
+  }
+  if (config.githubRelayQueueDir) {
+    return "directory";
+  }
+  if (config.githubRelayQueuePath) {
+    return "json-file";
+  }
+  return "none";
+}
+
+export function createGitHubRelayJobQueueFromConfig(
+  config: Pick<GitHubAppConfig, "githubRelayQueueBackend" | "githubRelayQueueDir" | "githubRelayQueuePath">,
+): GitHubRelayJobQueue | undefined {
+  const backend = resolveGitHubRelayQueueBackend(config);
+  if (backend === "none") {
+    return undefined;
+  }
+  if (backend === "directory") {
+    if (!config.githubRelayQueueDir) {
+      throw new Error("GITHUB_RELAY_QUEUE_DIR is required when GITHUB_RELAY_QUEUE_BACKEND=directory");
+    }
+    return new DirectoryGitHubRelayJobQueue(config.githubRelayQueueDir);
+  }
+  if (!config.githubRelayQueuePath) {
+    throw new Error("GITHUB_RELAY_QUEUE_PATH is required when GITHUB_RELAY_QUEUE_BACKEND=json-file");
+  }
+  return new JsonFileGitHubRelayJobQueue(config.githubRelayQueuePath);
+}
+
 export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRail?: GitHubSpecRailPort; github?: GitHubIssueCommentPort } = {}): http.Server {
   const config = input.config ?? loadGitHubAppConfig();
   const specRail = input.specRail ?? createSpecRailHttpClient(config.apiBaseUrl);
   const tokenProvider = createGitHubTokenProviderFromConfig(config);
   const github = input.github ?? (tokenProvider ? createGitHubRestIssueCommentClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
   const authorization = tokenProvider ? createGitHubRestAuthorizationClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined;
-  const relayQueue = config.githubRelayQueueDir
-    ? new DirectoryGitHubRelayJobQueue(config.githubRelayQueueDir)
-    : config.githubRelayQueuePath
-      ? new JsonFileGitHubRelayJobQueue(config.githubRelayQueuePath)
-      : undefined;
+  const relayQueue = createGitHubRelayJobQueueFromConfig(config);
   const server = createGitHubWebhookHttpServer({
     config,
     specRail,

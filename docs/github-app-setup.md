@@ -55,6 +55,7 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_INSTALLATION_ID` | unset | GitHub App installation id used for installation-token exchange. |
 | `GITHUB_PRIVATE_KEY` | unset | GitHub App private key PEM. Escaped newlines (`\\n`) are normalized at startup. |
 | `GITHUB_FOLLOW_TERMINAL_EVENTS` | `false` | When `true` and a GitHub comment client is supplied, schedule background following of the created run event stream and post one terminal outcome comment. |
+| `GITHUB_RELAY_QUEUE_BACKEND` | inferred | Optional explicit terminal relay queue backend: `directory`, `json-file`, or `none`. When unset, `GITHUB_RELAY_QUEUE_DIR` selects `directory`, `GITHUB_RELAY_QUEUE_PATH` selects `json-file`, and no queue config selects `none`. |
 | `GITHUB_RELAY_QUEUE_DIR` | unset | Preferred durable queue directory for terminal outcome relay jobs. Uses per-job JSON files and atomic claim renames for multi-process workers on the same POSIX-compatible filesystem. Takes precedence over `GITHUB_RELAY_QUEUE_PATH`. |
 | `GITHUB_RELAY_QUEUE_PATH` | unset | Legacy optional JSON-file durable queue path for terminal outcome relay jobs. Use only for local development or single-process deployments. When no durable queue is configured, the app uses the in-process scheduler fallback. |
 
