@@ -392,7 +392,7 @@ The docs above are aligned to the current MVP implementation and tests in:
 - `apps/api/src/__tests__/api.test.ts`
 - `packages/core/src/services/specrail-service.ts`
 - `packages/config/src/artifacts.ts`
-- `packages/adapters/src/providers/codex-adapter.stub.ts`
+- `packages/adapters/src/providers/codex-adapter.ts`
 - `packages/adapters/src/__tests__/claude-code.smoke.test.ts`
 
 ## Related research

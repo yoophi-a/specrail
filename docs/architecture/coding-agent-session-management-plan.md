@@ -38,9 +38,9 @@ Core execution state in `packages/core/src/domain/types.ts` stores:
 
 ### Codex CLI backend (`codex`)
 
-Current adapter: `packages/adapters/src/providers/codex-adapter.stub.ts`
+Current adapter: `packages/adapters/src/providers/codex-adapter.ts`
 
-Despite the historical filename, the adapter is process-backed:
+The adapter is process-backed:
 
 - spawn command:
 

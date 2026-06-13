@@ -48,7 +48,7 @@
 
 - `apps/api/src/index.ts`
 - `packages/core/src/services/specrail-service.ts`
-- `packages/adapters/src/providers/codex-adapter.stub.ts`
+- `packages/adapters/src/providers/codex-adapter.ts`
 - `packages/core/src/services/file-repositories.ts`
 
 ### 현재 흐름
@@ -77,7 +77,7 @@ flowchart TD
 
 ### 현재 한계
 
-현재 `CodexAdapterStub`은 메타데이터 저장과 lifecycle 이벤트 생성까지만 담당합니다. 구조적 방향은 좋지만, 실제 에이전트 프로세스를 실행하는 런타임 구현은 아직 placeholder 수준입니다.
+현재 `CodexAdapter`는 로컬 `codex exec --json` 프로세스를 실행하고, 세션 메타데이터와 stdout/stderr/lifecycle 이벤트를 저장하며, resume/cancel 및 approval fallback 결과를 정규화합니다. 남은 한계는 provider별 세부 이벤트를 더 풍부한 도메인 이벤트로 승격하는 일과 backend-native approval broker를 분리하는 일입니다.
 
 ## 2. Vibe Kanban
 

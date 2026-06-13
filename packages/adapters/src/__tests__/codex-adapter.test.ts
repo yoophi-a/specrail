@@ -11,6 +11,7 @@ import {
   readCodexSessionEvents,
   readCodexSessionMetadata,
 } from "../index.js";
+import { CodexAdapterStub } from "../providers/codex-adapter.stub.js";
 
 class FakeStream extends EventEmitter {
   emitData(value: string): void {
@@ -79,6 +80,10 @@ test("buildCodexSpawnCommand preserves explicit non-default profiles", () => {
     "fast-lane",
   ]);
   assert.equal(command.args[7], "Implement the endpoint");
+});
+
+test("legacy CodexAdapterStub import path remains compatible", () => {
+  assert.equal(CodexAdapterStub, CodexAdapter);
 });
 
 test("CodexAdapter persists process metadata, parses session id, records runtime events, and fans them out", async () => {

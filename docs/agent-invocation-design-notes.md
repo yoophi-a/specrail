@@ -10,9 +10,9 @@
 
 - artifact-first control plane
 - 가벼운 run registry
-- placeholder 수준의 executor adapter
+- process-backed Codex/Claude executor adapter
 
-출발점 자체는 좋습니다. 부족한 것은 API 모양이 아니라 execution plane의 깊이입니다.
+출발점 자체는 좋습니다. 이제 부족한 것은 실행 가능 여부가 아니라 provider별 이벤트 해석, approval broker 분리, 운영 복구 모델처럼 execution plane의 깊이를 더하는 일입니다.
 
 ## 권장 목표 구조
 

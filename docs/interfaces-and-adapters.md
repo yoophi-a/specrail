@@ -241,7 +241,7 @@ sequenceDiagram
 
 ## CodexAdapter
 
-`packages/adapters/src/providers/codex-adapter.stub.ts`에 위치한 Codex 백엔드 어댑터입니다.
+`packages/adapters/src/providers/codex-adapter.ts`에 위치한 Codex 백엔드 어댑터입니다.
 
 ### 주요 동작
 
