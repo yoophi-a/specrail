@@ -7,10 +7,10 @@ This runbook collects common SpecRail operator checks. Keep secrets, local paths
 Start with deterministic local validation:
 
 ```bash
-pnpm check
-pnpm test
-pnpm build
+pnpm validate
 ```
+
+The baseline command runs `pnpm check`, `pnpm test`, and `pnpm build` in order.
 
 Then confirm the runtime configuration you expect:
 

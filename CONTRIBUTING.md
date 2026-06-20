@@ -49,10 +49,10 @@ The Telegram adapter requires `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and
 Run the checks that match your change. For most code PRs, use the full baseline:
 
 ```bash
-pnpm check
-pnpm test
-pnpm build
+pnpm validate
 ```
+
+The baseline runs `pnpm check`, `pnpm test`, and `pnpm build` in order. The individual commands remain available for targeted checks while iterating.
 
 For docs-only or repository metadata-only changes, `pnpm check` is usually enough unless the change affects workflow behavior or generated artifacts.
 
@@ -77,9 +77,7 @@ Use the pull request template and include:
 Standard PR validation should match the baseline workflow when possible:
 
 ```bash
-pnpm check
-pnpm test
-pnpm build
+pnpm validate
 ```
 
 ## Contract-impact checklist

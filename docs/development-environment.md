@@ -20,10 +20,10 @@ pnpm install
 Run the baseline checks before opening code changes:
 
 ```bash
-pnpm check
-pnpm test
-pnpm build
+pnpm validate
 ```
+
+`pnpm validate` runs `pnpm check`, `pnpm test`, and `pnpm build` in order. Use the individual commands for narrower iteration.
 
 For docs-only or repository metadata-only changes, `pnpm check` is usually enough unless the change affects generated artifacts, workflows, or scripts.
 

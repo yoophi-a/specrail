@@ -53,5 +53,7 @@ pnpm check:links
 For source, config, workflow, or test changes, run the full gate before merging:
 
 ```sh
-pnpm check && pnpm test && pnpm build
+pnpm validate
 ```
+
+The local baseline command runs `pnpm check`, `pnpm test`, and `pnpm build` in the same order as the full CI gate.

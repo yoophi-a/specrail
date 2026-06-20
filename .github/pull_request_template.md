@@ -32,6 +32,7 @@ Mark the areas this PR touches:
 
 Run the relevant checks and mark what passed:
 
+- [ ] `pnpm validate`
 - [ ] `pnpm check`
 - [ ] `pnpm test`
 - [ ] `pnpm build`

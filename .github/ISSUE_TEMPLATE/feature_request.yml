@@ -71,9 +71,8 @@ body:
       label: Suggested validation
       description: Which checks or manual verification should cover this work?
       placeholder: |
-        - pnpm check
-        - pnpm test
-        - pnpm build
+        - pnpm validate
+        - targeted pnpm check/test/build commands if a narrower loop is enough
         - pnpm test:claude-smoke (if provider credentials are available)
 
   - type: checkboxes

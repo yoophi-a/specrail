@@ -16,12 +16,10 @@ Before preparing a release candidate:
 Run the deterministic local checks:
 
 ```bash
-pnpm check
-pnpm test
-pnpm build
+pnpm validate
 ```
 
-If the change is documentation-only, `pnpm check` may be enough for that PR, but release candidates should use the full baseline above.
+`pnpm validate` runs `pnpm check`, `pnpm test`, and `pnpm build` in order. If the change is documentation-only, `pnpm check` may be enough for that PR, but release candidates should use the full baseline above.
 
 ## 3. Validate provider-dependent paths when relevant
 

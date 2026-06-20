@@ -304,7 +304,7 @@ For vulnerability reporting and sensitive integration issues, see [SECURITY.md](
 
 ```bash
 pnpm install
-pnpm test
+pnpm validate
 pnpm check:links
 pnpm dev:api
 pnpm dev:acp
