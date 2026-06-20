@@ -439,5 +439,81 @@ test("CodexAdapter normalizes lifecycle and stream events into shared execution 
     },
   );
 
+  assert.deepEqual(
+    adapter.normalize({
+      kind: "completed",
+      executionId: "run-1",
+      sessionRef: "run-1-codex",
+      timestamp: "2026-04-09T00:00:03.000Z",
+      exitCode: 0,
+      signal: null,
+    }),
+    {
+      id: "run-1:completed:2026-04-09T00:00:03.000Z",
+      executionId: "run-1",
+      type: "task_status_changed",
+      timestamp: "2026-04-09T00:00:03.000Z",
+      source: "codex",
+      summary: "Completed Codex session run-1-codex",
+      status: "completed",
+      payload: {
+        sessionRef: "run-1-codex",
+        provider: "codex",
+        status: "completed",
+        terminal: true,
+        exitCode: 0,
+        signal: null,
+      },
+    },
+  );
+
+  assert.deepEqual(
+    adapter.normalize({
+      kind: "resumed",
+      executionId: "run-1",
+      sessionRef: "run-1-codex",
+      timestamp: "2026-04-09T00:00:04.000Z",
+    }),
+    {
+      id: "run-1:resumed:2026-04-09T00:00:04.000Z",
+      executionId: "run-1",
+      type: "task_status_changed",
+      timestamp: "2026-04-09T00:00:04.000Z",
+      source: "codex",
+      summary: "Resumed Codex session run-1-codex",
+      status: "running",
+      payload: {
+        sessionRef: "run-1-codex",
+        provider: "codex",
+        status: "resumed",
+        terminal: false,
+      },
+    },
+  );
+
+  assert.deepEqual(
+    adapter.normalize({
+      kind: "cancelled",
+      executionId: "run-1",
+      sessionRef: "run-1-codex",
+      timestamp: "2026-04-09T00:00:05.000Z",
+    }),
+    {
+      id: "run-1:cancelled:2026-04-09T00:00:05.000Z",
+      executionId: "run-1",
+      type: "task_status_changed",
+      timestamp: "2026-04-09T00:00:05.000Z",
+      source: "codex",
+      summary: "Cancelled Codex session run-1-codex",
+      status: "cancelled",
+      payload: {
+        sessionRef: "run-1-codex",
+        provider: "codex",
+        status: "cancelled",
+        terminal: true,
+      },
+    },
+  );
+
   assert.equal(adapter.normalize({ foo: "bar" }), null);
 });

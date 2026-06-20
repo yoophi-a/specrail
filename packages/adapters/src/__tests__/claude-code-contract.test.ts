@@ -329,4 +329,56 @@ test("normalizeClaudeCodeStructuredStreamEvent promotes Claude stream-json event
       },
     ],
   );
+
+  assert.deepEqual(
+    normalizeClaudeCodeStructuredStreamEvent({
+      executionId: "run-claude-3",
+      sessionRef: "run-claude-3-claude",
+      timestamp: "2026-04-10T10:09:00.000Z",
+      eventIndex: 3,
+      event: {
+        type: "result",
+        subtype: "success",
+        session_id: "claude-session-345",
+        uuid: "result-456",
+        is_error: false,
+        result: "Done",
+        total_cost_usd: 0.0123,
+        duration_ms: 1500,
+        duration_api_ms: 900,
+        num_turns: 2,
+        usage: { input_tokens: 10, output_tokens: 20 },
+        modelUsage: { "claude-sonnet-4": { input_tokens: 10, output_tokens: 20 } },
+      },
+    }),
+    [
+      {
+        id: "run-claude-3:claude:2026-04-10T10:09:00.000Z:3:result",
+        executionId: "run-claude-3",
+        type: "summary",
+        subtype: "claude_result_success",
+        timestamp: "2026-04-10T10:09:00.000Z",
+        source: "claude_code",
+        summary: "Claude result run-claude-3-claude",
+        status: "completed",
+        payload: {
+          sessionRef: "run-claude-3-claude",
+          providerSessionId: "claude-session-345",
+          providerInvocationId: "result-456",
+          providerEventType: "result",
+          providerEventSubtype: "success",
+          result: "Done",
+          error: undefined,
+          isError: false,
+          totalCostUsd: 0.0123,
+          durationMs: 1500,
+          durationApiMs: 900,
+          numTurns: 2,
+          usage: { input_tokens: 10, output_tokens: 20 },
+          modelUsage: { "claude-sonnet-4": { input_tokens: 10, output_tokens: 20 } },
+          permissionDenials: [],
+        },
+      },
+    ],
+  );
 });
