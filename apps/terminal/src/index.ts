@@ -1569,6 +1569,9 @@ function renderTrackDetail(
     ?? null;
   const pendingRequests = workspace ? getPendingApprovalRequests(workspace) : [];
   const selectedApproval = pendingRequests.find((request) => request.id === workspace?.selectedApprovalRequestId) ?? pendingRequests[0] ?? null;
+  const selectedRevisionApproval = workspace && selectedRevision
+    ? workspace.approvalRequests[selectedArtifact].find((request) => request.revisionId === selectedRevision.id) ?? null
+    : null;
   const selectedRevisionIndex = selectedRevision ? workspace?.revisions[selectedArtifact]?.findIndex((revision) => revision.id === selectedRevision.id) ?? -1 : -1;
   const selectedArtifactRevisionCount = workspace?.revisions[selectedArtifact]?.length ?? 0;
   const selectedPlanningSessionIndex = workspace?.planningSessions.findIndex((session) => session.id === workspace.selectedPlanningSessionId) ?? -1;
@@ -1593,6 +1596,7 @@ function renderTrackDetail(
     "- planning sessions:",
     ...renderPlanningSessionLines(workspace),
     `- revision focus (${selectedArtifact}${selectedArtifactRevisionCount > 0 && selectedRevisionIndex >= 0 ? ` ${selectedRevisionIndex + 1}/${selectedArtifactRevisionCount}` : ""}): ${selectedRevision ? `v${selectedRevision.version} by ${selectedRevision.createdBy} at ${selectedRevision.createdAt}${selectedRevision.approvedAt ? ` | approved ${selectedRevision.approvedAt}` : " | pending review"}` : "none"}`,
+    `- revision approval: ${selectedRevisionApproval ? `${selectedRevisionApproval.status} via ${selectedRevisionApproval.id}${selectedRevisionApproval.decidedAt ? ` at ${selectedRevisionApproval.decidedAt}` : ""}` : "none"}`,
     `- revision preview: ${selectedRevision ? previewText(selectedRevision.content, 120) : "none"}`,
     ...(selectedRevision ? renderRevisionDiffLines(detail.artifacts[selectedArtifact], selectedRevision.content, showRevisionDiffDetail) : ["- revision diff: none"]),
     `- pending approvals: ${selectedApproval ? `${selectedApproval.artifact} -> ${selectedApproval.revisionId} requested by ${selectedApproval.requestedBy} at ${selectedApproval.createdAt}` : "none"}`,

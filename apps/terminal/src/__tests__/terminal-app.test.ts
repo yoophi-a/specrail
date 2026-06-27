@@ -1024,6 +1024,7 @@ test("renderAppShell renders track list and selected detail preview", () => {
   assert.match(rendered, /\.\.\. 1 more sessions, press M to cycle/);
   assert.match(rendered, /Need approval\?/);
   assert.match(rendered, /revision focus \(plan 2\/2\): v1 by agent/);
+  assert.match(rendered, /revision approval: pending via approval-1/);
   assert.match(rendered, /revision diff: \+3 -3 changed lines vs current \(2 more hidden, press u to expand\)/);
   assert.match(rendered, /- Add navigation/);
   assert.match(rendered, /- Keep brief/);
