@@ -1113,6 +1113,17 @@ async function readTrackArtifacts(artifactRoot: string, trackId: string): Promis
   return { spec, plan, tasks };
 }
 
+async function readTrackArtifact(artifactRoot: string, trackId: string, artifact: ArtifactKind): Promise<string> {
+  const artifactPaths = getTrackArtifactPaths(artifactRoot, trackId);
+  const artifactPathByKind: Record<ArtifactKind, string> = {
+    spec: artifactPaths.specPath,
+    plan: artifactPaths.planPath,
+    tasks: artifactPaths.tasksPath,
+  };
+
+  return readFile(artifactPathByKind[artifact], "utf8");
+}
+
 async function readExecutorSessionMetadata(sessionsDir: string | undefined, sessionRef: string | undefined): Promise<Record<string, unknown> | null> {
   if (!sessionsDir || !sessionRef) {
     return null;
@@ -1256,11 +1267,12 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           return;
         }
 
-        const [revisions, approvalRequests] = await Promise.all([
+        const [content, revisions, approvalRequests] = await Promise.all([
+          readTrackArtifact(deps.artifactRoot, track.id, artifact),
           deps.service.listArtifactRevisions(track.id, artifact),
           deps.service.listApprovalRequests(track.id, artifact),
         ]);
-        sendJson(response, 200, { revisions, approvalRequests });
+        sendJson(response, 200, { artifact: { kind: artifact, content }, revisions, approvalRequests });
         return;
       }
 

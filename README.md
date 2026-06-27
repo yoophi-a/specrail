@@ -130,6 +130,12 @@ Current endpoints in `apps/api/src/index.ts`:
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
   - response also includes inferred `planningContext` with the latest approved revision references and pending-change flag
+- `GET /tracks/:trackId/artifacts/:artifact`
+  - return the current approved artifact content for `spec`, `plan`, or `tasks`
+  - response also includes revision history and approval requests for that artifact
+- `POST /tracks/:trackId/artifacts/:artifact`
+  - propose a new artifact revision for `spec`, `plan`, or `tasks`
+  - body: `{ content, summary?, createdBy }`
 - `PATCH /tracks/:trackId`
   - update workflow state
   - body: any of `{ status, specStatus, planStatus }`
