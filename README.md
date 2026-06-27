@@ -136,6 +136,9 @@ Current endpoints in `apps/api/src/index.ts`:
 - `POST /tracks/:trackId/artifacts/:artifact`
   - propose a new artifact revision for `spec`, `plan`, or `tasks`
   - body: `{ content, summary?, createdBy }`
+- `GET /artifact-revisions/:revisionId`
+  - return one artifact revision by ID
+  - missing revisions return a structured `404 not_found` error
 - `PATCH /tracks/:trackId`
   - update workflow state
   - body: any of `{ status, specStatus, planStatus }`

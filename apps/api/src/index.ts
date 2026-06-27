@@ -1276,6 +1276,12 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "GET" && segments.length === 2 && segments[0] === "artifact-revisions") {
+        const revision = await deps.service.getArtifactRevision(segments[1] ?? "");
+        sendJson(response, 200, { revision });
+        return;
+      }
+
       if (method === "PATCH" && segments.length === 2 && segments[0] === "tracks") {
         const body = await readJson<UpdateTrackRequestBody>(request);
         assertValidTrackUpdateBody(body);

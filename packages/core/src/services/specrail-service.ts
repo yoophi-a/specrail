@@ -932,6 +932,15 @@ export class SpecRailService {
     return this.dependencies.artifactRevisionRepository.listByTrack(trackId, artifact);
   }
 
+  async getArtifactRevision(revisionId: string): Promise<ArtifactRevision> {
+    const revision = await this.dependencies.artifactRevisionRepository.getById(revisionId);
+    if (!revision) {
+      throw new NotFoundError(`Artifact revision not found: ${revisionId}`);
+    }
+
+    return revision;
+  }
+
   listApprovalRequests(trackId: string, artifact?: ArtifactKind): Promise<ApprovalRequest[]> {
     return this.dependencies.approvalRequestRepository.listByTrack(trackId, artifact);
   }
