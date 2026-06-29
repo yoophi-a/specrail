@@ -26,6 +26,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - durable GitHub terminal relay queues for local JSON-file, POSIX directory, and PostgreSQL-backed production deployments
 - GitHub webhook production operations docs covering relay backend selection, restart behavior, safe diagnostics, and Docker Compose topology
 - production deployment topology docs covering service boundaries, network exposure, persistent storage, secrets, and validation checks
+- single-host systemd deployment templates for API, GitHub webhook, and Telegram adapter services
 
 ### In progress / partial
 - event schema breadth
@@ -33,8 +34,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - adapters still emit different fidelity depending on provider capabilities
   - some provider-specific fields remain in `payload` / `_meta`
 - production deployment manifests
-  - deployment topology and Docker Compose guidance exist
-  - target-specific manifests for Kubernetes, systemd hardening, image publishing, and production health remain open
+  - deployment topology, Docker Compose guidance, and systemd templates exist
+  - target-specific manifests for Kubernetes, image publishing, and production health remain open
 - approval workflow depth
   - artifact revision approval is implemented
   - runtime permission request resolution is available through core service and HTTP APIs
@@ -129,7 +130,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
    - promote stable fields into shared event summaries/status metadata while preserving provider details in `payload` for debugging.
 
 2. **Add target-specific production manifests**
-   - choose the first target platform, such as Kubernetes or hardened systemd units.
+   - choose the next target platform, such as Kubernetes.
    - turn the deployment topology into concrete manifests with secret references, persistent volumes, network policy, and health checks.
 
 3. **Deepen runtime approval broker integration**

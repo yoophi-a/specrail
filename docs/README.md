@@ -32,6 +32,7 @@ Use this index to find the right reference before changing SpecRail's core servi
 
 - [Terminal client](./terminal-client.md) — terminal UI behavior, run following, planning workspace, and controls.
 - [Production deployment topology](./production-deployment-topology.md) — service boundaries, network exposure, persistent storage, secret handling, and validation checks before choosing a concrete deployment target.
+- [Systemd deployment templates](./systemd-deployment.md) — single-host systemd unit templates for API, GitHub, and Telegram services.
 - [Hosted Operator UI deployment](./operator-ui-deployment.md) — authentication, reverse-proxy, and security guidance for publishing `/operator` links.
 - [GitHub App setup](./github-app-setup.md) — runnable webhook app configuration, command flow, binding semantics, and current limitations.
 - [GitHub webhook production operations](./github-production-ops.md) — process supervision, durable relay queue storage, restart checks, and safe logging.
