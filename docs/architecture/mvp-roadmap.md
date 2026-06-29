@@ -2,7 +2,7 @@
 
 This roadmap reflects the implemented MVP baseline and the next practical gaps to turn into issues.
 
-## Baseline status as of 2026-05-08
+## Baseline status as of 2026-06-29
 
 ### Done
 - workspace bootstrap
@@ -23,6 +23,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - Telegram update handling for track binding, attachments, run-event relay, and terminal-outcome report links
 - ACP edge adapter for session/run mapping and permission-resolution projection
 - completed-run Markdown report export via `GET /runs/:runId/report.md`, derived from run metadata and `state/events/<runId>.jsonl` without mutating planning artifacts
+- durable GitHub terminal relay queues for local JSON-file, POSIX directory, and PostgreSQL-backed production deployments
+- GitHub webhook production operations docs covering relay backend selection, restart behavior, safe diagnostics, and Docker Compose topology
 
 ### In progress / partial
 - event schema breadth
@@ -46,7 +48,6 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - production auth system
 - production deployment manifests
 - worktree/git branch orchestration beyond metadata
-- database-backed GitHub terminal relay queue for multi-process deployments
 - production health/metrics aggregation beyond injectable sinks
 
 ## Next milestone candidates
@@ -124,11 +125,11 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
    - audit Codex and Claude Code payload fields that still leak provider-specific structure into first-class UI decisions.
    - promote stable fields into shared event summaries/status metadata while preserving provider details in `payload` for debugging.
 
-2. **Harden GitHub terminal relay operations for production deployments**
-   - evaluate whether the JSON-file relay queue is sufficient for the intended deployment topology.
-   - add a database-backed or external-queue-backed relay option before supporting multi-process GitHub webhook workers.
-   - keep GitHub as a thin frontend and preserve `GET /runs/:runId/report.md` as the canonical completed-run report export.
-
-3. **Add production deployment manifests**
+2. **Add production deployment manifests**
    - define a deployable topology for API, GitHub webhook, Telegram, and terminal relay workers.
    - document required secret handling, persistent storage, reverse-proxy auth, and health checks.
+
+3. **Deepen runtime approval broker integration**
+   - keep the current provider-neutral approval request/resolution events as the stable API.
+   - replace resume/no-retry fallbacks with provider-native continuation when Codex or Claude Code exposes a safer continuation path.
+   - document how thin clients should display pending approvals without relying on provider-specific payload fields.
