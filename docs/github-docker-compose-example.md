@@ -19,12 +19,19 @@ services:
       - specrail-state:/var/lib/specrail
     expose:
       - "4000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   specrail-github:
     image: ghcr.io/your-org/specrail-github:latest
     restart: unless-stopped
     depends_on:
-      - specrail-api
+      specrail-api:
+        condition: service_healthy
     env_file:
       - ./specrail-github.env
     environment:
@@ -37,13 +44,21 @@ services:
       - specrail-github-relay:/var/lib/specrail-github
     expose:
       - "4200"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4200/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   reverse-proxy:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
-      - specrail-api
-      - specrail-github
+      specrail-api:
+        condition: service_healthy
+      specrail-github:
+        condition: service_healthy
     ports:
       - "443:443"
     volumes:
@@ -102,6 +117,12 @@ Route authenticated operator/API traffic to `specrail-api:4000`:
 ```
 
 Use the reverse-proxy guidance in [Hosted Operator UI deployment](./operator-ui-deployment.md) for TLS, auth, SSE buffering, and trusted identity headers. Do not put the operator auth challenge in front of GitHub webhook delivery; webhook authenticity is handled by GitHub signature verification in the GitHub app.
+
+## Healthchecks
+
+The example uses the built-in Node.js runtime to call each service's local `GET /healthz` endpoint from inside the container. A healthy response is any `2xx` status; the response body also includes the service identifier used by manual deployment checks.
+
+The `service_healthy` conditions keep the GitHub webhook app from starting before the API has passed its basic liveness check, and keep the reverse proxy from routing to either backend before both containers report healthy. Treat this as a startup guard, not a substitute for webhook test deliveries, operator authentication checks, or external monitoring.
 
 ## Durable relay queue behavior
 
