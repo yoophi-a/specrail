@@ -2,7 +2,7 @@
 
 This guide provides target-specific systemd templates for running SpecRail on a single host. It complements [Production deployment topology](./production-deployment-topology.md): read the topology guide first, then adapt these units to the host's paths, user, package manager, reverse proxy, and secret manager.
 
-The current repository does not publish production container images or package-level `start` scripts. These templates run the TypeScript entrypoints with `node --import tsx` from a checked-out release directory. If a future release adds compiled runtime entrypoints, replace the `ExecStart` lines with the packaged commands.
+The current repository does not publish production container images yet, so these templates run from a checked-out release directory. API, GitHub webhook, and Telegram packages expose source-checkout `start` scripts that wrap the TypeScript entrypoints with `node --import tsx`; if a future release adds compiled runtime entrypoints, update those package scripts while keeping the unit files pointed at the package-level commands.
 
 ## Host Layout
 
@@ -61,7 +61,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/specrail
 EnvironmentFile=/etc/specrail/specrail-api.env
-ExecStart=/usr/bin/node --import tsx apps/api/src/index.ts
+ExecStart=/usr/bin/env pnpm --filter @specrail/api start
 Restart=on-failure
 RestartSec=5s
 User=specrail
@@ -113,7 +113,7 @@ Requires=specrail-api.service
 Type=simple
 WorkingDirectory=/opt/specrail
 EnvironmentFile=/etc/specrail/specrail-github.env
-ExecStart=/usr/bin/node --import tsx apps/github/src/index.ts
+ExecStart=/usr/bin/env pnpm --filter @specrail/github start
 Restart=on-failure
 RestartSec=5s
 User=specrail
@@ -158,7 +158,7 @@ Requires=specrail-api.service
 Type=simple
 WorkingDirectory=/opt/specrail
 EnvironmentFile=/etc/specrail/specrail-telegram.env
-ExecStart=/usr/bin/node --import tsx apps/telegram/src/index.ts
+ExecStart=/usr/bin/env pnpm --filter @specrail/telegram start
 Restart=on-failure
 RestartSec=5s
 User=specrail
