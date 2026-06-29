@@ -27,6 +27,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - GitHub webhook production operations docs covering relay backend selection, restart behavior, safe diagnostics, and Docker Compose topology
 - production deployment topology docs covering service boundaries, network exposure, persistent storage, secrets, and validation checks
 - single-host systemd deployment templates for API, GitHub webhook, and Telegram adapter services
+- runtime approval workflow contract docs for provider-neutral client display and resolution behavior
 
 ### In progress / partial
 - event schema breadth
@@ -40,6 +41,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - artifact revision approval is implemented
   - runtime permission request resolution is available through core service and HTTP APIs
   - Codex and Claude Code runtime approval callbacks use provider-specific resume/no-retry fallbacks
+  - provider-neutral client contract is documented, but provider-native continuation is still future work
 - artifact contract convergence
   - generated track artifacts exist in the repo-visible layout
   - authoritative run events still live under `state/events/<runId>.jsonl`
@@ -134,6 +136,5 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
    - turn the deployment topology into concrete manifests with secret references, persistent volumes, network policy, and health checks.
 
 3. **Deepen runtime approval broker integration**
-   - keep the current provider-neutral approval request/resolution events as the stable API.
    - replace resume/no-retry fallbacks with provider-native continuation when Codex or Claude Code exposes a safer continuation path.
-   - document how thin clients should display pending approvals without relying on provider-specific payload fields.
+   - extend thin clients only through the documented provider-neutral approval event contract.
