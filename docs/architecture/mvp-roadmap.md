@@ -25,12 +25,16 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - completed-run Markdown report export via `GET /runs/:runId/report.md`, derived from run metadata and `state/events/<runId>.jsonl` without mutating planning artifacts
 - durable GitHub terminal relay queues for local JSON-file, POSIX directory, and PostgreSQL-backed production deployments
 - GitHub webhook production operations docs covering relay backend selection, restart behavior, safe diagnostics, and Docker Compose topology
+- production deployment topology docs covering service boundaries, network exposure, persistent storage, secrets, and validation checks
 
 ### In progress / partial
 - event schema breadth
   - shared event types are defined
   - adapters still emit different fidelity depending on provider capabilities
   - some provider-specific fields remain in `payload` / `_meta`
+- production deployment manifests
+  - deployment topology and Docker Compose guidance exist
+  - target-specific manifests for Kubernetes, systemd hardening, image publishing, and production health remain open
 - approval workflow depth
   - artifact revision approval is implemented
   - runtime permission request resolution is available through core service and HTTP APIs
@@ -46,7 +50,6 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 ### Not started
 - database-backed persistence
 - production auth system
-- production deployment manifests
 - worktree/git branch orchestration beyond metadata
 - production health/metrics aggregation beyond injectable sinks
 
@@ -125,9 +128,9 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
    - audit Codex and Claude Code payload fields that still leak provider-specific structure into first-class UI decisions.
    - promote stable fields into shared event summaries/status metadata while preserving provider details in `payload` for debugging.
 
-2. **Add production deployment manifests**
-   - define a deployable topology for API, GitHub webhook, Telegram, and terminal relay workers.
-   - document required secret handling, persistent storage, reverse-proxy auth, and health checks.
+2. **Add target-specific production manifests**
+   - choose the first target platform, such as Kubernetes or hardened systemd units.
+   - turn the deployment topology into concrete manifests with secret references, persistent volumes, network policy, and health checks.
 
 3. **Deepen runtime approval broker integration**
    - keep the current provider-neutral approval request/resolution events as the stable API.
