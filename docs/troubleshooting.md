@@ -22,6 +22,14 @@ Then confirm the runtime configuration you expect:
 - `SPECRAIL_EXECUTION_WORKSPACE_MODE` (`directory` or `git_worktree`)
 - `SPECRAIL_API_BASE_URL`
 
+For deployed services, start with the lightweight health endpoints:
+
+```bash
+curl -fsS http://127.0.0.1:4000/healthz
+curl -fsS http://127.0.0.1:4200/healthz
+curl -fsS http://127.0.0.1:4300/healthz
+```
+
 ## API server does not start
 
 Check:

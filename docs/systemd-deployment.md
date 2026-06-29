@@ -201,11 +201,12 @@ Basic checks:
 
 ```sh
 systemctl status specrail-api specrail-github specrail-telegram
-curl -fsS http://127.0.0.1:4000/projects >/dev/null
+curl -fsS http://127.0.0.1:4000/healthz
+curl -fsS http://127.0.0.1:4200/healthz
 curl -fsS http://127.0.0.1:4300/healthz
 ```
 
-GitHub webhook health is signature-based rather than a generic health endpoint. Use GitHub's test delivery after the reverse proxy is configured, and check:
+After the reverse proxy is configured, use GitHub's test delivery to validate webhook signature handling and check:
 
 ```sh
 journalctl -u specrail-github -n 100 --no-pager

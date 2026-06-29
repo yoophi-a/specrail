@@ -1142,6 +1142,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       const method = request.method ?? "GET";
       const segments = getPathSegments(request);
 
+      if (method === "GET" && segments.length === 1 && segments[0] === "healthz") {
+        sendJson(response, 200, { ok: true, service: "specrail-api" });
+        return;
+      }
+
       if (method === "GET" && segments.length === 1 && segments[0] === "operator") {
         sendHtml(response, 200, renderOperatorUiHtml());
         return;

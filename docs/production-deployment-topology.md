@@ -10,6 +10,7 @@ SpecRail is still an operator-facing control plane, not a public multi-tenant se
 operators / thin clients
   -> authenticated HTTPS reverse proxy
      -> specrail-api
+          - /healthz
           - /operator
           - /projects, /tracks, /runs
           - /approval-requests
@@ -18,6 +19,7 @@ operators / thin clients
 GitHub webhooks
   -> public HTTPS reverse proxy route
      -> specrail-github
+          - /healthz
           - verifies GitHub signature
           - starts runs through specrail-api
           - queues terminal outcome comments
@@ -25,6 +27,7 @@ GitHub webhooks
 Telegram webhooks
   -> public HTTPS reverse proxy route
      -> specrail-telegram
+          - /healthz
           - translates Telegram messages into track/run calls
           - relays run events back to Telegram
 
@@ -103,12 +106,13 @@ If the target platform is not chosen yet, prefer a single-host deployment with `
 Before exposing webhooks or operator links:
 
 1. Run `pnpm validate` during build or release verification.
-2. Start `specrail-api` and confirm `SPECRAIL_DATA_DIR` and `SPECRAIL_REPO_ARTIFACT_DIR` are writable.
-3. Confirm the authenticated `/operator` route loads and `GET /runs/:runId/events/stream` is not buffered by the proxy.
-4. Confirm the GitHub webhook route rejects invalid signatures and accepts a test delivery with the configured path.
-5. Confirm GitHub terminal relay queue storage is writable and survives a process restart.
-6. Confirm the Telegram webhook route is reachable from Telegram when the adapter is enabled.
-7. Confirm logs redact secrets and do not include raw webhook bodies, provider tokens, or execution transcripts.
+2. Start `specrail-api`, `specrail-github`, and `specrail-telegram`, then confirm each service returns `200` from `GET /healthz`.
+3. Confirm `SPECRAIL_DATA_DIR` and `SPECRAIL_REPO_ARTIFACT_DIR` are writable.
+4. Confirm the authenticated `/operator` route loads and `GET /runs/:runId/events/stream` is not buffered by the proxy.
+5. Confirm the GitHub webhook route rejects invalid signatures and accepts a test delivery with the configured path.
+6. Confirm GitHub terminal relay queue storage is writable and survives a process restart.
+7. Confirm the Telegram webhook route is reachable from Telegram when the adapter is enabled.
+8. Confirm logs redact secrets and do not include raw webhook bodies, provider tokens, or execution transcripts.
 
 ## Remaining Manifest Work
 
@@ -117,4 +121,4 @@ This document defines the topology and invariants. Target-specific manifests are
 - Kubernetes deployments, services, ingresses, persistent volumes, and secret references
 - hardened systemd unit files for API, GitHub, and Telegram processes
 - image build/publish workflow and runtime user permissions
-- production health and metrics endpoints beyond the current injectable sinks
+- production metrics endpoints beyond the current injectable sinks

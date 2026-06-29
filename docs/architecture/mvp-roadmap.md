@@ -36,7 +36,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - some provider-specific fields remain in `payload` / `_meta`
 - production deployment manifests
   - deployment topology, Docker Compose guidance, and systemd templates exist
-  - target-specific manifests for Kubernetes, image publishing, and production health remain open
+  - API, GitHub webhook, and Telegram services expose lightweight `/healthz` endpoints
+  - target-specific manifests for Kubernetes and image publishing remain open
 - approval workflow depth
   - artifact revision approval is implemented
   - runtime permission request resolution is available through core service and HTTP APIs
@@ -54,7 +55,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - database-backed persistence
 - production auth system
 - worktree/git branch orchestration beyond metadata
-- production health/metrics aggregation beyond injectable sinks
+- production metrics aggregation beyond injectable sinks
 
 ## Next milestone candidates
 

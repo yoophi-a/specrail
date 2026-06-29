@@ -546,6 +546,10 @@ test("startGitHubWebhookApp starts the webhook server with injected config and p
   await once(server, "listening");
   const address = server.address();
   assert.ok(address && typeof address === "object");
+  const response = await fetch(`http://127.0.0.1:${address.port}/healthz`);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, service: "specrail-github" });
   server.close();
   await once(server, "close");
 });

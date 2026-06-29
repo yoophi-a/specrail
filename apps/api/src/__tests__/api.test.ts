@@ -239,6 +239,15 @@ test("sanitizeMarkdownFilenameComponent keeps report filenames filesystem-safe",
   assert.equal(sanitizeMarkdownFilenameComponent("***"), "unknown");
 });
 
+test("API serves a health check", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/healthz`);
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, service: "specrail-api" });
+  });
+});
+
 test("API serves the hosted operator UI shell", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/operator`);

@@ -1485,6 +1485,11 @@ export async function handleGitHubWebhookHttpRequest(
   const requestUrl = new URL(request.url ?? "/", "http://localhost");
   const webhookPath = normalizeWebhookPath(deps.config.webhookPath);
 
+  if (request.method === "GET" && requestUrl.pathname === "/healthz") {
+    sendJson(response, 200, { ok: true, service: "specrail-github" });
+    return;
+  }
+
   if (request.method !== "POST" || requestUrl.pathname !== webhookPath) {
     sendJson(response, 404, { error: "not_found" });
     return;

@@ -9,6 +9,7 @@ Run the GitHub webhook app under a process supervisor such as systemd, Docker Co
 - restart the app on failure
 - preserve environment-based secrets outside the repository
 - send stdout/stderr to centralized logs
+- check `GET /healthz` on `GITHUB_APP_PORT` for process liveness
 - expose the webhook port only through the intended reverse proxy or private network boundary
 - keep `SPECRAIL_API_BASE_URL` reachable from the GitHub app process
 
