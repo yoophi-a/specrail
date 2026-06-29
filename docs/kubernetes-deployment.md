@@ -92,12 +92,28 @@ spec:
       labels:
         app: specrail-api
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
       containers:
         - name: specrail-api
           image: ghcr.io/your-org/specrail-api:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: 4000
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
           env:
             - name: SPECRAIL_PORT
               value: "4000"
@@ -157,12 +173,28 @@ spec:
       labels:
         app: specrail-github
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
       containers:
         - name: specrail-github
           image: ghcr.io/your-org/specrail-github:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: 4200
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
             - name: GITHUB_APP_PORT
               value: "4200"
@@ -235,12 +267,28 @@ spec:
       labels:
         app: specrail-telegram
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
       containers:
         - name: specrail-telegram
           image: ghcr.io/your-org/specrail-telegram:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: 4300
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
             - name: TELEGRAM_APP_PORT
               value: "4300"
@@ -283,6 +331,19 @@ spec:
       port: 4300
       targetPort: http
 ```
+
+## Resource And Security Tuning
+
+The resource requests and limits above are starter values. Tune them against real run volume, adapter concurrency, executor placement, and any sidecars added by your platform. The API can need more memory and CPU than the webhook adapters because it owns operator API traffic, SSE streams, state repositories, and executor coordination.
+
+The pod and container security contexts are intentionally conservative:
+
+- run as a non-root UID/GID
+- assign `fsGroup` so mounted PVCs are writable by the service user
+- block privilege escalation
+- drop Linux capabilities
+
+If your base images require a different UID, update `runAsUser`, `runAsGroup`, and volume permissions together. Add a writable `emptyDir` for `/tmp` before enabling `readOnlyRootFilesystem`.
 
 ## Ingress Shape
 
