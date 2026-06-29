@@ -434,7 +434,7 @@ export function createTelegramWebhookServer(config: TelegramAppConfig, deps: Tel
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
 
     if (method === "GET" && url.pathname === "/healthz") {
-      sendJson(response, 200, { ok: true });
+      sendJson(response, 200, { ok: true, service: "specrail-telegram" });
       return;
     }
 

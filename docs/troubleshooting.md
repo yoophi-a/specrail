@@ -30,6 +30,8 @@ curl -fsS http://127.0.0.1:4200/healthz
 curl -fsS http://127.0.0.1:4300/healthz
 ```
 
+Each endpoint should return JSON with `ok: true` and a stable `service` identifier.
+
 ## API server does not start
 
 Check:

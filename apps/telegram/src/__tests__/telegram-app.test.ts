@@ -1,7 +1,74 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import test from "node:test";
 
-import { buildRunReportUrl, handleTelegramUpdate, parseAttachmentReferences, SpecRailApiClient } from "../index.js";
+import {
+  buildRunReportUrl,
+  createTelegramWebhookServer,
+  handleTelegramUpdate,
+  parseAttachmentReferences,
+  SpecRailApiClient,
+  type TelegramFrontendDeps,
+} from "../index.js";
+
+function createUnusedTelegramDeps(): TelegramFrontendDeps {
+  return {
+    specRail: {
+      async findChannelBinding() {
+        throw new Error("health check should not query SpecRail");
+      },
+      async createTrack() {
+        throw new Error("health check should not create tracks");
+      },
+      async bindChannel() {
+        throw new Error("health check should not bind channels");
+      },
+      async registerAttachment() {
+        throw new Error("health check should not register attachments");
+      },
+      async startRun() {
+        throw new Error("health check should not start runs");
+      },
+      async *streamRunEvents() {
+        throw new Error("health check should not stream run events");
+      },
+    },
+    telegram: {
+      async sendMessage() {
+        throw new Error("health check should not send Telegram messages");
+      },
+    },
+  };
+}
+
+test("Telegram webhook server serves a health check", async () => {
+  const server = createTelegramWebhookServer(
+    {
+      apiBaseUrl: "http://127.0.0.1:4000",
+      telegramBotToken: "test-token",
+      port: 0,
+      webhookPath: "/telegram/webhook",
+    },
+    createUnusedTelegramDeps(),
+  );
+
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/healthz`);
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, service: "specrail-telegram" });
+  } finally {
+    const closePromise = once(server, "close");
+    server.close();
+    server.closeAllConnections();
+    await closePromise;
+  }
+});
 
 test("parseAttachmentReferences extracts document and photo references", () => {
   assert.deepEqual(
