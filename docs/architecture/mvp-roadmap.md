@@ -35,10 +35,10 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - adapters still emit different fidelity depending on provider capabilities
   - some provider-specific fields remain in `payload` / `_meta`
 - production deployment manifests
-  - deployment topology, Docker Compose guidance, and systemd templates exist
+  - deployment topology, Docker Compose guidance, Kubernetes skeleton, and systemd templates exist
   - Docker Compose and systemd examples include `/healthz`-based service checks
   - API, GitHub webhook, and Telegram services expose lightweight `/healthz` endpoints
-  - target-specific manifests for Kubernetes and image publishing remain open
+  - image publishing and hardened target-specific runtime settings remain open
 - approval workflow depth
   - artifact revision approval is implemented
   - runtime permission request resolution is available through core service and HTTP APIs
@@ -134,8 +134,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
    - promote stable fields into shared event summaries/status metadata while preserving provider details in `payload` for debugging.
 
 2. **Add target-specific production manifests**
-   - choose the next target platform, such as Kubernetes.
-   - turn the deployment topology into concrete manifests with secret references, persistent volumes, network policy, and health checks.
+   - harden the Kubernetes skeleton with cluster-specific network policy, resource requests, and ingress/auth annotations.
+   - add image build/publish workflow references for the deployment templates.
 
 3. **Deepen runtime approval broker integration**
    - replace resume/no-retry fallbacks with provider-native continuation when Codex or Claude Code exposes a safer continuation path.

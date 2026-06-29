@@ -97,6 +97,7 @@ Use the existing deployment docs based on the target surface:
 - Use [GitHub App setup](./github-app-setup.md) for webhook command configuration and repository/project mapping.
 - Use [GitHub webhook production operations](./github-production-ops.md) for durable relay queues, restart behavior, and safe diagnostics.
 - Use [GitHub webhook Docker Compose example](./github-docker-compose-example.md) as a container-oriented template for API and GitHub services.
+- Use [Kubernetes deployment skeleton](./kubernetes-deployment.md) as a cluster-oriented template for API, GitHub, and Telegram services.
 - Use [Troubleshooting](./troubleshooting.md) for startup, connection, and adapter checks.
 
 If the target platform is not chosen yet, prefer a single-host deployment with `specrail-api`, `specrail-github`, and `specrail-telegram` behind one reverse proxy. Move to PostgreSQL relay storage before scaling GitHub webhook workers across independent hosts.
@@ -118,7 +119,6 @@ Before exposing webhooks or operator links:
 
 This document defines the topology and invariants. Target-specific manifests are still separate work:
 
-- Kubernetes deployments, services, ingresses, persistent volumes, and secret references
 - hardened systemd unit files for API, GitHub, and Telegram processes
 - image build/publish workflow and runtime user permissions
 - production metrics endpoints beyond the current injectable sinks
