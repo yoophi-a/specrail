@@ -163,6 +163,65 @@ test("CodexAdapter persists process metadata, parses session id, records runtime
   assert.deepEqual(forwardedEvents, runtimeEvents.map((event) => ({ id: event.id, summary: event.summary })));
 });
 
+test("CodexAdapter promotes structured JSON stdout into shared runtime events", async () => {
+  const sessionsDir = await mkdtemp(path.join(os.tmpdir(), "specrail-codex-sessions-"));
+  const child = new FakeChildProcess(4343);
+  const forwardedEvents: Array<{ type: string; subtype?: string; summary: string }> = [];
+  const adapter = new CodexAdapter({
+    sessionsDir,
+    now: (() => {
+      const timestamps = [
+        "2026-04-09T00:10:00.000Z",
+        "2026-04-09T00:10:01.000Z",
+        "2026-04-09T00:10:02.000Z",
+        "2026-04-09T00:10:03.000Z",
+        "2026-04-09T00:10:04.000Z",
+        "2026-04-09T00:10:05.000Z",
+        "2026-04-09T00:10:06.000Z",
+        "2026-04-09T00:10:07.000Z",
+        "2026-04-09T00:10:08.000Z",
+      ];
+      return () => timestamps.shift() ?? "2026-04-09T00:10:09.000Z";
+    })(),
+    spawnProcess: () => child,
+    onEvent: (event) => {
+      forwardedEvents.push({ type: event.type, subtype: event.subtype, summary: event.summary });
+    },
+  });
+
+  const spawnResult = await adapter.spawn({
+    executionId: "run-structured",
+    prompt: "Inspect structured events",
+    workspacePath: "/tmp/specrail/run-structured",
+    profile: "default",
+  });
+
+  child.stdout.emitData('{"id":"msg-1","session_id":"codex-session-structured","type":"agent_message","msg":{"role":"assistant","content":[{"type":"output_text","text":"I will inspect the files."}]}}\n');
+  child.stdout.emitData('{"id":"msg-2","session_id":"codex-session-structured","type":"function_call","name":"shell","call_id":"call-1","arguments":{"cmd":"pnpm test"}}\n');
+  child.stdout.emitData('{"id":"msg-3","session_id":"codex-session-structured","type":"function_call_output","call_id":"call-1","output":"ok"}\n');
+  child.stdout.emitData('{"id":"msg-4","session_id":"codex-session-structured","type":"result","output":{"status":"done"}}\n');
+  child.emit("exit", 0, null);
+  await flush();
+
+  const runtimeEvents = await readCodexSessionEvents(sessionsDir, spawnResult.sessionRef);
+  assert.deepEqual(runtimeEvents.map((event) => ({ type: event.type, subtype: event.subtype, summary: event.summary })), [
+    { type: "message", subtype: "codex_assistant_text", summary: "Codex message run-structured-codex" },
+    { type: "message", subtype: undefined, summary: "STDOUT run-structured-codex" },
+    { type: "tool_call", subtype: "codex_tool_call", summary: "Codex requested tool shell" },
+    { type: "message", subtype: undefined, summary: "STDOUT run-structured-codex" },
+    { type: "tool_result", subtype: "codex_tool_result", summary: "Codex received tool result call-1" },
+    { type: "message", subtype: undefined, summary: "STDOUT run-structured-codex" },
+    { type: "summary", subtype: "codex_result_success", summary: "Codex result run-structured-codex" },
+    { type: "message", subtype: undefined, summary: "STDOUT run-structured-codex" },
+    { type: "task_status_changed", subtype: undefined, summary: "Completed Codex session run-structured-codex" },
+  ]);
+  assert.equal(runtimeEvents[0]?.payload?.text, "I will inspect the files.");
+  assert.deepEqual(runtimeEvents[2]?.payload?.toolInput, { cmd: "pnpm test" });
+  assert.equal(runtimeEvents[4]?.payload?.content, "ok");
+  assert.deepEqual(runtimeEvents[6]?.payload?.result, { status: "done" });
+  assert.deepEqual(forwardedEvents, runtimeEvents.map((event) => ({ type: event.type, subtype: event.subtype, summary: event.summary })));
+});
+
 test("CodexAdapter resume prefers discovered Codex session id and cancel marks the session cancelled", async () => {
   const sessionsDir = await mkdtemp(path.join(os.tmpdir(), "specrail-codex-sessions-"));
   const spawnChild = new FakeChildProcess(1111);

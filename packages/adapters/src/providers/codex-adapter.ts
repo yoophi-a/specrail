@@ -70,11 +70,44 @@ interface CodexJsonEvent {
   conversation_id?: string;
   conversationId?: string;
   type?: string;
+  role?: string;
+  content?: CodexContentBlock[];
+  output?: unknown;
+  error?: unknown;
+  name?: string;
+  call_id?: string;
+  tool_call_id?: string;
+  tool_name?: string;
+  arguments?: unknown;
+  input?: unknown;
   msg?: {
     id?: string;
     type?: string;
-    content?: Array<{ type?: string; text?: string }>;
+    role?: string;
+    name?: string;
+    call_id?: string;
+    tool_call_id?: string;
+    tool_name?: string;
+    arguments?: unknown;
+    input?: unknown;
+    output?: unknown;
+    error?: unknown;
+    content?: CodexContentBlock[];
   };
+}
+
+interface CodexContentBlock {
+  type?: string;
+  text?: string;
+  id?: string;
+  call_id?: string;
+  tool_call_id?: string;
+  name?: string;
+  tool_name?: string;
+  arguments?: unknown;
+  input?: unknown;
+  output?: unknown;
+  content?: unknown;
 }
 
 function buildSessionMetadataPath(sessionsDir: string, sessionRef: string): string {
@@ -121,6 +154,207 @@ function appendSessionEventSync(sessionsDir: string, sessionRef: string, event: 
 function readCodexSessionId(event: CodexJsonEvent): string | undefined {
   const candidate = event.session_id ?? event.sessionId ?? event.thread_id ?? event.threadId ?? event.conversation_id ?? event.conversationId ?? event.id;
   return typeof candidate === "string" && candidate.trim() ? candidate : undefined;
+}
+
+function readCodexMessageId(event: CodexJsonEvent): string | undefined {
+  const candidate = event.msg?.id ?? event.id;
+  return typeof candidate === "string" && candidate.trim() ? candidate : undefined;
+}
+
+function readCodexRole(event: CodexJsonEvent): string | undefined {
+  const candidate = event.msg?.role ?? event.role;
+  return typeof candidate === "string" && candidate.trim() ? candidate : undefined;
+}
+
+function readCodexProviderEventType(event: CodexJsonEvent): string {
+  return event.msg?.type ?? event.type ?? "unknown";
+}
+
+function readCodexContentBlocks(event: CodexJsonEvent): CodexContentBlock[] {
+  const candidate = event.msg?.content ?? event.content;
+  return Array.isArray(candidate) ? candidate : [];
+}
+
+function stringifyCodexValue(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  return JSON.stringify(value);
+}
+
+function buildCodexStructuredEvents(input: {
+  executionId: string;
+  sessionRef: string;
+  timestamp: string;
+  event: CodexJsonEvent;
+  eventIndex: number;
+}): ExecutionEvent[] {
+  const providerEventType = readCodexProviderEventType(input.event);
+  const idPrefix = `${input.executionId}:codex:${input.timestamp}:${input.eventIndex}`;
+  const basePayload = {
+    sessionRef: input.sessionRef,
+    providerSessionId: readCodexSessionId(input.event),
+    providerInvocationId: input.event.id,
+    providerEventType,
+    messageId: readCodexMessageId(input.event),
+    role: readCodexRole(input.event),
+  };
+  const events: ExecutionEvent[] = [];
+
+  readCodexContentBlocks(input.event).forEach((block, blockIndex) => {
+    const blockType = block?.type;
+    const blockId = `${idPrefix}:${blockIndex}`;
+
+    if ((blockType === "text" || blockType === "output_text" || blockType === "input_text") && typeof block.text === "string" && block.text.trim()) {
+      const role = readCodexRole(input.event) ?? (providerEventType.includes("user") ? "user" : "assistant");
+      events.push({
+        id: `${blockId}:text`,
+        executionId: input.executionId,
+        type: "message",
+        subtype: role === "user" ? "codex_user_text" : "codex_assistant_text",
+        timestamp: input.timestamp,
+        source: "codex",
+        summary: `${role === "user" ? "User" : "Codex"} message ${input.sessionRef}`,
+        payload: {
+          ...basePayload,
+          role,
+          text: block.text,
+          contentType: blockType,
+        },
+      });
+      return;
+    }
+
+    if (blockType === "tool_call" || blockType === "function_call" || blockType === "tool_use") {
+      const toolName = block.name ?? block.tool_name ?? "unknown";
+      events.push({
+        id: `${blockId}:tool-call`,
+        executionId: input.executionId,
+        type: "tool_call",
+        subtype: "codex_tool_call",
+        timestamp: input.timestamp,
+        source: "codex",
+        summary: `Codex requested tool ${toolName}`,
+        payload: {
+          ...basePayload,
+          toolUseId: block.id ?? block.call_id ?? block.tool_call_id,
+          toolName,
+          toolInput: block.input ?? block.arguments,
+          contentType: blockType,
+        },
+      });
+      return;
+    }
+
+    if (blockType === "tool_result" || blockType === "function_call_output" || blockType === "tool_output") {
+      events.push({
+        id: `${blockId}:tool-result`,
+        executionId: input.executionId,
+        type: "tool_result",
+        subtype: "codex_tool_result",
+        timestamp: input.timestamp,
+        source: "codex",
+        summary: `Codex received tool result ${block.call_id ?? block.tool_call_id ?? block.id ?? "unknown"}`,
+        payload: {
+          ...basePayload,
+          toolUseId: block.call_id ?? block.tool_call_id ?? block.id,
+          content: block.output ?? block.content ?? block.text,
+          contentType: blockType,
+        },
+      });
+    }
+  });
+
+  if (events.length > 0) {
+    return events;
+  }
+
+  const topLevelText = stringifyCodexValue(input.event.output ?? input.event.msg?.output);
+  if ((providerEventType === "agent_message" || providerEventType === "assistant_message" || providerEventType === "message") && topLevelText?.trim()) {
+    return [
+      {
+        id: `${idPrefix}:message`,
+        executionId: input.executionId,
+        type: "message",
+        subtype: "codex_assistant_text",
+        timestamp: input.timestamp,
+        source: "codex",
+        summary: `Codex message ${input.sessionRef}`,
+        payload: {
+          ...basePayload,
+          role: readCodexRole(input.event) ?? "assistant",
+          text: topLevelText,
+        },
+      },
+    ];
+  }
+
+  const topLevelToolName = input.event.name ?? input.event.tool_name ?? input.event.msg?.name ?? input.event.msg?.tool_name;
+  const topLevelToolUseId = input.event.call_id ?? input.event.tool_call_id ?? input.event.msg?.call_id ?? input.event.msg?.tool_call_id;
+  if (providerEventType === "tool_call" || providerEventType === "function_call") {
+    return [
+      {
+        id: `${idPrefix}:tool-call`,
+        executionId: input.executionId,
+        type: "tool_call",
+        subtype: "codex_tool_call",
+        timestamp: input.timestamp,
+        source: "codex",
+        summary: `Codex requested tool ${topLevelToolName ?? "unknown"}`,
+        payload: {
+          ...basePayload,
+          toolUseId: topLevelToolUseId,
+          toolName: topLevelToolName,
+          toolInput: input.event.input ?? input.event.arguments ?? input.event.msg?.input ?? input.event.msg?.arguments,
+        },
+      },
+    ];
+  }
+
+  if (providerEventType === "tool_result" || providerEventType === "function_call_output") {
+    return [
+      {
+        id: `${idPrefix}:tool-result`,
+        executionId: input.executionId,
+        type: "tool_result",
+        subtype: "codex_tool_result",
+        timestamp: input.timestamp,
+        source: "codex",
+        summary: `Codex received tool result ${topLevelToolUseId ?? "unknown"}`,
+        payload: {
+          ...basePayload,
+          toolUseId: topLevelToolUseId,
+          content: input.event.output ?? input.event.msg?.output,
+        },
+      },
+    ];
+  }
+
+  if (providerEventType === "result" || providerEventType === "turn.completed" || providerEventType === "turn.failed" || providerEventType === "error") {
+    const error = input.event.error ?? input.event.msg?.error;
+    return [
+      {
+        id: `${idPrefix}:result`,
+        executionId: input.executionId,
+        type: "summary",
+        subtype: error || providerEventType === "turn.failed" || providerEventType === "error" ? "codex_result_error" : "codex_result_success",
+        timestamp: input.timestamp,
+        source: "codex",
+        summary: error ? `Codex result error ${input.sessionRef}` : `Codex result ${input.sessionRef}`,
+        status: error || providerEventType === "turn.failed" || providerEventType === "error" ? "failed" : "completed",
+        payload: {
+          ...basePayload,
+          result: input.event.output ?? input.event.msg?.output,
+          error,
+        },
+      },
+    ];
+  }
+
+  return [];
 }
 
 function toCommandMetadata(command: ExecutorCommandSpec, prompt: string, sessionRef?: string): CommandExecutionMetadata {
@@ -539,7 +773,7 @@ export class CodexAdapter implements ExecutorAdapter {
     sessionRef: string;
     process: SpawnedProcessLike;
   }): void {
-    const stdoutBuffer = { value: "" };
+    const stdoutBuffer = { value: "", eventIndex: 0 };
 
     input.process.stdout?.on("data", (chunk) => {
       const text = chunk.toString();
@@ -624,7 +858,7 @@ export class CodexAdapter implements ExecutorAdapter {
     });
   }
 
-  private captureStructuredStdout(executionId: string, sessionRef: string, buffer: { value: string }, chunk: string): void {
+  private captureStructuredStdout(executionId: string, sessionRef: string, buffer: { value: string; eventIndex: number }, chunk: string): void {
     buffer.value += chunk;
 
     while (true) {
@@ -642,6 +876,7 @@ export class CodexAdapter implements ExecutorAdapter {
 
       try {
         const parsed = JSON.parse(line) as CodexJsonEvent;
+        const timestamp = this.now();
         const codexSessionId = readCodexSessionId(parsed);
         if (codexSessionId) {
           const metadata = readSessionMetadataSync(this.sessionsDir, sessionRef);
@@ -651,9 +886,20 @@ export class CodexAdapter implements ExecutorAdapter {
               codexSessionId,
               providerSessionId: codexSessionId,
               resumeSessionRef: codexSessionId,
-              updatedAt: this.now(),
+              updatedAt: timestamp,
             });
           }
+        }
+        const events = buildCodexStructuredEvents({
+          executionId,
+          sessionRef,
+          timestamp,
+          event: parsed,
+          eventIndex: buffer.eventIndex,
+        });
+        buffer.eventIndex += 1;
+        for (const event of events) {
+          this.persistRuntimeEvent(executionId, sessionRef, event);
         }
       } catch {
         // Best-effort only. Raw stdout is still persisted as an event.
