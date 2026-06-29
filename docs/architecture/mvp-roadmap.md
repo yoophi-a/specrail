@@ -40,6 +40,9 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - API, GitHub webhook, and Telegram services expose lightweight `/healthz` endpoints
   - Kubernetes skeleton includes baseline probes, security contexts, resource requests/limits, ingress boundaries, and network policy starting points
   - image publishing contract is documented; Dockerfiles/publish workflow and cluster-specific runtime tuning remain open
+- production observability
+  - safe metrics contract is documented for API, GitHub, Telegram, relay queues, and exporter boundaries
+  - concrete metrics exporter or `/metrics` endpoint remains open
 - approval workflow depth
   - artifact revision approval is implemented
   - runtime permission request resolution is available through core service and HTTP APIs
@@ -57,7 +60,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - database-backed persistence
 - production auth system
 - worktree/git branch orchestration beyond metadata
-- production metrics aggregation beyond injectable sinks
+- production metrics exporter implementation beyond injectable sinks
 
 ## Next milestone candidates
 

@@ -87,3 +87,4 @@ Do not log or post:
 - [GitHub App setup](./github-app-setup.md)
 - [Hosted Operator UI deployment](./operator-ui-deployment.md)
 - [GitHub entrypoint architecture slice](./architecture/github-entrypoint-slice.md)
+- [Production metrics contract](./production-metrics-contract.md)
