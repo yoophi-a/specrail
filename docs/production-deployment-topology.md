@@ -94,6 +94,7 @@ Do not place secrets in compose labels, public logs, GitHub issues, or generated
 Use the existing deployment docs based on the target surface:
 
 - Start with [Hosted Operator UI deployment](./operator-ui-deployment.md) for TLS, auth, route protection, and SSE proxying.
+- Use [Container image publishing contract](./container-image-publishing.md) for service image names, tag policy, runtime expectations, and future publish workflow requirements.
 - Use [GitHub App setup](./github-app-setup.md) for webhook command configuration and repository/project mapping.
 - Use [GitHub webhook production operations](./github-production-ops.md) for durable relay queues, restart behavior, and safe diagnostics.
 - Use [GitHub webhook Docker Compose example](./github-docker-compose-example.md) as a container-oriented template for API and GitHub services.
@@ -120,5 +121,5 @@ Before exposing webhooks or operator links:
 This document defines the topology and invariants. Target-specific manifests are still separate work:
 
 - hardened systemd unit files for API, GitHub, and Telegram processes
-- image build/publish workflow and runtime user permissions
+- image build/publish workflow implementation and runtime user permissions
 - production metrics endpoints beyond the current injectable sinks

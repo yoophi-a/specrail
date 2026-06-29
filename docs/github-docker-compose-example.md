@@ -2,6 +2,8 @@
 
 This is a deployment template for running the SpecRail API and GitHub webhook app with Docker Compose. It is not a complete secure deployment by itself: add TLS, authentication, network policy, image publishing, and secret management appropriate for your environment.
 
+The `ghcr.io/your-org/specrail-*` image names are placeholders. Replace them with images and immutable tags that follow the [container image publishing contract](./container-image-publishing.md).
+
 ## Compose template
 
 ```yaml

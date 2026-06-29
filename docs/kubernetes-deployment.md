@@ -2,6 +2,8 @@
 
 This reference turns the production topology into a Kubernetes starting point for the SpecRail API, GitHub webhook, and Telegram adapter services. Treat it as a deployment skeleton: wire it into your image publishing, secret manager, TLS, identity-aware ingress, and cluster network policy before production use.
 
+The `ghcr.io/your-org/specrail-*` image names are placeholders. Replace them with images and immutable tags that follow the [container image publishing contract](./container-image-publishing.md).
+
 ## Boundaries
 
 - Keep `specrail-api` behind authenticated operator routes. It owns the data directory, repo-visible artifacts, execution workspaces, and hosted `/operator` UI.

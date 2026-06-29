@@ -33,6 +33,7 @@ Use this index to find the right reference before changing SpecRail's core servi
 
 - [Terminal client](./terminal-client.md) — terminal UI behavior, run following, planning workspace, and controls.
 - [Production deployment topology](./production-deployment-topology.md) — service boundaries, network exposure, persistent storage, secret handling, and validation checks before choosing a concrete deployment target.
+- [Container image publishing contract](./container-image-publishing.md) — expected service image names, tags, runtime contract, and future publish workflow requirements.
 - [Systemd deployment templates](./systemd-deployment.md) — single-host systemd unit templates for API, GitHub, and Telegram services.
 - [Kubernetes deployment skeleton](./kubernetes-deployment.md) — starter manifests for API, GitHub, and Telegram services with secrets, PVCs, probes, services, and ingress boundaries.
 - [Hosted Operator UI deployment](./operator-ui-deployment.md) — authentication, reverse-proxy, and security guidance for publishing `/operator` links.
