@@ -15,7 +15,7 @@ Full validation steps are:
 2. Setup pnpm and Node.js 22.
 3. Run `pnpm check:links`.
 4. Install dependencies with `pnpm install --frozen-lockfile`.
-5. Run `pnpm check`.
+5. Run `pnpm check`, including service start-script contract checks and package typechecks.
 6. Run `pnpm test`.
 7. Run `pnpm build`.
 

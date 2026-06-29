@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.18.0",
   "scripts": {
     "build": "pnpm -r build",
-    "check": "pnpm -r check",
+    "check": "node scripts/check-service-start-scripts.mjs && pnpm -r check",
     "validate": "pnpm check && pnpm test && pnpm build",
     "dev:api": "pnpm --filter @specrail/api dev",
     "dev:acp": "pnpm --filter @specrail/acp-server dev",

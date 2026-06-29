@@ -14,6 +14,8 @@ Publish one image per network service:
 
 Keep CLI-only clients such as the terminal app out of always-on service images unless a deployment target explicitly needs them.
 
+The package `start` scripts are source-checkout commands used by systemd-style deployments. Dockerfiles should convert the same service entrypoints to built JavaScript commands once the image build layout exists.
+
 ## Tagging
 
 Every published image should have immutable tags:
@@ -77,7 +79,7 @@ When Dockerfiles are added, prefer a shared multi-stage pattern:
 2. Build the workspace once.
 3. Prune or copy only production runtime dependencies for the target service.
 4. Copy the built `apps/<service>/dist` and required `packages/*/dist` outputs.
-5. Set a service-specific default command.
+5. Set a service-specific default command that runs built JavaScript, for example `node apps/api/dist/index.js` after copying the required package outputs.
 
 Avoid embedding repository-local state, provider credentials, execution transcripts, test artifacts, or `.env` files in images.
 
