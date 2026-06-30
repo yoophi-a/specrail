@@ -25,7 +25,7 @@ pnpm validate
 
 `pnpm validate` runs `pnpm check`, `pnpm test`, and `pnpm build` in order. Use the individual commands for narrower iteration.
 
-For docs-only or repository metadata-only changes, `pnpm check` is usually enough unless the change affects generated artifacts, workflows, or scripts.
+For docs-only or repository metadata-only changes, run `pnpm check:links` plus `pnpm check` unless the change affects generated artifacts, workflows, scripts, or runtime behavior. In those broader cases, run `pnpm validate`.
 
 ## Provider-dependent smoke tests
 
