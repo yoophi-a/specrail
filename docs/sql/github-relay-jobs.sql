@@ -1,4 +1,4 @@
-CREATE TABLE github_relay_jobs (
+CREATE TABLE IF NOT EXISTS github_relay_jobs (
   id text PRIMARY KEY,
   repository_full_name text NOT NULL,
   issue_number integer NOT NULL,
@@ -13,6 +13,6 @@ CREATE TABLE github_relay_jobs (
   last_error text
 );
 
-CREATE INDEX github_relay_jobs_claim_idx
+CREATE INDEX IF NOT EXISTS github_relay_jobs_claim_idx
   ON github_relay_jobs (status, next_attempt_at, created_at)
   WHERE status = 'pending';

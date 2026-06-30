@@ -98,6 +98,7 @@ The webhook endpoint returns JSON responses:
 
 - REST issue-comment posting supports static tokens and GitHub App installation-token refresh. Private keys must be supplied securely by deployment secret management.
 - Durable terminal relay uses the directory queue when `GITHUB_RELAY_QUEUE_DIR` is set, the PostgreSQL queue when `GITHUB_RELAY_QUEUE_POSTGRES_URL` or `DATABASE_URL` is set, or the legacy JSON-file queue when `GITHUB_RELAY_QUEUE_PATH` is set. Failed relay attempts are retained with `lastError`, attempt count, and retry timing; deployments should place this storage on persistent media. See [GitHub webhook production operations](./github-production-ops.md) for supervision, backend selection, PostgreSQL schema, and queue processing guidance.
+- PostgreSQL relay deployments can run `pnpm bootstrap:github-relay-postgres --dry-run` to review the schema and `pnpm bootstrap:github-relay-postgres --apply` to provision the configured table before starting webhook workers.
 - Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling/enqueue, not for the run to reach a terminal state.
 - Hosted operator run links are included in terminal comments only when `SPECRAIL_OPERATOR_BASE_URL` is configured; GitHub remains a thin frontend over SpecRail state. Do not expose unauthenticated operator URLs in GitHub comments. See [Hosted Operator UI deployment](./operator-ui-deployment.md) for auth and reverse-proxy guidance.
 - GitHub command outcome metrics are exposed through an injectable metrics sink with coarse reason labels only: accepted, unsupported repository, unauthorized actor, GitHub authorization failure, SpecRail request failure, and relay enqueue failure. See [GitHub command troubleshooting](./github-command-troubleshooting.md) for safe diagnostics and metric interpretation.
@@ -108,4 +109,3 @@ The webhook endpoint returns JSON responses:
 ## Recommended follow-ups
 
 1. Add deployment-specific manifests for Kubernetes or other production orchestration targets.
-2. Add operational migrations or bootstrap helpers for provisioning the PostgreSQL relay table when deployments select that backend.

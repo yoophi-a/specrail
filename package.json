@@ -8,6 +8,7 @@
     "build": "pnpm -r build",
     "check": "node scripts/check-service-start-scripts.mjs && pnpm -r check",
     "validate": "pnpm check:links && pnpm check && pnpm test && pnpm build",
+    "bootstrap:github-relay-postgres": "node scripts/bootstrap-github-relay-postgres.mjs",
     "dev:api": "pnpm --filter @specrail/api dev",
     "dev:acp": "pnpm --filter @specrail/acp-server dev",
     "dev:github": "pnpm --filter @specrail/github dev",
