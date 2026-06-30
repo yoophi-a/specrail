@@ -321,7 +321,7 @@ pnpm dev:api
 pnpm dev:acp
 pnpm dev:terminal
 pnpm dev:telegram
-# then open http://127.0.0.1:3000/operator for the hosted operator UI
+# then open http://127.0.0.1:4000/operator for the hosted operator UI
 ```
 
 ## Terminal client skeleton
@@ -387,7 +387,7 @@ Set `SPECRAIL_EXECUTION_WORKSPACE_MODE=directory` for the default plain workspac
 Then call the API locally, for example:
 
 ```bash
-curl -X POST http://127.0.0.1:3000/tracks \
+curl -X POST http://127.0.0.1:4000/tracks \
   -H 'content-type: application/json' \
   -d '{"title":"Executor MVP","description":"Persist command metadata and launch runs.","priority":"high"}'
 ```
