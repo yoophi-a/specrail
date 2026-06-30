@@ -326,6 +326,7 @@ Start long-running local entrypoints only as needed, usually in separate termina
 ```bash
 pnpm dev:api
 pnpm dev:acp
+pnpm dev:github
 pnpm dev:terminal
 pnpm dev:telegram
 # then open http://127.0.0.1:4000/operator for the hosted operator UI

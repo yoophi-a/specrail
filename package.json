@@ -10,6 +10,7 @@
     "validate": "pnpm check && pnpm test && pnpm build",
     "dev:api": "pnpm --filter @specrail/api dev",
     "dev:acp": "pnpm --filter @specrail/acp-server dev",
+    "dev:github": "pnpm --filter @specrail/github dev",
     "dev:terminal": "pnpm --filter @specrail/terminal dev",
     "dev:telegram": "pnpm --filter @specrail/telegram dev",
     "lint": "pnpm -r lint",

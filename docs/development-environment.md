@@ -44,8 +44,11 @@ Useful development entry points:
 ```bash
 pnpm dev:api
 pnpm dev:acp
+pnpm dev:github
 pnpm dev:terminal
 pnpm dev:telegram
 ```
+
+The GitHub webhook app requires `GITHUB_WEBHOOK_SECRET` for real webhook signature validation and optionally `SPECRAIL_API_BASE_URL`, `SPECRAIL_GITHUB_PROJECT_ID`, and GitHub token/app credentials when posting terminal outcome comments.
 
 The Telegram adapter requires `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH`.
