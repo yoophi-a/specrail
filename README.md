@@ -313,10 +313,17 @@ For vulnerability reporting and sensitive integration issues, see [SECURITY.md](
 
 ## Getting started
 
+Install dependencies and run the baseline validation plus Markdown link check:
+
 ```bash
 pnpm install
 pnpm validate
 pnpm check:links
+```
+
+Start long-running local entrypoints only as needed, usually in separate terminals:
+
+```bash
 pnpm dev:api
 pnpm dev:acp
 pnpm dev:terminal
