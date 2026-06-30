@@ -23,7 +23,7 @@ Run the baseline checks before opening code changes:
 pnpm validate
 ```
 
-`pnpm validate` runs `pnpm check`, `pnpm test`, and `pnpm build` in order. Use the individual commands for narrower iteration.
+`pnpm validate` runs `pnpm check:links`, `pnpm check`, `pnpm test`, and `pnpm build` in order. Use the individual commands for narrower iteration.
 
 For docs-only or repository metadata-only changes, run `pnpm check:links` plus `pnpm check` unless the change affects generated artifacts, workflows, scripts, or runtime behavior. In those broader cases, run `pnpm validate`.
 
