@@ -19,7 +19,7 @@ Run the deterministic local checks:
 pnpm validate
 ```
 
-`pnpm validate` runs `pnpm check`, `pnpm test`, and `pnpm build` in order. If the change is documentation-only, `pnpm check` may be enough for that PR, but release candidates should use the full baseline above.
+`pnpm validate` runs `pnpm check`, `pnpm test`, and `pnpm build` in order. Release candidates should use the full baseline above. For documentation-only PR handoffs that are not release candidates, run the Markdown link gate with `pnpm check:links`; add `pnpm check` when the handoff also touches repository metadata or needs service start-script/typecheck confidence.
 
 ## 3. Validate provider-dependent paths when relevant
 
