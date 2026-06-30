@@ -82,27 +82,10 @@ Choose the terminal relay queue backend based on how webhook workers share state
 
 PostgreSQL is the first external backend target. SpecRail already treats file-backed state as durable operational history, and a database queue gives the closest migration path: jobs remain inspectable, completion/failure records can be retained without a second audit store, and atomic claim semantics are expressed with row locks. Redis and provider queues may still be useful later for high-throughput deployments, but they introduce retention and visibility differences that are unnecessary for the first horizontally scaled GitHub relay implementation.
 
-Create the PostgreSQL table before starting the app; SpecRail does not run this migration automatically. The same schema is available as [github-relay-jobs.sql](./sql/github-relay-jobs.sql) for deployment automation:
+Create the PostgreSQL table before starting the app; SpecRail does not run this migration automatically. Use [github-relay-jobs.sql](./sql/github-relay-jobs.sql) as the schema source for deployment automation:
 
-```sql
-CREATE TABLE github_relay_jobs (
-  id text PRIMARY KEY,
-  repository_full_name text NOT NULL,
-  issue_number integer NOT NULL,
-  run_id text NOT NULL,
-  report_url text,
-  operator_url text,
-  status text NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed')),
-  attempts integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL,
-  updated_at timestamptz NOT NULL,
-  next_attempt_at timestamptz,
-  last_error text
-);
-
-CREATE INDEX github_relay_jobs_claim_idx
-  ON github_relay_jobs (status, next_attempt_at, created_at)
-  WHERE status = 'pending';
+```sh
+psql "$GITHUB_RELAY_QUEUE_POSTGRES_URL" -f docs/sql/github-relay-jobs.sql
 ```
 
 The database contract is:
