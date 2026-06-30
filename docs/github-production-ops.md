@@ -69,6 +69,8 @@ With `GITHUB_RELAY_QUEUE_DIR`, `GITHUB_RELAY_QUEUE_POSTGRES_URL`/`DATABASE_URL`,
 
 Use persistent storage for the queue path/directory so relay jobs survive process restarts. The location should be writable by the GitHub app user and should not live in ephemeral container scratch space unless a persistent volume is mounted there.
 
+For PostgreSQL queues, claimed jobs use `updated_at` as a conservative running lease. If a worker dies after claiming a job and before recording completion or failure, another worker can reclaim the stale `running` job after 5 minutes.
+
 ## Queue backend selection
 
 Choose the terminal relay queue backend based on how webhook workers share state:

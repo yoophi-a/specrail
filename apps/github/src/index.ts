@@ -1174,7 +1174,10 @@ interface PostgresRelayJobRow extends QueryResultRow {
 export interface PostgresGitHubRelayJobQueueOptions {
   client: GitHubRelayPostgresQueryClient;
   tableName?: string;
+  runningLeaseMs?: number;
 }
+
+const defaultPostgresRelayRunningLeaseMs = 5 * 60 * 1000;
 
 function assertSafePostgresIdentifier(identifier: string): string {
   if (!/^[a-z_][a-z0-9_]*$/u.test(identifier)) {
@@ -1278,13 +1281,19 @@ export class PostgresGitHubRelayJobQueue implements GitHubRelayJobQueue {
   }
 
   async claimNext(now: Date = new Date()): Promise<GitHubTerminalRelayJob | undefined> {
+    const staleRunningBefore = new Date(now.getTime() - (this.options.runningLeaseMs ?? defaultPostgresRelayRunningLeaseMs));
     const result = await this.options.client.query<PostgresRelayJobRow>(
       `/* specrail:postgres-relay-claim-next */
       WITH next_job AS (
         SELECT id
         FROM ${this.tableName}
-        WHERE status = 'pending'
+        WHERE (
+          status = 'pending'
           AND (next_attempt_at IS NULL OR next_attempt_at <= $1)
+        ) OR (
+          status = 'running'
+          AND updated_at <= $2
+        )
         ORDER BY created_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
@@ -1294,7 +1303,7 @@ export class PostgresGitHubRelayJobQueue implements GitHubRelayJobQueue {
       FROM next_job
       WHERE ${this.tableName}.id = next_job.id
       RETURNING ${postgresRelayJobReturningColumns(this.tableName)}`,
-      [now.toISOString()],
+      [now.toISOString(), staleRunningBefore.toISOString()],
     );
     return result.rows[0] ? postgresRelayJobFromRow(result.rows[0]) : undefined;
   }

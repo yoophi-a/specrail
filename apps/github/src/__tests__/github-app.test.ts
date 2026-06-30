@@ -1094,9 +1094,15 @@ class InMemoryPostgresRelayQueryClient implements GitHubRelayPostgresQueryClient
 
     if (sql.includes("specrail:postgres-relay-claim-next")) {
       const now = String(values[0]);
+      const staleRunningBefore = String(values[1]);
       const nowMs = Date.parse(now);
+      const staleRunningBeforeMs = Date.parse(staleRunningBefore);
       const dueJob = [...this.jobs.values()]
-        .filter((job) => job.status === "pending" && (!job.next_attempt_at || Date.parse(job.next_attempt_at) <= nowMs))
+        .filter(
+          (job) =>
+            (job.status === "pending" && (!job.next_attempt_at || Date.parse(job.next_attempt_at) <= nowMs)) ||
+            (job.status === "running" && Date.parse(job.updated_at) <= staleRunningBeforeMs),
+        )
         .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at))[0];
       if (!dueJob) {
         return this.rows([]);
@@ -1289,6 +1295,22 @@ test("PostgresGitHubRelayJobQueue claims jobs atomically across queue instances"
   assert.equal(claimedJobs.length, 1);
   assert.equal(claimedJobs[0]?.id, created.id);
   assert.equal((await queue.list())[0]?.status, "running");
+});
+
+test("PostgresGitHubRelayJobQueue reclaims stale running jobs after the lease", async () => {
+  const client = new InMemoryPostgresRelayQueryClient();
+  const queue = new PostgresGitHubRelayJobQueue({ client, runningLeaseMs: 1_000 });
+  const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+  const claimed = await queue.claimNext(new Date(created.createdAt));
+
+  assert.equal(claimed?.id, created.id);
+  assert.equal(await queue.claimNext(new Date(Date.parse(created.createdAt) + 999)), undefined);
+
+  const reclaimed = await queue.claimNext(new Date(Date.parse(created.createdAt) + 1_001));
+
+  assert.equal(reclaimed?.id, created.id);
+  assert.equal(reclaimed?.status, "running");
+  assert.equal(reclaimed?.attempts, 0);
 });
 
 test("processGitHubRelayQueue posts terminal comments and completes jobs", async () => {
