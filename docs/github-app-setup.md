@@ -59,6 +59,7 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_RELAY_QUEUE_DIR` | unset | Preferred durable queue directory for terminal outcome relay jobs. Uses per-job JSON files and atomic claim renames for multi-process workers on the same POSIX-compatible filesystem. Takes precedence over `GITHUB_RELAY_QUEUE_PATH`. |
 | `GITHUB_RELAY_QUEUE_POSTGRES_URL` | falls back to `DATABASE_URL` | PostgreSQL connection string for terminal outcome relay jobs. Use with `GITHUB_RELAY_QUEUE_BACKEND=postgres` for webhook workers on independent hosts without shared filesystem state. |
 | `GITHUB_RELAY_QUEUE_POSTGRES_TABLE` | `github_relay_jobs` | PostgreSQL table name for relay jobs. Only lowercase identifiers with letters, digits, and underscores are accepted. |
+| `GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS` | `300000` | Positive integer lease duration for reclaiming stale PostgreSQL `running` relay jobs. |
 | `GITHUB_RELAY_QUEUE_PATH` | unset | Legacy optional JSON-file durable queue path for terminal outcome relay jobs. Use only for local development or single-process deployments. When no durable queue is configured, the app uses the in-process scheduler fallback. |
 
 ## Running locally

@@ -31,6 +31,7 @@ export interface GitHubAppConfig {
   githubRelayQueueDir?: string;
   githubRelayQueuePostgresUrl?: string;
   githubRelayQueuePostgresTable?: string;
+  githubRelayQueueRunningLeaseMs?: number;
   repositoryProjects: Record<string, string>;
   allowedActors: string[];
   allowedOrganizations: string[];
@@ -259,6 +260,17 @@ function parseGitHubRelayQueueBackend(value: string | undefined): GitHubRelayQue
   throw new Error(`invalid GITHUB_RELAY_QUEUE_BACKEND: ${value}`);
 }
 
+function parseOptionalPositiveInteger(value: string | undefined, name: string): number | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`invalid ${name}: ${value}`);
+  }
+  return parsed;
+}
+
 function normalizePrivateKey(value: string | undefined): string | undefined {
   if (!value?.trim()) {
     return undefined;
@@ -341,6 +353,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubRelayQueueDir: env.GITHUB_RELAY_QUEUE_DIR,
     githubRelayQueuePostgresUrl: env.GITHUB_RELAY_QUEUE_POSTGRES_URL ?? env.DATABASE_URL,
     githubRelayQueuePostgresTable: env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE,
+    githubRelayQueueRunningLeaseMs: parseOptionalPositiveInteger(env.GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS, "GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS"),
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
     allowedOrganizations: parseCsvList(env.GITHUB_ALLOWED_ORGS),
@@ -647,7 +660,10 @@ export function resolveGitHubRelayQueueBackend(
 }
 
 export function createGitHubRelayJobQueueFromConfig(
-  config: Pick<GitHubAppConfig, "githubRelayQueueBackend" | "githubRelayQueueDir" | "githubRelayQueuePath" | "githubRelayQueuePostgresUrl" | "githubRelayQueuePostgresTable">,
+  config: Pick<
+    GitHubAppConfig,
+    "githubRelayQueueBackend" | "githubRelayQueueDir" | "githubRelayQueuePath" | "githubRelayQueuePostgresUrl" | "githubRelayQueuePostgresTable" | "githubRelayQueueRunningLeaseMs"
+  >,
 ): GitHubRelayJobQueue | undefined {
   const backend = resolveGitHubRelayQueueBackend(config);
   if (backend === "none") {
@@ -667,6 +683,7 @@ export function createGitHubRelayJobQueueFromConfig(
     return new PostgresGitHubRelayJobQueue({
       client: new Pool({ connectionString: config.githubRelayQueuePostgresUrl }),
       tableName: config.githubRelayQueuePostgresTable,
+      runningLeaseMs: config.githubRelayQueueRunningLeaseMs,
     });
   }
   if (!config.githubRelayQueuePath) {

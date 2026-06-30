@@ -874,7 +874,10 @@ test("loadGitHubAppConfig reads explicit relay queue backend settings", () => {
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_URL: "postgres://specrail.example/relay" }).githubRelayQueuePostgresUrl, "postgres://specrail.example/relay");
   assert.equal(loadGitHubAppConfig({ DATABASE_URL: "postgres://specrail.example/default" }).githubRelayQueuePostgresUrl, "postgres://specrail.example/default");
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_TABLE: "specrail_relay_jobs" }).githubRelayQueuePostgresTable, "specrail_relay_jobs");
+  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "120000" }).githubRelayQueueRunningLeaseMs, 120_000);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "redis" }), /invalid GITHUB_RELAY_QUEUE_BACKEND: redis/u);
+  assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "0" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 0/u);
+  assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "100.5" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 100.5/u);
 });
 
 test("resolveGitHubRelayQueueBackend preserves existing env precedence", () => {
