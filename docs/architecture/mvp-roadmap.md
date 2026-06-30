@@ -53,8 +53,8 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - authoritative run events still live under `state/events/<runId>.jsonl`
   - artifact-local event surfaces need a clear long-term contract
 - interface expansion
-  - terminal, Telegram, ACP, and HTTP surfaces exist
-  - hosted web UI and GitHub app/webhook entrypoints are still deferred
+  - terminal, Telegram, ACP, HTTP, hosted operator UI, and GitHub issue-comment webhook surfaces exist
+  - broader hosted UI and GitHub workflow expansion beyond the current thin slices remains deferred
 
 ### Not started
 - database-backed persistence

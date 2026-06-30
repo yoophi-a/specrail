@@ -49,6 +49,8 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - request validation and structured API errors
 - thin-channel foundations for external chat bindings and attachment references
 - thin Telegram adapter app that binds chats to tracks and relays run events
+- thin GitHub issue-comment webhook app for `/specrail run` commands, terminal outcome comments, and report/operator links
+- first hosted operator UI slice served from `GET /operator`
 - automated API/config/adapter/frontend tests
 
 ### Not implemented yet
@@ -56,7 +58,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - real approval broker or approval event workflow
 - worktree or branch orchestration beyond metadata/workspace path allocation
 - authentication and multi-user access control
-- web UI or GitHub app/webhooks
+- broader hosted UI and GitHub workflow expansion beyond the current thin slices
 - artifact editing endpoints
 - automatic track reconciliation from terminal run outcomes beyond the current first-pass policy
 
