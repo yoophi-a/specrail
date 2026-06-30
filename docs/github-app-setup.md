@@ -1,6 +1,6 @@
 # GitHub App Setup
 
-`apps/github` is a thin webhook frontend over the SpecRail HTTP API. It does not store canonical run state in GitHub. GitHub issues and PRs only provide an entrypoint for starting work and, in a later live-comment slice, receiving concise terminal outcomes that link back to SpecRail reports.
+`apps/github` is a thin webhook frontend over the SpecRail HTTP API. It does not store canonical run state in GitHub. GitHub issues and PRs provide an entrypoint for starting work and can optionally receive one concise terminal outcome comment that links back to SpecRail reports.
 
 ## Current behavior
 
@@ -69,7 +69,7 @@ Start the SpecRail API first, then run:
 GITHUB_WEBHOOK_SECRET=dev-secret \
 SPECRAIL_API_BASE_URL=http://127.0.0.1:4000 \
 SPECRAIL_GITHUB_PROJECT_ID=project-default \
-pnpm --filter @specrail/github dev
+pnpm dev:github
 ```
 
 Configure a GitHub webhook to send `issue_comment` events to:
@@ -106,5 +106,5 @@ The webhook endpoint returns JSON responses:
 
 ## Recommended follow-ups
 
-1. Add a database/external-queue implementation for horizontally scaled workers that do not share a POSIX-compatible filesystem.
-2. Add deployment-specific manifests for Kubernetes or other production orchestration targets.
+1. Add deployment-specific manifests for Kubernetes or other production orchestration targets.
+2. Add operational migrations or bootstrap helpers for provisioning the PostgreSQL relay table when deployments select that backend.
