@@ -52,9 +52,9 @@ Run the checks that match your change. For most code PRs, use the full baseline:
 pnpm validate
 ```
 
-The baseline runs `pnpm check`, `pnpm test`, and `pnpm build` in order. The individual commands remain available for targeted checks while iterating.
+The baseline runs `pnpm check:links`, `pnpm check`, `pnpm test`, and `pnpm build` in order. The individual commands remain available for targeted checks while iterating.
 
-For docs-only or repository metadata-only changes, `pnpm check` is usually enough unless the change affects workflow behavior or generated artifacts.
+For docs-only changes, run `pnpm check:links`. For repository metadata-only changes, run `pnpm check:links` plus `pnpm check` unless the change affects workflow behavior or generated artifacts; in those broader cases, run `pnpm validate`.
 
 Claude Code smoke coverage is intentionally opt-in and provider-dependent. Only run it when your environment has the required Claude credentials and the change touches Claude Code behavior:
 

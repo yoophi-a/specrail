@@ -10,7 +10,7 @@ Start with deterministic local validation:
 pnpm validate
 ```
 
-The baseline command runs `pnpm check`, `pnpm test`, and `pnpm build` in order.
+The baseline command runs `pnpm check:links`, `pnpm check`, `pnpm test`, and `pnpm build` in order.
 
 Then confirm the runtime configuration you expect:
 
