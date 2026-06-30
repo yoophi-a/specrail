@@ -114,7 +114,7 @@ The database contract is:
 - Keep `list` read-only so operators can inspect queue state without changing claim eligibility.
 - Avoid exposing webhook secrets, GitHub tokens, private keys, raw payloads, or execution transcripts in queue rows, logs, or failed-job diagnostics.
 
-This database target is tracked as the implementation direction for [issue #434](https://github.com/yoophi-a/specrail/issues/434). The existing filesystem queues remain supported for deployments with appropriate shared storage.
+The PostgreSQL backend is the implemented external queue path from [issue #434](https://github.com/yoophi-a/specrail/issues/434). The existing filesystem queues remain supported for deployments with appropriate shared storage.
 
 ## Credential prerequisites
 
