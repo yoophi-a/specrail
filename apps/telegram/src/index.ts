@@ -328,14 +328,25 @@ export class TelegramBotClient {
   }
 }
 
+export type TelegramUpdateMetricOutcome = "accepted" | "ignored" | "failed";
+
+export interface TelegramMetricsSink {
+  increment(input: { outcome: TelegramUpdateMetricOutcome }): void;
+}
+
 export interface TelegramFrontendDeps {
   specRail: Pick<
     SpecRailApiClient,
     "findChannelBinding" | "createTrack" | "bindChannel" | "registerAttachment" | "startRun" | "streamRunEvents"
   >;
   telegram: Pick<TelegramBotClient, "sendMessage">;
+  metrics?: TelegramMetricsSink;
   projectId?: string;
   runReportBaseUrl?: string;
+}
+
+function incrementTelegramUpdateMetric(deps: TelegramFrontendDeps, outcome: TelegramUpdateMetricOutcome): void {
+  deps.metrics?.increment({ outcome });
 }
 
 export async function handleTelegramUpdate(update: TelegramUpdate, deps: TelegramFrontendDeps): Promise<void> {
@@ -442,8 +453,10 @@ export function createTelegramWebhookServer(config: TelegramAppConfig, deps: Tel
       try {
         const update = await readJson<TelegramUpdate>(request);
         await handleTelegramUpdate(update, deps);
+        incrementTelegramUpdateMetric(deps, update.message ? "accepted" : "ignored");
         sendJson(response, 200, { ok: true });
       } catch (error) {
+        incrementTelegramUpdateMetric(deps, "failed");
         sendJson(response, 500, { ok: false, error: error instanceof Error ? error.message : "unknown error" });
       }
       return;

@@ -70,6 +70,59 @@ test("Telegram webhook server serves a health check", async () => {
   }
 });
 
+test("Telegram webhook server records update outcome metrics", async () => {
+  const outcomes: string[] = [];
+  const server = createTelegramWebhookServer(
+    {
+      apiBaseUrl: "http://127.0.0.1:4000",
+      telegramBotToken: "test-token",
+      port: 0,
+      webhookPath: "/telegram/webhook",
+    },
+    {
+      ...createUnusedTelegramDeps(),
+      metrics: {
+        increment(input) {
+          outcomes.push(input.outcome);
+        },
+      },
+    },
+  );
+
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  try {
+    const ignoredResponse = await fetch(`http://127.0.0.1:${address.port}/telegram/webhook`, {
+      method: "POST",
+      body: JSON.stringify({ update_id: 1 }),
+    });
+    assert.equal(ignoredResponse.status, 200);
+
+    const failedResponse = await fetch(`http://127.0.0.1:${address.port}/telegram/webhook`, {
+      method: "POST",
+      body: JSON.stringify({
+        update_id: 2,
+        message: {
+          message_id: 20,
+          text: "will fail because test deps reject SpecRail calls",
+          chat: { id: 123, type: "private" },
+        },
+      }),
+    });
+    assert.equal(failedResponse.status, 500);
+
+    assert.deepEqual(outcomes, ["ignored", "failed"]);
+  } finally {
+    const closePromise = once(server, "close");
+    server.close();
+    server.closeAllConnections();
+    await closePromise;
+  }
+});
+
 test("parseAttachmentReferences extracts document and photo references", () => {
   assert.deepEqual(
     parseAttachmentReferences({
@@ -156,6 +209,75 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
     "7:[run-1] Run started",
     "7:[run-1] Run completed",
   ]);
+});
+
+test("Telegram webhook server records accepted update metrics", async () => {
+  const outcomes: string[] = [];
+  const server = createTelegramWebhookServer(
+    {
+      apiBaseUrl: "http://127.0.0.1:4000",
+      telegramBotToken: "test-token",
+      port: 0,
+      webhookPath: "/telegram/webhook",
+    },
+    {
+      specRail: {
+        async findChannelBinding() {
+          return { id: "binding-1", trackId: "track-1" };
+        },
+        async createTrack() {
+          throw new Error("should not create a new track");
+        },
+        async bindChannel() {
+          throw new Error("should not bind a new channel");
+        },
+        async registerAttachment() {
+          return { attachment: { id: "attachment-1" } };
+        },
+        async startRun() {
+          return { run: { id: "run-1", status: "running" } };
+        },
+        async *streamRunEvents() {
+          yield { type: "task_status_changed", summary: "Run completed" };
+        },
+      },
+      telegram: {
+        async sendMessage() {},
+      },
+      metrics: {
+        increment(input) {
+          outcomes.push(input.outcome);
+        },
+      },
+    },
+  );
+
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/telegram/webhook`, {
+      method: "POST",
+      body: JSON.stringify({
+        update_id: 3,
+        message: {
+          message_id: 30,
+          text: "accepted update",
+          chat: { id: 123, type: "private" },
+        },
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(outcomes, ["accepted"]);
+  } finally {
+    const closePromise = once(server, "close");
+    server.close();
+    server.closeAllConnections();
+    await closePromise;
+  }
 });
 
 test("buildRunReportUrl encodes run ids against the configured API base", () => {
