@@ -359,13 +359,13 @@ export async function authorizeGitHubActor(input: {
 
 export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig {
   return {
-    apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
-    operatorBaseUrl: env.SPECRAIL_OPERATOR_BASE_URL,
+    apiBaseUrl: readOptionalEnvValue(env.SPECRAIL_API_BASE_URL) ?? "http://127.0.0.1:4000",
+    operatorBaseUrl: readOptionalEnvValue(env.SPECRAIL_OPERATOR_BASE_URL),
     port: parsePort(env.GITHUB_APP_PORT, 4200, "GITHUB_APP_PORT"),
     webhookPath: normalizeWebhookPath(env.GITHUB_WEBHOOK_PATH),
     webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",
     projectId: readOptionalEnvValue(env.SPECRAIL_GITHUB_PROJECT_ID) ?? readOptionalEnvValue(env.SPECRAIL_PROJECT_ID) ?? "project-default",
-    githubApiBaseUrl: env.GITHUB_API_BASE_URL ?? "https://api.github.com",
+    githubApiBaseUrl: readOptionalEnvValue(env.GITHUB_API_BASE_URL) ?? "https://api.github.com",
     githubToken: env.GITHUB_TOKEN ?? env.GITHUB_INSTALLATION_TOKEN,
     githubAppId: env.GITHUB_APP_ID,
     githubInstallationId: env.GITHUB_INSTALLATION_ID,

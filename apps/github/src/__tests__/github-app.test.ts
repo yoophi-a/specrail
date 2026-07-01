@@ -851,24 +851,39 @@ test("GitHub webhook HTTP app surfaces terminal relay enqueue failures", async (
 
 test("loadGitHubAppConfig parses repository project mappings and actor allowlists", () => {
   const config = loadGitHubAppConfig({
-    SPECRAIL_API_BASE_URL: "https://specrail.example.test",
+    SPECRAIL_API_BASE_URL: " https://specrail.example.test ",
     SPECRAIL_GITHUB_PROJECT_ID: "project-default",
     GITHUB_WEBHOOK_SECRET: "secret",
     SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "yoophi-a/specrail=project-specrail, other/repo = project-other",
     GITHUB_ALLOWED_ACTORS: "octocat,@hubot",
-    SPECRAIL_OPERATOR_BASE_URL: "https://specrail.example.test",
+    SPECRAIL_OPERATOR_BASE_URL: " https://operator.example.test ",
+    GITHUB_API_BASE_URL: " https://github.example.test/api/v3 ",
     GITHUB_RELAY_QUEUE_DIR: "/var/lib/specrail/github-relay-queue",
   });
 
   assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project-specrail", "other/repo": "project-other" });
   assert.deepEqual(config.allowedActors, ["octocat", "@hubot"]);
-  assert.equal(config.operatorBaseUrl, "https://specrail.example.test");
+  assert.equal(config.apiBaseUrl, "https://specrail.example.test");
+  assert.equal(config.operatorBaseUrl, "https://operator.example.test");
+  assert.equal(config.githubApiBaseUrl, "https://github.example.test/api/v3");
   assert.equal(config.githubRelayQueueDir, "/var/lib/specrail/github-relay-queue");
   assert.equal(resolveGitHubProjectId(config, "yoophi-a/specrail"), "project-specrail");
   assert.equal(resolveGitHubProjectId(config, "missing/repo"), undefined);
   assert.equal(isGitHubActorAuthorized(config, "octocat"), true);
   assert.equal(isGitHubActorAuthorized(config, "hubot"), true);
   assert.equal(isGitHubActorAuthorized(config, "mallory"), false);
+});
+
+test("loadGitHubAppConfig falls back for blank URL environment values", () => {
+  const config = loadGitHubAppConfig({
+    SPECRAIL_API_BASE_URL: " ",
+    SPECRAIL_OPERATOR_BASE_URL: "",
+    GITHUB_API_BASE_URL: " ",
+  });
+
+  assert.equal(config.apiBaseUrl, "http://127.0.0.1:4000");
+  assert.equal(config.operatorBaseUrl, undefined);
+  assert.equal(config.githubApiBaseUrl, "https://api.github.com");
 });
 
 test("loadGitHubAppConfig normalizes project id environment values", () => {

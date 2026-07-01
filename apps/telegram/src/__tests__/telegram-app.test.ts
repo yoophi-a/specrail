@@ -61,6 +61,12 @@ test("loadTelegramAppConfig validates port environment values", () => {
   assert.throws(() => loadTelegramAppConfig({ TELEGRAM_APP_PORT: "70000" }), /invalid TELEGRAM_APP_PORT: 70000/u);
 });
 
+test("loadTelegramAppConfig normalizes API base URL environment values", () => {
+  assert.equal(loadTelegramAppConfig({ SPECRAIL_API_BASE_URL: " https://specrail.example.test " }).apiBaseUrl, "https://specrail.example.test");
+  assert.equal(loadTelegramAppConfig({ SPECRAIL_API_BASE_URL: "" }).apiBaseUrl, "http://127.0.0.1:4000");
+  assert.equal(loadTelegramAppConfig({ SPECRAIL_API_BASE_URL: "   " }).apiBaseUrl, "http://127.0.0.1:4000");
+});
+
 test("loadTelegramAppConfig normalizes project id environment values", () => {
   assert.equal(loadTelegramAppConfig({ SPECRAIL_PROJECT_ID: " shared-project " }).projectId, "shared-project");
   assert.equal(

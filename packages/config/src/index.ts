@@ -58,7 +58,7 @@ export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): 
   const diffExportDirectory = env.SPECRAIL_TERMINAL_DIFF_EXPORT_DIR?.trim() || null;
 
   return {
-    apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
+    apiBaseUrl: readOptionalEnvValue(env.SPECRAIL_API_BASE_URL) ?? "http://127.0.0.1:4000",
     refreshIntervalMs: parseIntegerEnv(env.SPECRAIL_TERMINAL_REFRESH_MS, 5000, "SPECRAIL_TERMINAL_REFRESH_MS", { min: 0 }),
     initialScreen:
       initialScreen === "tracks" || initialScreen === "runs" || initialScreen === "settings" ? initialScreen : "home",
@@ -72,6 +72,11 @@ export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): 
 
 function parseTerminalInitialRunFilter(value: string | undefined): SpecRailTerminalInitialRunFilter {
   return value === "active" || value === "terminal" ? value : "all";
+}
+
+function readOptionalEnvValue(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized || undefined;
 }
 
 function parseIntegerEnv(

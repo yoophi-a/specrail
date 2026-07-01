@@ -63,7 +63,7 @@ interface AttachmentListResponse {
 
 export function loadTelegramAppConfig(env: NodeJS.ProcessEnv = process.env): TelegramAppConfig {
   return {
-    apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
+    apiBaseUrl: readOptionalEnvValue(env.SPECRAIL_API_BASE_URL) ?? "http://127.0.0.1:4000",
     telegramBotToken: env.TELEGRAM_BOT_TOKEN ?? "",
     port: parseTelegramPort(env.TELEGRAM_APP_PORT, 4300, "TELEGRAM_APP_PORT"),
     webhookPath: normalizeTelegramWebhookPath(env.TELEGRAM_WEBHOOK_PATH),

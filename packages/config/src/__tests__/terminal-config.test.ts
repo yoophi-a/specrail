@@ -19,7 +19,7 @@ test("loadTerminalClientConfig returns defaults", () => {
 test("loadTerminalClientConfig reads terminal-specific environment values", () => {
   assert.deepEqual(
     loadTerminalClientConfig({
-      SPECRAIL_API_BASE_URL: "http://localhost:9999",
+      SPECRAIL_API_BASE_URL: "  http://localhost:9999  ",
       SPECRAIL_TERMINAL_REFRESH_MS: "15000",
       SPECRAIL_TERMINAL_INITIAL_SCREEN: "runs",
       SPECRAIL_TERMINAL_INITIAL_PROJECT_ID: "project-1",
@@ -39,6 +39,11 @@ test("loadTerminalClientConfig reads terminal-specific environment values", () =
       diffExportDirectory: ".specrail-terminal/diffs",
     },
   );
+});
+
+test("loadTerminalClientConfig falls back for blank API base URL values", () => {
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_API_BASE_URL: "" }).apiBaseUrl, "http://127.0.0.1:4000");
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_API_BASE_URL: "   " }).apiBaseUrl, "http://127.0.0.1:4000");
 });
 
 test("loadTerminalClientConfig validates refresh interval environment values", () => {
