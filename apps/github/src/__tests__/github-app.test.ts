@@ -888,6 +888,7 @@ test("loadGitHubAppConfig reads explicit relay queue backend settings", () => {
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "redis" }), /invalid GITHUB_RELAY_QUEUE_BACKEND: redis/u);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "0" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 0/u);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "100.5" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 100.5/u);
+  assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "1e3" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 1e3/u);
 });
 
 test("resolveGitHubRelayQueueBackend preserves existing env precedence", () => {

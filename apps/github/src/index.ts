@@ -261,11 +261,15 @@ function parseGitHubRelayQueueBackend(value: string | undefined): GitHubRelayQue
 }
 
 function parseOptionalPositiveInteger(value: string | undefined, name: string): number | undefined {
-  if (!value?.trim()) {
+  const normalized = value?.trim();
+  if (!normalized) {
     return undefined;
   }
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (!/^[1-9]\d*$/u.test(normalized)) {
+    throw new Error(`invalid ${name}: ${value}`);
+  }
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed)) {
     throw new Error(`invalid ${name}: ${value}`);
   }
   return parsed;
