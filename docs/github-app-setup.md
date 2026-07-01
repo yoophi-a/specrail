@@ -108,4 +108,4 @@ The webhook endpoint returns JSON responses:
 
 ## Recommended follow-ups
 
-1. Add deployment-specific manifests for Kubernetes or other production orchestration targets.
+1. Add platform-specific deployment packaging or hardening once a concrete target is selected, such as Helm/Kustomize overlays, managed secret integration, ingress-controller annotations, or provider-specific infrastructure modules. The current references already cover a single-host systemd template, a Kubernetes skeleton, and a Docker Compose GitHub webhook example.

@@ -108,7 +108,7 @@ Implemented slices now cover:
 5. Webhook HTTP server wiring and runnable SpecRail HTTP client startup.
 6. GitHub REST issue-comment posting with static-token and GitHub App installation-token providers.
 7. Repository-to-project allowlists plus sender-login, organization, and team-based authorization for `/specrail` commands.
-8. SpecRail SSE terminal-outcome relay with either in-process scheduling or a JSON-file durable relay queue.
+8. SpecRail SSE terminal-outcome relay with in-process scheduling, JSON-file/directory durable queues, and PostgreSQL queue support for horizontally scaled workers.
 9. Safe diagnostics and coarse command outcome metrics for ignored, unauthorized, unsupported, failed, and accepted commands.
 10. Tests for unauthorized commands, repository mapping, actor/team authorization, terminal relay scheduling/enqueue failures, durable relay queue behavior, and live comment delivery boundaries.
 
@@ -116,7 +116,6 @@ See [GitHub App setup](../github-app-setup.md), [GitHub webhook production opera
 
 ## Open implementation follow-ups
 
-1. Consider replacing the JSON-file relay queue with a database-backed queue if multi-process GitHub app deployments become necessary.
-2. Add deployment-specific manifests for Kubernetes or other production orchestration targets when a target environment is selected.
-3. Extend the command grammar beyond `/specrail run` only after a concrete operator workflow needs planning-only, approval, or artifact-proposal commands.
-4. Keep GitHub as a thin frontend: future additions should continue linking back to SpecRail reports/operator surfaces rather than copying canonical run or artifact history into GitHub.
+1. Add platform-specific deployment packaging or hardening after a concrete target is selected. The current docs already include a Kubernetes skeleton, systemd templates, and a Docker Compose GitHub webhook example; remaining work should be target-specific overlays or infrastructure modules rather than another generic manifest.
+2. Extend the command grammar beyond `/specrail run` only after a concrete operator workflow needs planning-only, approval, or artifact-proposal commands.
+3. Keep GitHub as a thin frontend: future additions should continue linking back to SpecRail reports/operator surfaces rather than copying canonical run or artifact history into GitHub.
