@@ -54,6 +54,8 @@ test("loadTelegramAppConfig validates port environment values", () => {
 
   assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: "4300" }).port, 4300);
   assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: "0" }).port, 0);
+  assert.equal(loadTelegramAppConfig({ TELEGRAM_WEBHOOK_PATH: "telegram/custom" }).webhookPath, "/telegram/custom");
+  assert.equal(loadTelegramAppConfig({ TELEGRAM_WEBHOOK_PATH: "  /telegram/custom  " }).webhookPath, "/telegram/custom");
   assert.throws(() => loadTelegramAppConfig({ TELEGRAM_APP_PORT: "abc" }), /invalid TELEGRAM_APP_PORT: abc/u);
   assert.throws(() => loadTelegramAppConfig({ TELEGRAM_APP_PORT: "4100.5" }), /invalid TELEGRAM_APP_PORT: 4100.5/u);
   assert.throws(() => loadTelegramAppConfig({ TELEGRAM_APP_PORT: "70000" }), /invalid TELEGRAM_APP_PORT: 70000/u);
@@ -159,6 +161,30 @@ test("Telegram webhook server records update outcome metrics", async () => {
     assert.equal(failedResponse.status, 500);
 
     assert.deepEqual(outcomes, ["ignored", "failed"]);
+  } finally {
+    const closePromise = once(server, "close");
+    server.close();
+    server.closeAllConnections();
+    await closePromise;
+  }
+});
+
+test("Telegram webhook server accepts normalized configured webhook paths", async () => {
+  const server = createTelegramWebhookServer(loadTelegramAppConfig({ TELEGRAM_WEBHOOK_PATH: "telegram/custom" }), createUnusedTelegramDeps());
+
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/telegram/custom`, {
+      method: "POST",
+      body: JSON.stringify({ update_id: 1 }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true });
   } finally {
     const closePromise = once(server, "close");
     server.close();
