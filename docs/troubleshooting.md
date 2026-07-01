@@ -74,6 +74,18 @@ Then restart the terminal client:
 pnpm dev:terminal
 ```
 
+## GitHub webhook app is not receiving commands
+
+Check:
+
+1. `GITHUB_WEBHOOK_SECRET` is set locally and matches the GitHub webhook secret.
+2. `SPECRAIL_API_BASE_URL` points to a reachable API server.
+3. `GITHUB_APP_PORT` is an integer TCP port in the `0..65535` range and is open locally or in the deployment environment.
+4. `GITHUB_WEBHOOK_PATH` matches the webhook registration; configured values are normalized to start with `/`.
+5. The app was started with `pnpm dev:github` from the repository root.
+
+Never paste a real GitHub webhook secret, app private key, or token into an issue, pull request, release note, or chat report.
+
 ## Telegram adapter is not receiving updates
 
 Check:

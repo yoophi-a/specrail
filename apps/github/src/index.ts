@@ -357,7 +357,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
     operatorBaseUrl: env.SPECRAIL_OPERATOR_BASE_URL,
     port: parsePort(env.GITHUB_APP_PORT, 4200, "GITHUB_APP_PORT"),
-    webhookPath: env.GITHUB_WEBHOOK_PATH ?? "/github/webhook",
+    webhookPath: normalizeWebhookPath(env.GITHUB_WEBHOOK_PATH),
     webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",
     projectId: env.SPECRAIL_GITHUB_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID ?? "project-default",
     githubApiBaseUrl: env.GITHUB_API_BASE_URL ?? "https://api.github.com",
