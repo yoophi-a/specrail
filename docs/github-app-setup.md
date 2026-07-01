@@ -48,7 +48,7 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_WEBHOOK_SECRET` | empty string | Secret used to validate `X-Hub-Signature-256`. Set this in real deployments. |
 | `GITHUB_APP_PORT` | `4200` | Integer TCP port `0..65535` for the GitHub webhook server. |
 | `GITHUB_WEBHOOK_PATH` | `/github/webhook` | HTTP path that receives GitHub webhooks. |
-| `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub REST API base URL for issue-comment posting. |
+| `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub REST API base URL for issue-comment posting, GitHub App installation-token exchange, and org/team authorization checks. GitHub Enterprise deployments can include the API path prefix, for example `https://github.example.com/api/v3`. |
 | `GITHUB_TOKEN` | unset | Static token used by the REST issue-comment client. |
 | `GITHUB_INSTALLATION_TOKEN` | unset | Static fallback token when `GITHUB_TOKEN` is not set. |
 | `GITHUB_APP_ID` | unset | GitHub App id used to mint installation tokens. Requires `GITHUB_INSTALLATION_ID` and `GITHUB_PRIVATE_KEY`. Takes precedence over static tokens when all three are set. |
@@ -96,7 +96,7 @@ The webhook endpoint returns JSON responses:
 
 ## Current limitations
 
-- REST issue-comment posting supports static tokens and GitHub App installation-token refresh. Private keys must be supplied securely by deployment secret management.
+- REST issue-comment posting, GitHub App installation-token refresh, and org/team authorization checks support static tokens or GitHub App token providers against the configured `GITHUB_API_BASE_URL`. Private keys must be supplied securely by deployment secret management.
 - Durable terminal relay uses the directory queue when `GITHUB_RELAY_QUEUE_DIR` is set, the PostgreSQL queue when `GITHUB_RELAY_QUEUE_POSTGRES_URL` or `DATABASE_URL` is set, or the legacy JSON-file queue when `GITHUB_RELAY_QUEUE_PATH` is set. Failed relay attempts are retained with `lastError`, attempt count, and retry timing; deployments should place this storage on persistent media. See [GitHub webhook production operations](./github-production-ops.md) for supervision, backend selection, PostgreSQL schema, and queue processing guidance.
 - PostgreSQL relay deployments can run `pnpm bootstrap:github-relay-postgres --dry-run` to review the schema and `pnpm bootstrap:github-relay-postgres --apply` to provision the configured table before starting webhook workers.
 - Terminal outcome comment relay is available when `GITHUB_FOLLOW_TERMINAL_EVENTS=true`; the webhook response only waits for scheduling/enqueue, not for the run to reach a terminal state.
