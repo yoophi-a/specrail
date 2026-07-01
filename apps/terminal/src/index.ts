@@ -4109,10 +4109,10 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
     const usage = "Usage: specrail-terminal diff-exports [--json] [--limit <positive-number>] [--track <trackId>] [--artifact <spec|plan|tasks>]";
     const limitFlagIndex = argv.indexOf("--limit");
     const limitValue = limitFlagIndex >= 0 ? argv[limitFlagIndex + 1]?.trim() : null;
-    const parsedLimit = limitValue ? Number(limitValue) : null;
+    const parsedLimit = limitValue ? parsePositiveCliInteger(limitValue) : null;
     const filters = parseRevisionDiffExportFilters(argv, usage);
 
-    if (limitFlagIndex >= 0 && (!limitValue || typeof parsedLimit !== "number" || !Number.isInteger(parsedLimit) || parsedLimit <= 0)) {
+    if (limitFlagIndex >= 0 && (!limitValue || parsedLimit === null)) {
       throw new Error(usage);
     }
 
@@ -4133,12 +4133,12 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
   if (command === "diff-export") {
     const usage = "Usage: specrail-terminal diff-export <positive-index> [--track <trackId>] [--artifact <spec|plan|tasks>] [--output <file>]";
     const indexValue = runId?.trim();
-    const parsedIndex = indexValue ? Number(indexValue) : null;
+    const parsedIndex = indexValue ? parsePositiveCliInteger(indexValue) : null;
     const filters = parseRevisionDiffExportFilters(argv, usage);
     const outputFlagIndex = argv.findIndex((arg) => arg === "--output" || arg === "-o");
     const outputPath = outputFlagIndex >= 0 ? argv[outputFlagIndex + 1]?.trim() : null;
 
-    if (!indexValue || typeof parsedIndex !== "number" || !Number.isInteger(parsedIndex) || parsedIndex <= 0) {
+    if (!indexValue || parsedIndex === null) {
       throw new Error(usage);
     }
     if (outputFlagIndex >= 0 && !outputPath) {
@@ -4220,6 +4220,14 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
 
   (options.stdout ?? process.stdout).write(output);
   return true;
+}
+
+function parsePositiveCliInteger(value: string): number | null {
+  if (!/^[1-9]\d*$/u.test(value)) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 const isEntrypoint = process.argv[1] ? import.meta.url === new URL(`file://${process.argv[1]}`).href : false;

@@ -310,6 +310,10 @@ test("runTerminalCommand lists revision diff export manifest entries", async () 
       () => runTerminalCommand({ argv: ["diff-exports", "--limit", "0"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
       /Usage: specrail-terminal diff-exports/,
     );
+    await assert.rejects(
+      () => runTerminalCommand({ argv: ["diff-exports", "--limit", "1e1"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
+      /Usage: specrail-terminal diff-exports/,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -413,6 +417,7 @@ test("runTerminalCommand prints revision diff export patch content by index", as
     assert.equal(writes.join(""), "newer patch\n");
 
     await assert.rejects(() => runTerminalCommand({ argv: ["diff-export", "0"] }), /Usage: specrail-terminal diff-export <positive-index>/);
+    await assert.rejects(() => runTerminalCommand({ argv: ["diff-export", "1e1"] }), /Usage: specrail-terminal diff-export <positive-index>/);
     await assert.rejects(
       () => runTerminalCommand({ argv: ["diff-export", "3"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
       /No revision diff export found at index 3/,
