@@ -983,6 +983,18 @@ function assertValidRunListQuery(query: RunListQuery): void {
   }
 }
 
+function assertValidSessionPreviewQuery(query: { eventLimit?: number }): void {
+  const details: ApiErrorDetail[] = [];
+
+  if (query.eventLimit !== undefined && (!Number.isInteger(query.eventLimit) || query.eventLimit < 1)) {
+    details.push({ field: "eventLimit", message: "must be an integer greater than or equal to 1" });
+  }
+
+  if (details.length > 0) {
+    throw new RequestValidationError("request validation failed", details);
+  }
+}
+
 async function streamRunEvents(
   response: ServerResponse,
   service: SpecRailService,
@@ -1553,6 +1565,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       if (method === "GET" && segments.length === 3 && segments[0] === "runs" && segments[2] === "session-preview") {
         const eventLimitSearchParams = getSearchParams(request);
         const eventLimit = parsePositiveInteger(eventLimitSearchParams.get("eventLimit"));
+        assertValidSessionPreviewQuery({ eventLimit });
         const preview = await deps.service.getRunSessionPreview({ runId: segments[1] ?? "", eventLimit });
         const persistedSession = await readExecutorSessionMetadata(deps.sessionsDir, preview.execution.sessionRef);
         sendJson(response, 200, {
