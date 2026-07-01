@@ -47,7 +47,7 @@ test("loadTelegramAppConfig validates port environment values", () => {
   assert.deepEqual(loadTelegramAppConfig({}), {
     apiBaseUrl: "http://127.0.0.1:4000",
     telegramBotToken: "",
-    port: 4100,
+    port: 4300,
     webhookPath: "/telegram/webhook",
     projectId: undefined,
   });
