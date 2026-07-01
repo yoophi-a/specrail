@@ -580,7 +580,7 @@ test("createGitHubRestIssueCommentClient posts issue comments with GitHub REST h
       response.end(JSON.stringify({ id: 1001, html_url: "https://github.com/yoophi-a/specrail/issues/123#issuecomment-1001" }));
     });
   }, async (baseUrl) => {
-    const client = createGitHubRestIssueCommentClient({ token: "github-token", apiBaseUrl: baseUrl });
+    const client = createGitHubRestIssueCommentClient({ token: "github-token", apiBaseUrl: `${baseUrl}/api/v3` });
     assert.deepEqual(
       await client.createIssueComment({
         repositoryFullName: "yoophi-a/specrail",
@@ -594,7 +594,7 @@ test("createGitHubRestIssueCommentClient posts issue comments with GitHub REST h
   assert.deepEqual(requests, [
     {
       method: "POST",
-      url: "/repos/yoophi-a/specrail/issues/123/comments",
+      url: "/api/v3/repos/yoophi-a/specrail/issues/123/comments",
       headers: {
         accept: "application/vnd.github+json",
         authorization: "Bearer github-token",
@@ -1022,7 +1022,7 @@ test("createGitHubAppInstallationTokenProvider exchanges, caches, and refreshes 
     appId: "12345",
     installationId: "67890",
     privateKey: privateKeyPem,
-    apiBaseUrl: "https://api.github.example.test",
+    apiBaseUrl: "https://api.github.example.test/api/v3",
     fetchFn,
     now: () => nowMs,
   });
@@ -1036,23 +1036,23 @@ test("createGitHubAppInstallationTokenProvider exchanges, caches, and refreshes 
   assert.deepEqual(
     requests.map((request) => ({ url: request.url, method: request.method })),
     [
-      { url: "https://api.github.example.test/app/installations/67890/access_tokens", method: "POST" },
-      { url: "https://api.github.example.test/app/installations/67890/access_tokens", method: "POST" },
+      { url: "https://api.github.example.test/api/v3/app/installations/67890/access_tokens", method: "POST" },
+      { url: "https://api.github.example.test/api/v3/app/installations/67890/access_tokens", method: "POST" },
     ],
   );
   assert.ok(requests[0]?.authorization?.startsWith("Bearer "));
 });
 
 test("createGitHubRestIssueCommentClient accepts token providers", async () => {
-  const requests: Array<{ authorization: string }> = [];
+  const requests: Array<{ url?: string; authorization: string }> = [];
   await withJsonServer((request, response) => {
-    requests.push({ authorization: request.headers.authorization ?? "" });
+    requests.push({ url: request.url, authorization: request.headers.authorization ?? "" });
     response.statusCode = 201;
     response.setHeader("content-type", "application/json");
     response.end(JSON.stringify({ id: 1001 }));
   }, async (baseUrl) => {
     const client = createGitHubRestIssueCommentClient({
-      apiBaseUrl: baseUrl,
+      apiBaseUrl: `${baseUrl}/api/v3`,
       tokenProvider: {
         async getToken() {
           return "provider-token";
@@ -1062,7 +1062,7 @@ test("createGitHubRestIssueCommentClient accepts token providers", async () => {
     assert.deepEqual(await client.createIssueComment({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, body: "hello" }), { id: 1001 });
   });
 
-  assert.deepEqual(requests, [{ authorization: "Bearer provider-token" }]);
+  assert.deepEqual(requests, [{ url: "/api/v3/repos/yoophi-a/specrail/issues/123/comments", authorization: "Bearer provider-token" }]);
 });
 
 interface RelayQueueContractHarness {
@@ -1492,14 +1492,14 @@ test("createGitHubRestAuthorizationClient checks org and team membership", async
     response.statusCode = request.url?.includes("/teams/maintainers/") ? 404 : 204;
     response.end();
   }, async (baseUrl) => {
-    const client = createGitHubRestAuthorizationClient({ token: "github-token", apiBaseUrl: baseUrl });
+    const client = createGitHubRestAuthorizationClient({ token: "github-token", apiBaseUrl: `${baseUrl}/api/v3` });
     assert.equal(await client.isOrganizationMember({ organization: "yoophi-a", username: "octocat" }), true);
     assert.equal(await client.isTeamMember({ organization: "yoophi-a", teamSlug: "maintainers", username: "octocat" }), false);
   });
 
   assert.deepEqual(requests, [
-    { url: "/orgs/yoophi-a/members/octocat", authorization: "Bearer github-token" },
-    { url: "/orgs/yoophi-a/teams/maintainers/memberships/octocat", authorization: "Bearer github-token" },
+    { url: "/api/v3/orgs/yoophi-a/members/octocat", authorization: "Bearer github-token" },
+    { url: "/api/v3/orgs/yoophi-a/teams/maintainers/memberships/octocat", authorization: "Bearer github-token" },
   ]);
 });
 

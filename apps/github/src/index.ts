@@ -386,7 +386,7 @@ function encodeGitHubPathSegment(value: string | number): string {
 }
 
 async function githubJsonRequest<T>(baseUrl: string, path: string, init: RequestInit = {}, fetchFn: FetchLike = fetch): Promise<T> {
-  const response = await fetchFn(new URL(path, baseUrl), {
+  const response = await fetchFn(resolveGitHubApiUrl(baseUrl, path), {
     ...init,
     headers: {
       accept: "application/vnd.github+json",
@@ -403,6 +403,12 @@ async function githubJsonRequest<T>(baseUrl: string, path: string, init: Request
   }
 
   return (responseText ? JSON.parse(responseText) : {}) as T;
+}
+
+function resolveGitHubApiUrl(baseUrl: string, pathname: string): URL {
+  const relativePath = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+  const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(relativePath, normalizedBaseUrl);
 }
 
 function base64UrlJson(value: unknown): string {
@@ -504,7 +510,7 @@ export function createGitHubRestAuthorizationClient(input: { token?: string; tok
   const provider = tokenProvider;
   async function request(pathname: string): Promise<boolean> {
     const token = await provider.getToken();
-    const response = await (input.fetchFn ?? fetch)(new URL(pathname, apiBaseUrl), {
+    const response = await (input.fetchFn ?? fetch)(resolveGitHubApiUrl(apiBaseUrl, pathname), {
       headers: {
         accept: "application/vnd.github+json",
         authorization: `Bearer ${token}`,
