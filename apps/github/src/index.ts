@@ -271,6 +271,20 @@ function parseOptionalPositiveInteger(value: string | undefined, name: string): 
   return parsed;
 }
 
+function parsePort(value: string | undefined, defaultValue: number, name: string): number {
+  if (value === undefined || value === "") {
+    return defaultValue;
+  }
+  if (!/^\d+$/u.test(value)) {
+    throw new Error(`invalid ${name}: ${value}`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 65535) {
+    throw new Error(`invalid ${name}: ${value}`);
+  }
+  return parsed;
+}
+
 function normalizePrivateKey(value: string | undefined): string | undefined {
   if (!value?.trim()) {
     return undefined;
@@ -338,7 +352,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
   return {
     apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
     operatorBaseUrl: env.SPECRAIL_OPERATOR_BASE_URL,
-    port: Number(env.GITHUB_APP_PORT ?? 4200),
+    port: parsePort(env.GITHUB_APP_PORT, 4200, "GITHUB_APP_PORT"),
     webhookPath: env.GITHUB_WEBHOOK_PATH ?? "/github/webhook",
     webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",
     projectId: env.SPECRAIL_GITHUB_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID ?? "project-default",

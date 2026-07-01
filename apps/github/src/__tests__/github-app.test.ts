@@ -868,6 +868,16 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
   assert.equal(isGitHubActorAuthorized(config, "mallory"), false);
 });
 
+test("loadGitHubAppConfig validates port environment values", () => {
+  assert.equal(loadGitHubAppConfig({}).port, 4200);
+  assert.equal(loadGitHubAppConfig({ GITHUB_APP_PORT: "0" }).port, 0);
+  assert.equal(loadGitHubAppConfig({ GITHUB_APP_PORT: "4300" }).port, 4300);
+
+  assert.throws(() => loadGitHubAppConfig({ GITHUB_APP_PORT: "abc" }), /invalid GITHUB_APP_PORT: abc/u);
+  assert.throws(() => loadGitHubAppConfig({ GITHUB_APP_PORT: "4200.5" }), /invalid GITHUB_APP_PORT: 4200.5/u);
+  assert.throws(() => loadGitHubAppConfig({ GITHUB_APP_PORT: "70000" }), /invalid GITHUB_APP_PORT: 70000/u);
+});
+
 test("loadGitHubAppConfig reads explicit relay queue backend settings", () => {
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "json_file" }).githubRelayQueueBackend, "json-file");
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "postgres" }).githubRelayQueueBackend, "postgres");
