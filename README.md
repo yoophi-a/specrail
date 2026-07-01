@@ -337,7 +337,7 @@ SpecRail now includes a runnable terminal client skeleton in `apps/terminal`.
 
 Operator environment:
 - `SPECRAIL_API_BASE_URL` default `http://127.0.0.1:4000`
-- `SPECRAIL_TERMINAL_REFRESH_MS` default `5000`
+- `SPECRAIL_TERMINAL_REFRESH_MS` non-negative integer milliseconds; default `5000`, and `0` disables auto-refresh
 - `SPECRAIL_TERMINAL_INITIAL_SCREEN` one of `home`, `tracks`, `runs`, `settings`
 - `SPECRAIL_TERMINAL_INITIAL_PROJECT_ID` optional project id for the initial track/run scope
 - `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER` one of `all`, `active`, `terminal`; defaults to `all`
@@ -386,7 +386,7 @@ By default this smoke path stays out of `pnpm test` so local and CI runs do not 
 For GitHub Actions, use the opt-in stub at `.github/workflows/claude-smoke.yml` together with `scripts/run-claude-smoke-ci.sh`.
 That workflow is intentionally gated behind repository variable `SPECRAIL_ENABLE_CLAUDE_SMOKE=1` so the default CI path stays stable when Claude credentials are unavailable on runners.
 
-For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`. Set `SPECRAIL_TELEGRAM_PROJECT_ID` (or shared `SPECRAIL_PROJECT_ID`) to create new Telegram-bound tracks in a non-default project; omit it to keep the default-project behavior.
+For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`. `TELEGRAM_APP_PORT` must be an integer TCP port in the `0..65535` range. Set `SPECRAIL_TELEGRAM_PROJECT_ID` (or shared `SPECRAIL_PROJECT_ID`) to create new Telegram-bound tracks in a non-default project; omit it to keep the default-project behavior.
 
 For the API server, you can set `SPECRAIL_EXECUTION_BACKEND` and `SPECRAIL_EXECUTION_PROFILE` to choose the default executor/backend and profile used when callers omit them.
 Set `SPECRAIL_EXECUTION_WORKSPACE_MODE=directory` for the default plain workspace directory behavior, or `SPECRAIL_EXECUTION_WORKSPACE_MODE=git_worktree` to allocate execution workspaces with `git worktree add -b specrail/<runId> workspaces/<runId>` from the configured local repo path.

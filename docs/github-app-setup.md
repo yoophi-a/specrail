@@ -46,7 +46,7 @@ The runnable app entrypoint reads these environment variables:
 | `GITHUB_ALLOWED_ORGS` | unset | Optional comma-separated GitHub organization membership allowlist for `/specrail` command senders. Requires a GitHub token provider. |
 | `GITHUB_ALLOWED_TEAMS` | unset | Optional comma-separated team allowlist in `org/team-slug` form. Requires a GitHub token provider. |
 | `GITHUB_WEBHOOK_SECRET` | empty string | Secret used to validate `X-Hub-Signature-256`. Set this in real deployments. |
-| `GITHUB_APP_PORT` | `4200` | HTTP port for the GitHub webhook server. |
+| `GITHUB_APP_PORT` | `4200` | Integer TCP port `0..65535` for the GitHub webhook server. |
 | `GITHUB_WEBHOOK_PATH` | `/github/webhook` | HTTP path that receives GitHub webhooks. |
 | `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub REST API base URL for issue-comment posting. |
 | `GITHUB_TOKEN` | unset | Static token used by the REST issue-comment client. |

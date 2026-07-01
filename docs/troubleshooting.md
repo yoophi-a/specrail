@@ -60,7 +60,7 @@ Check:
 
 1. The API server is running.
 2. `SPECRAIL_API_BASE_URL` points to the same port as the API server.
-3. `SPECRAIL_TERMINAL_REFRESH_MS` is a valid number.
+3. `SPECRAIL_TERMINAL_REFRESH_MS` is a non-negative integer millisecond interval; `0` disables auto-refresh.
 4. `SPECRAIL_TERMINAL_INITIAL_SCREEN` is one of `home`, `tracks`, `runs`, or `settings`.
 5. `SPECRAIL_TERMINAL_INITIAL_PROJECT_ID`, when set, matches an existing project id.
 6. `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER` is one of `all`, `active`, or `terminal`.
@@ -80,7 +80,7 @@ Check:
 
 1. `TELEGRAM_BOT_TOKEN` is set locally and was not committed.
 2. `SPECRAIL_API_BASE_URL` points to a reachable API server.
-3. `TELEGRAM_APP_PORT` is open locally or in the deployment environment.
+3. `TELEGRAM_APP_PORT` is an integer TCP port in the `0..65535` range and is open locally or in the deployment environment.
 4. `TELEGRAM_WEBHOOK_PATH` matches the webhook registration.
 5. The adapter was started with `pnpm dev:telegram` from the repository root.
 

@@ -34,9 +34,9 @@ Each service image should:
 2. Include only built JavaScript, production dependencies, package metadata needed by Node.js, and runtime assets.
 3. Use Node.js 22 or newer; Node.js 24 is acceptable when the CI runner and dependencies support it.
 4. Expose exactly one HTTP port through environment configuration:
-   - API: `SPECRAIL_PORT`, default `4000`
-   - GitHub: `GITHUB_APP_PORT`, default `4200`
-   - Telegram: `TELEGRAM_APP_PORT`, default `4300`
+   - API: `SPECRAIL_PORT`, integer TCP port `0..65535`, default `4000`
+   - GitHub: `GITHUB_APP_PORT`, integer TCP port `0..65535`, default `4200`
+   - Telegram: `TELEGRAM_APP_PORT`, integer TCP port `0..65535`, default `4300`
 5. Serve `GET /healthz` with `{ ok: true, service: "<service-id>" }`.
 6. Keep secrets in environment variables or mounted secret files, never in image layers or labels.
 7. Leave durable state on mounted volumes:

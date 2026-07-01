@@ -296,7 +296,7 @@ sequenceDiagram
 
 | Field | Env Variable | Default | Description |
 |-------|-------------|---------|-------------|
-| `port` | `SPECRAIL_PORT` | `4000` | API 서버 포트 |
+| `port` | `SPECRAIL_PORT` | `4000` | API 서버 포트. 정수 TCP port `0..65535`만 허용 |
 | `dataDir` | `SPECRAIL_DATA_DIR` | `.specrail-data` | 런타임 데이터 디렉토리 |
 | `repoArtifactDir` | `SPECRAIL_REPO_ARTIFACT_DIR` | `.specrail` | 레포 가시 아티팩트 디렉토리 |
 
