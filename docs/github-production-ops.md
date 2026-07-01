@@ -13,7 +13,7 @@ Run the GitHub webhook app under a process supervisor such as systemd, Docker Co
 - expose the webhook port only through the intended reverse proxy or private network boundary
 - keep `SPECRAIL_API_BASE_URL` reachable from the GitHub app process
 
-A minimal systemd-style shape looks like this. For a container-oriented template, see [GitHub Webhook Docker Compose Example](./github-docker-compose-example.md).
+A minimal systemd-style shape looks like this. For a container-oriented template, see [GitHub and Telegram Docker Compose Example](./github-docker-compose-example.md).
 
 ```ini
 [Unit]

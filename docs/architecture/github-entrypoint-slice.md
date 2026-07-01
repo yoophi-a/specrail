@@ -116,6 +116,6 @@ See [GitHub App setup](../github-app-setup.md), [GitHub webhook production opera
 
 ## Open implementation follow-ups
 
-1. Add platform-specific deployment packaging or hardening after a concrete target is selected. The current docs already include a Kubernetes skeleton, systemd templates, and a Docker Compose GitHub webhook example; remaining work should be target-specific overlays or infrastructure modules rather than another generic manifest.
+1. Add platform-specific deployment packaging or hardening after a concrete target is selected. The current docs already include a Kubernetes skeleton, systemd templates, and a Docker Compose webhook example; remaining work should be target-specific overlays or infrastructure modules rather than another generic manifest.
 2. Extend the command grammar beyond `/specrail run` only after a concrete operator workflow needs planning-only, approval, or artifact-proposal commands.
 3. Keep GitHub as a thin frontend: future additions should continue linking back to SpecRail reports/operator surfaces rather than copying canonical run or artifact history into GitHub.

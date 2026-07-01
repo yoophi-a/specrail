@@ -85,7 +85,7 @@ Avoid embedding repository-local state, provider credentials, execution transcri
 
 ## Deployment Template Alignment
 
-- [GitHub webhook Docker Compose example](./github-docker-compose-example.md) uses placeholder `ghcr.io/your-org/specrail-*` images that should be replaced with tags from this contract.
+- [GitHub and Telegram Docker Compose example](./github-docker-compose-example.md) uses placeholder `ghcr.io/your-org/specrail-*` images that should be replaced with tags from this contract.
 - [Kubernetes deployment skeleton](./kubernetes-deployment.md) uses the same placeholder image names and expects `/healthz` probes to work in every service image.
 - [Systemd deployment templates](./systemd-deployment.md) remain source-checkout based and do not require published images.
 

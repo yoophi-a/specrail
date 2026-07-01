@@ -97,7 +97,7 @@ Use the existing deployment docs based on the target surface:
 - Use [Container image publishing contract](./container-image-publishing.md) for service image names, tag policy, runtime expectations, and future publish workflow requirements.
 - Use [GitHub App setup](./github-app-setup.md) for webhook command configuration and repository/project mapping.
 - Use [GitHub webhook production operations](./github-production-ops.md) for durable relay queues, restart behavior, and safe diagnostics.
-- Use [GitHub webhook Docker Compose example](./github-docker-compose-example.md) as a container-oriented template for API and GitHub services.
+- Use [GitHub and Telegram Docker Compose example](./github-docker-compose-example.md) as a container-oriented template for API, GitHub, and Telegram services.
 - Use [Kubernetes deployment skeleton](./kubernetes-deployment.md) as a cluster-oriented template for API, GitHub, and Telegram services.
 - Use [Production metrics contract](./production-metrics-contract.md) before adding `/metrics` endpoints, exporters, or scrape configuration.
 - Use [Troubleshooting](./troubleshooting.md) for startup, connection, and adapter checks.

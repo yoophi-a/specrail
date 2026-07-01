@@ -1,8 +1,10 @@
-# GitHub Webhook Docker Compose Example
+# GitHub And Telegram Docker Compose Example
 
-This is a deployment template for running the SpecRail API and GitHub webhook app with Docker Compose. It is not a complete secure deployment by itself: add TLS, authentication, network policy, image publishing, and secret management appropriate for your environment.
+This is a deployment template for running the SpecRail API, GitHub webhook app, and Telegram adapter with Docker Compose. It is not a complete secure deployment by itself: add TLS, authentication, network policy, image publishing, and secret management appropriate for your environment.
 
 The `ghcr.io/your-org/specrail-*` image names are placeholders. Replace them with images and immutable tags that follow the [container image publishing contract](./container-image-publishing.md).
+
+If you only need GitHub issue-comment entrypoints, omit the `specrail-telegram` service and its route from the reverse proxy. If you only need Telegram, omit `specrail-github` and the relay queue volume.
 
 ## Compose template
 
@@ -53,6 +55,27 @@ services:
       retries: 3
       start_period: 10s
 
+  specrail-telegram:
+    image: ghcr.io/your-org/specrail-telegram:latest
+    restart: unless-stopped
+    depends_on:
+      specrail-api:
+        condition: service_healthy
+    env_file:
+      - ./specrail-telegram.env
+    environment:
+      TELEGRAM_APP_PORT: "4300"
+      TELEGRAM_WEBHOOK_PATH: /telegram/webhook
+      SPECRAIL_API_BASE_URL: http://specrail-api:4000
+    expose:
+      - "4300"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4300/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   reverse-proxy:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -60,6 +83,8 @@ services:
       specrail-api:
         condition: service_healthy
       specrail-github:
+        condition: service_healthy
+      specrail-telegram:
         condition: service_healthy
     ports:
       - "443:443"
@@ -103,12 +128,25 @@ SPECRAIL_OPERATOR_BASE_URL=https://specrail.example.com
 
 `specrail-api.env` should contain the API's deployment-specific runtime configuration. Do not put provider credentials or execution transcripts into compose labels or public logs.
 
+`specrail-telegram.env` shape:
+
+```sh
+TELEGRAM_BOT_TOKEN=replace-with-secret-manager-value
+SPECRAIL_TELEGRAM_PROJECT_ID=project-default
+```
+
 ## Routing notes
 
 Route the public webhook path to `specrail-github:4200`:
 
 ```text
 /github/webhook -> specrail-github:4200
+```
+
+Route the public Telegram webhook path to `specrail-telegram:4300`:
+
+```text
+/telegram/webhook -> specrail-telegram:4300
 ```
 
 Route authenticated operator/API traffic to `specrail-api:4000`:
@@ -118,13 +156,13 @@ Route authenticated operator/API traffic to `specrail-api:4000`:
 /projects, /tracks, /runs, /planning-sessions, /approval-requests -> specrail-api:4000
 ```
 
-Use the reverse-proxy guidance in [Hosted Operator UI deployment](./operator-ui-deployment.md) for TLS, auth, SSE buffering, and trusted identity headers. Do not put the operator auth challenge in front of GitHub webhook delivery; webhook authenticity is handled by GitHub signature verification in the GitHub app.
+Use the reverse-proxy guidance in [Hosted Operator UI deployment](./operator-ui-deployment.md) for TLS, auth, SSE buffering, and trusted identity headers. Do not put the operator auth challenge in front of GitHub or Telegram webhook delivery; GitHub authenticity is handled by GitHub signature verification, and Telegram delivery is constrained to the webhook URL you register with Telegram.
 
 ## Healthchecks
 
 The example uses the built-in Node.js runtime to call each service's local `GET /healthz` endpoint from inside the container. A healthy response is any `2xx` status; the response body also includes the service identifier used by manual deployment checks.
 
-The `service_healthy` conditions keep the GitHub webhook app from starting before the API has passed its basic liveness check, and keep the reverse proxy from routing to either backend before both containers report healthy. Treat this as a startup guard, not a substitute for webhook test deliveries, operator authentication checks, or external monitoring.
+The `service_healthy` conditions keep the webhook adapters from starting before the API has passed its basic liveness check, and keep the reverse proxy from routing to any backend before the containers report healthy. Treat this as a startup guard, not a substitute for webhook test deliveries, operator authentication checks, or external monitoring.
 
 ## Durable relay queue behavior
 
