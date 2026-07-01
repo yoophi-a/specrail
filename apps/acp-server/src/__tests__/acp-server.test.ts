@@ -429,6 +429,11 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   const runWorkspace = path.join(workspaceRoot, "run-1");
   await mkdir(path.join(runWorkspace, "notes"), { recursive: true });
   await writeFile(path.join(runWorkspace, "notes", "summary.md"), "# Summary\nDone.\n");
+  await writeFile(path.join(runWorkspace, "notes", "long.txt"), "x".repeat(64_005));
+  await mkdir(path.join(runWorkspace, "many"), { recursive: true });
+  for (let index = 0; index < 101; index += 1) {
+    await writeFile(path.join(runWorkspace, "many", `${index.toString().padStart(3, "0")}.txt`), `${index}\n`);
+  }
 
   const fileResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 3, method: "specrail/workspace/read", params: { sessionId, path: "notes/summary.md" } },
@@ -447,11 +452,35 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   assert.equal(directoryResponse?.error, undefined);
   assert.ok(JSON.stringify(directoryResponse?.result).includes('"summary.md"'));
 
+  const truncatedDirectoryResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 5, method: "specrail/workspace/read", params: { sessionId, path: "many" } },
+    () => {},
+  );
+  assert.equal(truncatedDirectoryResponse?.error, undefined);
+  const truncatedDirectory = truncatedDirectoryResponse?.result as { entries: unknown[]; truncated: boolean };
+  assert.equal(truncatedDirectory.entries.length, 100);
+  assert.equal(truncatedDirectory.truncated, true);
+
+  const truncatedFileResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 6, method: "specrail/workspace/read", params: { sessionId, path: "notes/long.txt" } },
+    () => {},
+  );
+  assert.equal(truncatedFileResponse?.error, undefined);
+  const truncatedFile = truncatedFileResponse?.result as { content: string; truncated: boolean };
+  assert.equal(truncatedFile.content.length, 64_000);
+  assert.equal(truncatedFile.truncated, true);
+
   const outsideResponse = await server.handleMessage(
-    { jsonrpc: "2.0", id: 5, method: "specrail/workspace/read", params: { sessionId, path: "../secret.txt" } },
+    { jsonrpc: "2.0", id: 7, method: "specrail/workspace/read", params: { sessionId, path: "../secret.txt" } },
     () => {},
   );
   assert.equal(outsideResponse?.error?.data && (outsideResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
+
+  const absolutePathResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 8, method: "specrail/workspace/read", params: { sessionId, path: path.join(runWorkspace, "notes", "summary.md") } },
+    () => {},
+  );
+  assert.equal(absolutePathResponse?.error?.data && (absolutePathResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
 });
 
 test("ACP server creates a project-scoped track when session/new omits trackId", async () => {
