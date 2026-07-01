@@ -41,6 +41,20 @@ test("loadTerminalClientConfig reads terminal-specific environment values", () =
   );
 });
 
+test("loadTerminalClientConfig validates refresh interval environment values", () => {
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_REFRESH_MS: "0" }).refreshIntervalMs, 0);
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_REFRESH_MS: "15000" }).refreshIntervalMs, 15000);
+
+  assert.throws(
+    () => loadTerminalClientConfig({ SPECRAIL_TERMINAL_REFRESH_MS: "abc" }),
+    /invalid SPECRAIL_TERMINAL_REFRESH_MS: abc/u,
+  );
+  assert.throws(
+    () => loadTerminalClientConfig({ SPECRAIL_TERMINAL_REFRESH_MS: "5000.5" }),
+    /invalid SPECRAIL_TERMINAL_REFRESH_MS: 5000.5/u,
+  );
+});
+
 test("loadTerminalClientConfig falls back for unsupported initial run filters", () => {
   assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_INITIAL_RUN_FILTER: "recent" }).initialRunFilter, "all");
 });

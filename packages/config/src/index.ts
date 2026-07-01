@@ -28,7 +28,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SpecRailConfig
   const executionWorkspaceMode = parseExecutionWorkspaceMode(env.SPECRAIL_EXECUTION_WORKSPACE_MODE);
 
   return {
-    port: Number(env.SPECRAIL_PORT ?? 4000),
+    port: parseIntegerEnv(env.SPECRAIL_PORT, 4000, "SPECRAIL_PORT", { min: 0, max: 65535 }),
     dataDir: env.SPECRAIL_DATA_DIR ?? ".specrail-data",
     repoArtifactDir: env.SPECRAIL_REPO_ARTIFACT_DIR ?? ".specrail",
     executionBackend: env.SPECRAIL_EXECUTION_BACKEND ?? "codex",
@@ -59,7 +59,7 @@ export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): 
 
   return {
     apiBaseUrl: env.SPECRAIL_API_BASE_URL ?? "http://127.0.0.1:4000",
-    refreshIntervalMs: Number(env.SPECRAIL_TERMINAL_REFRESH_MS ?? 5000),
+    refreshIntervalMs: parseIntegerEnv(env.SPECRAIL_TERMINAL_REFRESH_MS, 5000, "SPECRAIL_TERMINAL_REFRESH_MS", { min: 0 }),
     initialScreen:
       initialScreen === "tracks" || initialScreen === "runs" || initialScreen === "settings" ? initialScreen : "home",
     initialProjectId,
@@ -72,4 +72,30 @@ export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): 
 
 function parseTerminalInitialRunFilter(value: string | undefined): SpecRailTerminalInitialRunFilter {
   return value === "active" || value === "terminal" ? value : "all";
+}
+
+function parseIntegerEnv(
+  value: string | undefined,
+  defaultValue: number,
+  envName: string,
+  bounds: { min?: number; max?: number } = {},
+): number {
+  if (value === undefined || value === "") {
+    return defaultValue;
+  }
+
+  if (!/^\d+$/u.test(value)) {
+    throw new Error(`invalid ${envName}: ${value}`);
+  }
+
+  const parsed = Number(value);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    (bounds.min !== undefined && parsed < bounds.min) ||
+    (bounds.max !== undefined && parsed > bounds.max)
+  ) {
+    throw new Error(`invalid ${envName}: ${value}`);
+  }
+
+  return parsed;
 }
