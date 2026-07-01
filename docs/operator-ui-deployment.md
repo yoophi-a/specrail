@@ -56,7 +56,8 @@ Protect at least these routes as one operator surface:
 - `POST /planning-sessions/:planningSessionId/messages`
 - `GET/POST /tracks/:trackId/artifacts/:artifact`
 - `GET /runs`, `POST /runs`, `GET /runs/:runId`
-- `POST /runs/:runId/resume`, `POST /runs/:runId/cancel`
+- `GET /runs/:runId/session`, `GET /runs/:runId/session-preview`
+- `POST /runs/:runId/resume`, `POST /runs/:runId/fork`, `POST /runs/:runId/cancel`
 - `GET /runs/:runId/events`, `GET /runs/:runId/events/stream`
 - `GET /runs/:runId/report.md`
 - `GET/POST /runs/:runId/workspace-cleanup/*`

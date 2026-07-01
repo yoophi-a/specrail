@@ -645,7 +645,10 @@ sequenceDiagram
 - `POST /runs`
 - `GET /runs`
 - `GET /runs/:runId`
+- `GET /runs/:runId/session`
+- `GET /runs/:runId/session-preview`
 - `POST /runs/:runId/resume`
+- `POST /runs/:runId/fork`
 - `POST /runs/:runId/cancel`
 - `GET /runs/:runId/workspace-cleanup/preview`
 - `POST /runs/:runId/workspace-cleanup/apply`
@@ -653,6 +656,7 @@ sequenceDiagram
 - `POST /runs/:runId/approval-requests/:requestId/reject`
 - `GET /runs/:runId/events`
 - `GET /runs/:runId/events/stream`
+- `GET /runs/:runId/report.md`
 
 ### Channel bindings and attachments
 

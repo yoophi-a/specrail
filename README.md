@@ -158,10 +158,17 @@ Current endpoints in `apps/api/src/index.ts`:
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /runs/:runId`
   - return persisted run metadata
+- `GET /runs/:runId/session`
+  - return run metadata, persisted executor session metadata when available, and backend continuity capabilities
+- `GET /runs/:runId/session-preview`
+  - return a compact session preview with recent events and a derived report path
 - `POST /runs/:runId/resume`
   - resume an existing run
   - body: `{ prompt, backend?, profile? }`
   - `backend` is optional and must match the run's persisted backend when provided
+- `POST /runs/:runId/fork`
+  - start a linked continuation run from an existing run
+  - body: `{ prompt, mode?, backend?, profile? }`
 - `POST /runs/:runId/cancel`
   - cancel a running run
 - `GET /runs/:runId/workspace-cleanup/preview`
@@ -182,6 +189,8 @@ Current endpoints in `apps/api/src/index.ts`:
   - return persisted normalized events as JSON
 - `GET /runs/:runId/events/stream`
   - stream normalized events over SSE
+- `GET /runs/:runId/report.md`
+  - return a read-only Markdown report derived from run metadata and canonical run events
 
 ### Error contract
 - `400` for malformed JSON
