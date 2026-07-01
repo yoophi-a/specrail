@@ -1456,6 +1456,12 @@ test("API returns structured validation and bad-request errors", async () => {
       ["eventLimit"],
     );
 
+    const unsafeTrackPageResponse = await fetch(`${baseUrl}/tracks?page=999999999999999999999`);
+    assert.equal(unsafeTrackPageResponse.status, 422);
+
+    const unsafeRunEventLimitResponse = await fetch(`${baseUrl}/runs/run-1/session-preview?eventLimit=999999999999999999999`);
+    assert.equal(unsafeRunEventLimitResponse.status, 422);
+
     const malformedJsonResponse = await fetch(`${baseUrl}/tracks`, {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -474,7 +474,8 @@ function parsePositiveInteger(value: string | null): number | undefined {
     return Number.NaN;
   }
 
-  return Number.parseInt(value, 10);
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : Number.NaN;
 }
 
 function buildListMeta(
