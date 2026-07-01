@@ -6,6 +6,7 @@ import {
   buildRunReportUrl,
   createTelegramWebhookServer,
   handleTelegramUpdate,
+  loadTelegramAppConfig,
   parseAttachmentReferences,
   SpecRailApiClient,
   type TelegramFrontendDeps,
@@ -40,6 +41,22 @@ function createUnusedTelegramDeps(): TelegramFrontendDeps {
     },
   };
 }
+
+test("loadTelegramAppConfig validates port environment values", () => {
+  assert.deepEqual(loadTelegramAppConfig({}), {
+    apiBaseUrl: "http://127.0.0.1:4000",
+    telegramBotToken: "",
+    port: 4100,
+    webhookPath: "/telegram/webhook",
+    projectId: undefined,
+  });
+
+  assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: "4300" }).port, 4300);
+  assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: "0" }).port, 0);
+  assert.throws(() => loadTelegramAppConfig({ TELEGRAM_APP_PORT: "abc" }), /invalid TELEGRAM_APP_PORT: abc/u);
+  assert.throws(() => loadTelegramAppConfig({ TELEGRAM_APP_PORT: "4100.5" }), /invalid TELEGRAM_APP_PORT: 4100.5/u);
+  assert.throws(() => loadTelegramAppConfig({ TELEGRAM_APP_PORT: "70000" }), /invalid TELEGRAM_APP_PORT: 70000/u);
+});
 
 test("Telegram webhook server serves a health check", async () => {
   const server = createTelegramWebhookServer(
