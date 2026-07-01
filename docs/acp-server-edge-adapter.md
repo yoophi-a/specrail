@@ -17,10 +17,11 @@ The initial adapter keeps the ACP surface intentionally narrow.
 
 - ACP `session/new`
   - creates a lightweight ACP session record
-  - requires `_meta.specrail.trackId`
-  - may also carry `planningSessionId`, `backend`, and `profile`
+  - may carry `_meta.specrail.trackId` when the client wants to attach the session to an existing track
+  - may also carry `projectId`, `planningSessionId`, `backend`, `profile`, and `title`
 - ACP `session/prompt`
   - first prompt starts a SpecRail run via `SpecRailService.startRun`
+  - if the session has no `trackId`, the adapter creates a project-scoped track from the prompt/title metadata before starting the run
   - later prompts resume the same run via `SpecRailService.resumeRun`
 - ACP `session/cancel`
   - maps to `SpecRailService.cancelRun`
@@ -160,7 +161,7 @@ This boundary keeps canonical planning artifacts, approvals, channel bindings, a
 
 This is intentionally an initial bridge, not a full ACP implementation.
 
-1. `session/new` currently requires SpecRail-specific metadata, especially `_meta.specrail.trackId`.
+1. `session/new` still uses SpecRail-specific metadata for optional project, track, planning, backend, profile, and title context; clients that omit `_meta.specrail.trackId` get a new track created on the first prompt.
 2. Planning artifacts, approvals, channel bindings, attachment flows, and cleanup operations stay in the existing REST API per the planning/admin boundary above.
 3. Runtime permission requests are translated into ACP-friendly updates; decisions are persisted through the core approval path and delivered to executors that implement `resolveRuntimeApproval`.
 4. Event updates include compact projections for common SpecRail event families, but many provider-specific details still remain in `session/update` plus raw `_meta` rather than a full ACP-native event taxonomy.
