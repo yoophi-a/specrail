@@ -67,8 +67,13 @@ export function loadTelegramAppConfig(env: NodeJS.ProcessEnv = process.env): Tel
     telegramBotToken: env.TELEGRAM_BOT_TOKEN ?? "",
     port: parseTelegramPort(env.TELEGRAM_APP_PORT, 4300, "TELEGRAM_APP_PORT"),
     webhookPath: normalizeTelegramWebhookPath(env.TELEGRAM_WEBHOOK_PATH),
-    projectId: env.SPECRAIL_TELEGRAM_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID,
+    projectId: readOptionalEnvValue(env.SPECRAIL_TELEGRAM_PROJECT_ID) ?? readOptionalEnvValue(env.SPECRAIL_PROJECT_ID),
   };
+}
+
+function readOptionalEnvValue(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized || undefined;
 }
 
 function normalizeTelegramWebhookPath(pathname: string | undefined): string {

@@ -871,6 +871,17 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
   assert.equal(isGitHubActorAuthorized(config, "mallory"), false);
 });
 
+test("loadGitHubAppConfig normalizes project id environment values", () => {
+  assert.equal(loadGitHubAppConfig({}).projectId, "project-default");
+  assert.equal(loadGitHubAppConfig({ SPECRAIL_PROJECT_ID: " shared-project " }).projectId, "shared-project");
+  assert.equal(
+    loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: " github-project ", SPECRAIL_PROJECT_ID: "shared-project" }).projectId,
+    "github-project",
+  );
+  assert.equal(loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: " ", SPECRAIL_PROJECT_ID: " shared-project " }).projectId, "shared-project");
+  assert.equal(loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: "", SPECRAIL_PROJECT_ID: "" }).projectId, "project-default");
+});
+
 test("loadGitHubAppConfig validates port environment values", () => {
   assert.equal(loadGitHubAppConfig({}).port, 4200);
   assert.equal(loadGitHubAppConfig({ GITHUB_APP_PORT: "0" }).port, 0);

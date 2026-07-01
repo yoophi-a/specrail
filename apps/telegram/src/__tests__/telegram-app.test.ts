@@ -61,6 +61,19 @@ test("loadTelegramAppConfig validates port environment values", () => {
   assert.throws(() => loadTelegramAppConfig({ TELEGRAM_APP_PORT: "70000" }), /invalid TELEGRAM_APP_PORT: 70000/u);
 });
 
+test("loadTelegramAppConfig normalizes project id environment values", () => {
+  assert.equal(loadTelegramAppConfig({ SPECRAIL_PROJECT_ID: " shared-project " }).projectId, "shared-project");
+  assert.equal(
+    loadTelegramAppConfig({ SPECRAIL_TELEGRAM_PROJECT_ID: " telegram-project ", SPECRAIL_PROJECT_ID: "shared-project" }).projectId,
+    "telegram-project",
+  );
+  assert.equal(
+    loadTelegramAppConfig({ SPECRAIL_TELEGRAM_PROJECT_ID: " ", SPECRAIL_PROJECT_ID: " shared-project " }).projectId,
+    "shared-project",
+  );
+  assert.equal(loadTelegramAppConfig({ SPECRAIL_TELEGRAM_PROJECT_ID: "", SPECRAIL_PROJECT_ID: "" }).projectId, undefined);
+});
+
 test("TelegramBotClient validates sendMessage numeric identifiers", async () => {
   const requests: Array<{ url: string; body: unknown }> = [];
   const client = new TelegramBotClient("token", async (url, init) => {

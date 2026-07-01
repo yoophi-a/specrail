@@ -249,6 +249,11 @@ function parseCsvList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function readOptionalEnvValue(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized || undefined;
+}
+
 function parseGitHubRelayQueueBackend(value: string | undefined): GitHubRelayQueueBackend | undefined {
   if (!value?.trim()) {
     return undefined;
@@ -359,7 +364,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     port: parsePort(env.GITHUB_APP_PORT, 4200, "GITHUB_APP_PORT"),
     webhookPath: normalizeWebhookPath(env.GITHUB_WEBHOOK_PATH),
     webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",
-    projectId: env.SPECRAIL_GITHUB_PROJECT_ID ?? env.SPECRAIL_PROJECT_ID ?? "project-default",
+    projectId: readOptionalEnvValue(env.SPECRAIL_GITHUB_PROJECT_ID) ?? readOptionalEnvValue(env.SPECRAIL_PROJECT_ID) ?? "project-default",
     githubApiBaseUrl: env.GITHUB_API_BASE_URL ?? "https://api.github.com",
     githubToken: env.GITHUB_TOKEN ?? env.GITHUB_INSTALLATION_TOKEN,
     githubAppId: env.GITHUB_APP_ID,
