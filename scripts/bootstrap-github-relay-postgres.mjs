@@ -3,14 +3,14 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const schemaPath = resolve(root, "docs/sql/github-relay-jobs.sql");
 const defaultTableName = "github_relay_jobs";
 const defaultIndexName = "github_relay_jobs_claim_idx";
 
-function usage() {
+export function usage() {
   return `Usage: node scripts/bootstrap-github-relay-postgres.mjs [--dry-run|--apply] [--table <name>] [--database-url <url>]
 
 Options:
@@ -22,18 +22,19 @@ Options:
 `;
 }
 
-function readArgs(argv) {
+export function readArgs(argv, env = process.env) {
   const options = {
     apply: false,
-    tableName: process.env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE ?? defaultTableName,
-    databaseUrl: process.env.GITHUB_RELAY_QUEUE_POSTGRES_URL ?? process.env.DATABASE_URL,
+    help: false,
+    tableName: env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE ?? defaultTableName,
+    databaseUrl: env.GITHUB_RELAY_QUEUE_POSTGRES_URL ?? env.DATABASE_URL,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--help" || arg === "-h") {
-      console.log(usage());
-      process.exit(0);
+      options.help = true;
+      continue;
     }
     if (arg === "--dry-run") {
       options.apply = false;
@@ -67,14 +68,14 @@ function readArgs(argv) {
   return options;
 }
 
-function assertSafePostgresIdentifier(identifier) {
+export function assertSafePostgresIdentifier(identifier) {
   if (!/^[a-z_][a-z0-9_]*$/u.test(identifier)) {
     throw new Error(`invalid PostgreSQL relay queue table name: ${identifier}`);
   }
   return identifier;
 }
 
-function claimIndexName(tableName) {
+export function claimIndexName(tableName) {
   if (tableName === defaultTableName) {
     return defaultIndexName;
   }
@@ -83,8 +84,7 @@ function claimIndexName(tableName) {
   return `github_relay_${hash}_claim_idx`;
 }
 
-async function renderSchema(tableName) {
-  const source = await readFile(schemaPath, "utf8");
+export function renderSchemaFromSource(source, tableName) {
   const safeTableName = assertSafePostgresIdentifier(tableName);
   const safeIndexName = claimIndexName(safeTableName);
 
@@ -93,7 +93,18 @@ async function renderSchema(tableName) {
     .replaceAll(defaultTableName, safeTableName);
 }
 
-async function applySchema(input) {
+export async function renderSchema(tableName) {
+  const source = await readFile(schemaPath, "utf8");
+  return renderSchemaFromSource(source, tableName);
+}
+
+export function validateApplyOptions(options) {
+  if (options.apply && !options.databaseUrl) {
+    throw new Error("--apply requires GITHUB_RELAY_QUEUE_POSTGRES_URL, DATABASE_URL, or --database-url");
+  }
+}
+
+export async function applySchema(input) {
   const child = spawn("psql", ["--set", "ON_ERROR_STOP=1", input.databaseUrl], {
     stdio: ["pipe", "inherit", "inherit"],
   });
@@ -109,8 +120,14 @@ async function applySchema(input) {
   }
 }
 
-try {
-  const options = readArgs(process.argv.slice(2));
+export async function runCli(argv = process.argv.slice(2), env = process.env) {
+  const options = readArgs(argv, env);
+
+  if (options.help) {
+    console.log(usage());
+    return;
+  }
+
   const sql = await renderSchema(options.tableName);
 
   if (!options.apply) {
@@ -118,16 +135,20 @@ try {
     if (!sql.endsWith("\n")) {
       process.stdout.write("\n");
     }
-    process.exit(0);
+    return;
   }
 
-  if (!options.databaseUrl) {
-    throw new Error("--apply requires GITHUB_RELAY_QUEUE_POSTGRES_URL, DATABASE_URL, or --database-url");
-  }
+  validateApplyOptions(options);
 
   await applySchema({ databaseUrl: options.databaseUrl, sql });
   console.log(`Applied GitHub relay PostgreSQL schema for table ${options.tableName}.`);
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    await runCli();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
