@@ -326,14 +326,15 @@ export class TelegramBotClient {
 
   async sendMessage(input: { chatId: string; text: string; messageThreadId?: string }): Promise<void> {
     await this.call("/sendMessage", {
-      chat_id: Number(input.chatId),
+      chat_id: parseTelegramIntegerId(input.chatId, "chatId", { allowNegative: true }),
       text: input.text,
-      ...(input.messageThreadId ? { message_thread_id: Number(input.messageThreadId) } : {}),
+      ...(input.messageThreadId ? { message_thread_id: parseTelegramIntegerId(input.messageThreadId, "messageThreadId") } : {}),
     });
   }
 
   private async call(pathname: string, body: unknown): Promise<void> {
-    const response = await this.fetchImpl(new URL(pathname, this.baseUrl), {
+    const methodPath = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+    const response = await this.fetchImpl(new URL(methodPath, `${this.baseUrl}/`), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -343,6 +344,19 @@ export class TelegramBotClient {
       throw new Error(`Telegram API request failed (${response.status}) for ${pathname}`);
     }
   }
+}
+
+function parseTelegramIntegerId(value: string, name: string, options: { allowNegative?: boolean } = {}): number {
+  const pattern = options.allowNegative ? /^-?\d+$/u : /^[1-9]\d*$/u;
+  if (!pattern.test(value)) {
+    throw new Error(`invalid Telegram ${name}: ${value}`);
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`invalid Telegram ${name}: ${value}`);
+  }
+  return parsed;
 }
 
 export type TelegramUpdateMetricOutcome = "accepted" | "ignored" | "failed";
