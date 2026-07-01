@@ -326,6 +326,7 @@ test("Telegram webhook server records accepted update metrics", async () => {
 
 test("buildRunReportUrl encodes run ids against the configured API base", () => {
   assert.equal(buildRunReportUrl("http://127.0.0.1:4000", "run/1"), "http://127.0.0.1:4000/runs/run%2F1/report.md");
+  assert.equal(buildRunReportUrl("https://example.test/specrail", "run/1"), "https://example.test/specrail/runs/run%2F1/report.md");
 });
 
 test("handleTelegramUpdate adds report links only to terminal run notifications", async () => {
@@ -432,13 +433,15 @@ test("handleTelegramUpdate reuses an existing bound track", async () => {
 
 test("SpecRailApiClient parses SSE frames from run event streams", async () => {
   const encoder = new TextEncoder();
+  const requests: string[] = [];
   const chunks = [
     encoder.encode('data: {"type":"task_status_changed","summary":"Run started"}\n\n'),
     encoder.encode('data: {"type":"task_status_changed","summary":"Run completed"}\n\n'),
   ];
 
-  const client = new SpecRailApiClient("http://example.test", async () =>
-    new Response(
+  const client = new SpecRailApiClient("http://example.test/specrail", async (input) => {
+    requests.push(String(input));
+    return new Response(
       new ReadableStream({
         start(controller) {
           for (const chunk of chunks) {
@@ -448,8 +451,8 @@ test("SpecRailApiClient parses SSE frames from run event streams", async () => {
         },
       }),
       { status: 200, headers: { "content-type": "text/event-stream" } },
-    ),
-  );
+    );
+  });
 
   const events: Array<{ type: string; summary?: string }> = [];
   for await (const event of client.streamRunEvents("run-1")) {
@@ -460,4 +463,5 @@ test("SpecRailApiClient parses SSE frames from run event streams", async () => {
     { type: "task_status_changed", summary: "Run started" },
     { type: "task_status_changed", summary: "Run completed" },
   ]);
+  assert.deepEqual(requests, ["http://example.test/specrail/runs/run-1/events/stream"]);
 });

@@ -130,8 +130,14 @@ function getPromptFromMessage(message: TelegramMessage): string {
   return text || "Please inspect the linked Telegram attachments and continue the existing SpecRail context.";
 }
 
+function resolveSpecRailApiUrl(baseUrl: string, pathname: string): URL {
+  const relativePath = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+  const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(relativePath, normalizedBaseUrl);
+}
+
 export function buildRunReportUrl(apiBaseUrl: string, runId: string): string {
-  return new URL(`/runs/${encodeURIComponent(runId)}/report.md`, apiBaseUrl).toString();
+  return resolveSpecRailApiUrl(apiBaseUrl, `/runs/${encodeURIComponent(runId)}/report.md`).toString();
 }
 
 function isTerminalRunSummary(summary: string): boolean {
@@ -185,7 +191,7 @@ export class SpecRailApiClient {
   constructor(private readonly baseUrl: string, private readonly fetchImpl: typeof fetch = fetch) {}
 
   private async request<T>(pathname: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetchImpl(new URL(pathname, this.baseUrl), {
+    const response = await this.fetchImpl(resolveSpecRailApiUrl(this.baseUrl, pathname), {
       ...init,
       headers: {
         "content-type": "application/json",
@@ -201,7 +207,7 @@ export class SpecRailApiClient {
   }
 
   findChannelBinding(input: { channelType: "telegram"; externalChatId: string; externalThreadId?: string }) {
-    const url = new URL("/channel-bindings", this.baseUrl);
+    const url = resolveSpecRailApiUrl(this.baseUrl, "/channel-bindings");
     url.searchParams.set("channelType", input.channelType);
     url.searchParams.set("externalChatId", input.externalChatId);
     if (input.externalThreadId) {
@@ -255,7 +261,7 @@ export class SpecRailApiClient {
   }
 
   listAttachments(input: { planningSessionId?: string; trackId?: string }) {
-    const url = new URL("/attachments", this.baseUrl);
+    const url = resolveSpecRailApiUrl(this.baseUrl, "/attachments");
     if (input.planningSessionId) {
       url.searchParams.set("planningSessionId", input.planningSessionId);
     }
@@ -276,7 +282,7 @@ export class SpecRailApiClient {
   }
 
   async *streamRunEvents(runId: string): AsyncGenerator<{ type: string; summary?: string }> {
-    const response = await this.fetchImpl(new URL(`/runs/${runId}/events/stream`, this.baseUrl));
+    const response = await this.fetchImpl(resolveSpecRailApiUrl(this.baseUrl, `/runs/${encodeURIComponent(runId)}/events/stream`));
     if (!response.ok || !response.body) {
       throw new Error(`SpecRail API request failed (${response.status}) for /runs/${runId}/events/stream`);
     }

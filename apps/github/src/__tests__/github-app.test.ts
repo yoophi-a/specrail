@@ -10,6 +10,7 @@ import type { QueryResultRow } from "pg";
 import {
   authorizeGitHubActor,
   buildGitHubOperatorRunUrl,
+  buildGitHubRunReportUrl,
   buildGitHubSignature256,
   createGitHubAppInstallationTokenProvider,
   createGitHubAppJwt,
@@ -255,6 +256,8 @@ test("formatGitHubTerminalOutcomeComment formats terminal outcomes with optional
 
 test("buildGitHubOperatorRunUrl creates encoded hosted run detail links", () => {
   assert.equal(buildGitHubOperatorRunUrl("https://specrail.example.test", "run/opaque value"), "https://specrail.example.test/operator?runId=run%2Fopaque+value");
+  assert.equal(buildGitHubOperatorRunUrl("https://specrail.example.test/specrail", "run/opaque value"), "https://specrail.example.test/specrail/operator?runId=run%2Fopaque+value");
+  assert.equal(buildGitHubRunReportUrl("https://specrail.example.test/specrail", "run/opaque value"), "https://specrail.example.test/specrail/runs/run%2Fopaque%20value/report.md");
 });
 
 test("postGitHubTerminalOutcomeComment posts terminal comments and ignores progress statuses", async () => {
@@ -433,22 +436,22 @@ test("createSpecRailHttpClient maps GitHub orchestration calls to SpecRail API r
       requests.push({ method: request.method, url: request.url, body: bodyText ? JSON.parse(bodyText) : undefined });
       response.setHeader("content-type", "application/json");
 
-      if (request.url?.startsWith("/channel-bindings?") && request.method === "GET") {
+      if (request.url?.startsWith("/specrail/channel-bindings?") && request.method === "GET") {
         response.statusCode = 200;
         response.end(JSON.stringify({ binding: { id: "binding-existing", trackId: "track-existing", planningSessionId: "planning-existing" } }));
         return;
       }
-      if (request.url === "/tracks" && request.method === "POST") {
+      if (request.url === "/specrail/tracks" && request.method === "POST") {
         response.statusCode = 201;
         response.end(JSON.stringify({ track: { id: "track-created" } }));
         return;
       }
-      if (request.url === "/channel-bindings" && request.method === "POST") {
+      if (request.url === "/specrail/channel-bindings" && request.method === "POST") {
         response.statusCode = 201;
         response.end(JSON.stringify({ binding: { id: "binding-created", trackId: "track-created" } }));
         return;
       }
-      if (request.url === "/runs" && request.method === "POST") {
+      if (request.url === "/specrail/runs" && request.method === "POST") {
         response.statusCode = 201;
         response.end(JSON.stringify({ run: { id: "run-created", status: "running" } }));
         return;
@@ -457,7 +460,7 @@ test("createSpecRailHttpClient maps GitHub orchestration calls to SpecRail API r
       response.end(JSON.stringify({ error: "not_found" }));
     });
   }, async (baseUrl) => {
-    const client = createSpecRailHttpClient(baseUrl);
+    const client = createSpecRailHttpClient(`${baseUrl}/specrail`);
     assert.deepEqual(await client.findChannelBinding({ channelType: "github", externalChatId: "yoophi-a/specrail", externalThreadId: "123" }), {
       id: "binding-existing",
       trackId: "track-existing",
@@ -485,13 +488,13 @@ test("createSpecRailHttpClient maps GitHub orchestration calls to SpecRail API r
   assert.deepEqual(requests, [
     {
       method: "GET",
-      url: "/channel-bindings?channelType=github&externalChatId=yoophi-a%2Fspecrail&externalThreadId=123",
+      url: "/specrail/channel-bindings?channelType=github&externalChatId=yoophi-a%2Fspecrail&externalThreadId=123",
       body: undefined,
     },
-    { method: "POST", url: "/tracks", body: { projectId: "project-default", title: "Title", description: "Description", priority: "medium" } },
+    { method: "POST", url: "/specrail/tracks", body: { projectId: "project-default", title: "Title", description: "Description", priority: "medium" } },
     {
       method: "POST",
-      url: "/channel-bindings",
+      url: "/specrail/channel-bindings",
       body: {
         projectId: "project-default",
         channelType: "github",
@@ -501,7 +504,7 @@ test("createSpecRailHttpClient maps GitHub orchestration calls to SpecRail API r
         trackId: "track-created",
       },
     },
-    { method: "POST", url: "/runs", body: { trackId: "track-created", prompt: "preserve opaque prompt #123" } },
+    { method: "POST", url: "/specrail/runs", body: { trackId: "track-created", prompt: "preserve opaque prompt #123" } },
   ]);
 });
 
@@ -704,7 +707,7 @@ test("relayGitHubRunTerminalOutcome no-ops when no terminal event or stream is u
 
 test("createSpecRailHttpClient streams run events and preserves SSE failures", async () => {
   await withJsonServer((request, response) => {
-    if (request.url === "/runs/run-1/events/stream") {
+    if (request.url === "/specrail/runs/run-1/events/stream") {
       response.statusCode = 200;
       response.setHeader("content-type", "text/event-stream");
       response.end('event: message\ndata: {"type":"task_status_changed","summary":"Run completed","payload":{"status":"completed"}}\n\n');
@@ -714,7 +717,7 @@ test("createSpecRailHttpClient streams run events and preserves SSE failures", a
     response.setHeader("content-type", "application/json");
     response.end(JSON.stringify({ error: "stream failed" }));
   }, async (baseUrl) => {
-    const client = createSpecRailHttpClient(baseUrl);
+    const client = createSpecRailHttpClient(`${baseUrl}/specrail`);
     const events = [];
     for await (const event of client.streamRunEvents?.("run-1") ?? []) {
       events.push(event);

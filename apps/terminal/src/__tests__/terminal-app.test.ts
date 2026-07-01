@@ -33,19 +33,20 @@ import {
 } from "../index.js";
 
 test("SpecRailTerminalApiClient loads a summary snapshot", async () => {
-  const client = new SpecRailTerminalApiClient("http://example.test", async (input) => {
+  const requests: string[] = [];
+  const client = new SpecRailTerminalApiClient("http://example.test/specrail", async (input) => {
     const url = String(input);
+    requests.push(url);
 
-    if (url.endsWith("/projects")) {
+    if (url === "http://example.test/specrail/projects") {
       return new Response(JSON.stringify({ projects: [{ id: "project-1", name: "SpecRail" }] }), { status: 200 });
     }
 
-    if (url.includes("/tracks?page=")) {
-      assert.ok(url.includes("projectId=project-1"));
+    if (url === "http://example.test/specrail/tracks?page=1&pageSize=20&projectId=project-1") {
       return new Response(JSON.stringify({ tracks: [{ id: "track-1", projectId: "project-1", title: "Terminal shell", status: "ready" }] }), { status: 200 });
     }
 
-    if (url.includes("/runs?page=")) {
+    if (url === "http://example.test/specrail/runs?page=1&pageSize=20") {
       return new Response(JSON.stringify({ runs: [{ id: "run-1", trackId: "track-1", status: "running", backend: "codex" }] }), {
         status: 200,
       });
@@ -58,6 +59,11 @@ test("SpecRailTerminalApiClient loads a summary snapshot", async () => {
   assert.equal(summary.projects?.[0]?.id, "project-1");
   assert.equal(summary.tracks[0]?.id, "track-1");
   assert.equal(summary.runs[0]?.id, "run-1");
+  assert.deepEqual(requests, [
+    "http://example.test/specrail/projects",
+    "http://example.test/specrail/tracks?page=1&pageSize=20&projectId=project-1",
+    "http://example.test/specrail/runs?page=1&pageSize=20",
+  ]);
 });
 
 test("resolveTrackDefaultWorkspacePath prefers the selected project's local repo path", () => {
@@ -151,10 +157,10 @@ test("SpecRailTerminalApiClient surfaces API validation details for execution ac
 });
 
 test("SpecRailTerminalApiClient loads Markdown run reports", async () => {
-  const client = new SpecRailTerminalApiClient("http://example.test", async (input) => {
+  const client = new SpecRailTerminalApiClient("http://example.test/specrail", async (input) => {
     const url = String(input);
 
-    if (url === "http://example.test/runs/run%2F1/report.md") {
+    if (url === "http://example.test/specrail/runs/run%2F1/report.md") {
       return new Response("# Run Report — run/1\n", { status: 200, headers: { "content-type": "text/markdown; charset=utf-8" } });
     }
 
@@ -853,13 +859,15 @@ test("SpecRailTerminalApiClient loads run events for post-action refresh", async
 
 test("SpecRailTerminalApiClient parses SSE frames from run event streams", async () => {
   const encoder = new TextEncoder();
+  const requests: string[] = [];
   const chunks = [
     encoder.encode('data: {"id":"evt-1","executionId":"run-1","type":"task_status_changed","timestamp":"2026-04-10T12:00:00.000Z","source":"codex","summary":"Run started","payload":{"status":"running"}}\n\n'),
     encoder.encode('data: {"id":"evt-2","executionId":"run-1","type":"task_status_changed","subtype":"codex_completed","timestamp":"2026-04-10T12:02:00.000Z","source":"codex","summary":"Run completed","payload":{"status":"completed"}}\n\n'),
   ];
 
-  const client = new SpecRailTerminalApiClient("http://example.test", async () =>
-    new Response(
+  const client = new SpecRailTerminalApiClient("http://example.test/specrail", async (input) => {
+    requests.push(String(input));
+    return new Response(
       new ReadableStream({
         start(controller) {
           for (const chunk of chunks) {
@@ -869,8 +877,8 @@ test("SpecRailTerminalApiClient parses SSE frames from run event streams", async
         },
       }),
       { status: 200, headers: { "content-type": "text/event-stream" } },
-    ),
-  );
+    );
+  });
 
   const events = [] as Array<{ id: string; type: string; summary: string; subtype?: string }>;
   for await (const event of client.streamRunEvents("run-1")) {
@@ -881,6 +889,7 @@ test("SpecRailTerminalApiClient parses SSE frames from run event streams", async
     { id: "evt-1", type: "task_status_changed", summary: "Run started", subtype: undefined },
     { id: "evt-2", type: "task_status_changed", summary: "Run completed", subtype: "codex_completed" },
   ]);
+  assert.deepEqual(requests, ["http://example.test/specrail/runs/run-1/events/stream"]);
 });
 
 test("terminal preferences load and save local UI defaults", async () => {

@@ -518,7 +518,7 @@ export class SpecRailTerminalApiClient {
   ) {}
 
   private async request<T>(pathname: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetchImpl(new URL(pathname, this.baseUrl), init);
+    const response = await this.fetchImpl(resolveSpecRailApiUrl(this.baseUrl, pathname), init);
     if (!response.ok) {
       throw new Error(await this.buildRequestError(response, pathname));
     }
@@ -527,7 +527,7 @@ export class SpecRailTerminalApiClient {
   }
 
   private async requestText(pathname: string, init?: RequestInit): Promise<string> {
-    const response = await this.fetchImpl(new URL(pathname, this.baseUrl), init);
+    const response = await this.fetchImpl(resolveSpecRailApiUrl(this.baseUrl, pathname), init);
     if (!response.ok) {
       throw new Error(await this.buildRequestError(response, pathname));
     }
@@ -762,7 +762,7 @@ export class SpecRailTerminalApiClient {
   }
 
   async *streamRunEvents(runId: string, signal?: AbortSignal): AsyncGenerator<ExecutionEvent> {
-    const response = await this.fetchImpl(new URL(`/runs/${runId}/events/stream`, this.baseUrl), {
+    const response = await this.fetchImpl(resolveSpecRailApiUrl(this.baseUrl, `/runs/${encodeURIComponent(runId)}/events/stream`), {
       headers: { accept: "text/event-stream" },
       signal,
     });
@@ -808,6 +808,12 @@ export class SpecRailTerminalApiClient {
       await reader.cancel().catch(() => undefined);
     }
   }
+}
+
+function resolveSpecRailApiUrl(baseUrl: string, pathname: string): URL {
+  const relativePath = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+  const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(relativePath, normalizedBaseUrl);
 }
 
 export function createEmptyRunEventFeedState(runId: string | null = null, paused = false): RunEventFeedState {

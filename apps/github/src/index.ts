@@ -572,7 +572,7 @@ async function* parseSpecRailSseStream<T>(response: Response): AsyncGenerator<T>
 }
 
 async function specRailJsonRequest<T>(baseUrl: string, path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(new URL(path, baseUrl), {
+  const response = await fetch(resolveSpecRailApiUrl(baseUrl, path), {
     ...init,
     headers: {
       accept: "application/json",
@@ -588,6 +588,12 @@ async function specRailJsonRequest<T>(baseUrl: string, path: string, init: Reque
   }
 
   return (responseText ? JSON.parse(responseText) : {}) as T;
+}
+
+function resolveSpecRailApiUrl(baseUrl: string, pathname: string): URL {
+  const relativePath = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+  const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(relativePath, normalizedBaseUrl);
 }
 
 export function createSpecRailHttpClient(apiBaseUrl: string): GitHubSpecRailPort {
@@ -625,7 +631,7 @@ export function createSpecRailHttpClient(apiBaseUrl: string): GitHubSpecRailPort
     },
     async *streamRunEvents(runId) {
       const path = `/runs/${encodeURIComponent(runId)}/events/stream`;
-      const response = await fetch(new URL(path, apiBaseUrl), { headers: { accept: "text/event-stream" } });
+      const response = await fetch(resolveSpecRailApiUrl(apiBaseUrl, path), { headers: { accept: "text/event-stream" } });
       if (!response.ok || !response.body) {
         const responseText = await response.text();
         const bodySuffix = responseText ? `: ${responseText}` : "";
@@ -793,11 +799,11 @@ function buildGitHubDescription(context: GitHubAcceptedRunCommandContext): strin
 }
 
 export function buildGitHubRunReportUrl(apiBaseUrl: string, runId: string): string {
-  return new URL(`/runs/${encodeURIComponent(runId)}/report.md`, apiBaseUrl).toString();
+  return resolveSpecRailApiUrl(apiBaseUrl, `/runs/${encodeURIComponent(runId)}/report.md`).toString();
 }
 
 export function buildGitHubOperatorRunUrl(operatorBaseUrl: string, runId: string): string {
-  const url = new URL("/operator", operatorBaseUrl);
+  const url = resolveSpecRailApiUrl(operatorBaseUrl, "/operator");
   url.searchParams.set("runId", runId);
   return url.toString();
 }
