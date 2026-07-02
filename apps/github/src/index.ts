@@ -281,13 +281,14 @@ function parseOptionalPositiveInteger(value: string | undefined, name: string): 
 }
 
 function parsePort(value: string | undefined, defaultValue: number, name: string): number {
-  if (value === undefined || value === "") {
+  const normalized = value?.trim();
+  if (!normalized) {
     return defaultValue;
   }
-  if (!/^\d+$/u.test(value)) {
+  if (!/^\d+$/u.test(normalized)) {
     throw new Error(`invalid ${name}: ${value}`);
   }
-  const parsed = Number(value);
+  const parsed = Number(normalized);
   if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 65535) {
     throw new Error(`invalid ${name}: ${value}`);
   }

@@ -56,7 +56,8 @@ test("loadConfig falls back for blank API environment values", () => {
 
 test("loadConfig validates API port environment values", () => {
   assert.equal(loadConfig({ SPECRAIL_PORT: "0" }).port, 0);
-  assert.equal(loadConfig({ SPECRAIL_PORT: "65535" }).port, 65535);
+  assert.equal(loadConfig({ SPECRAIL_PORT: " 65535 " }).port, 65535);
+  assert.equal(loadConfig({ SPECRAIL_PORT: " " }).port, 4000);
 
   assert.throws(() => loadConfig({ SPECRAIL_PORT: "abc" }), /invalid SPECRAIL_PORT: abc/u);
   assert.throws(() => loadConfig({ SPECRAIL_PORT: "4000.5" }), /invalid SPECRAIL_PORT: 4000.5/u);

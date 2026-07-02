@@ -82,15 +82,16 @@ function normalizeTelegramWebhookPath(pathname: string | undefined): string {
 }
 
 function parseTelegramPort(value: string | undefined, defaultValue: number, envName: string): number {
-  if (value === undefined || value === "") {
+  const normalized = value?.trim();
+  if (!normalized) {
     return defaultValue;
   }
 
-  if (!/^\d+$/u.test(value)) {
+  if (!/^\d+$/u.test(normalized)) {
     throw new Error(`invalid ${envName}: ${value}`);
   }
 
-  const port = Number(value);
+  const port = Number(normalized);
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) {
     throw new Error(`invalid ${envName}: ${value}`);
   }

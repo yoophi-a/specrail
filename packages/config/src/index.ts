@@ -91,15 +91,16 @@ function parseIntegerEnv(
   envName: string,
   bounds: { min?: number; max?: number } = {},
 ): number {
-  if (value === undefined || value === "") {
+  const normalized = value?.trim();
+  if (!normalized) {
     return defaultValue;
   }
 
-  if (!/^\d+$/u.test(value)) {
+  if (!/^\d+$/u.test(normalized)) {
     throw new Error(`invalid ${envName}: ${value}`);
   }
 
-  const parsed = Number(value);
+  const parsed = Number(normalized);
   if (
     !Number.isSafeInteger(parsed) ||
     (bounds.min !== undefined && parsed < bounds.min) ||

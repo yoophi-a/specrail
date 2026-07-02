@@ -52,8 +52,9 @@ test("loadTelegramAppConfig validates port environment values", () => {
     projectId: undefined,
   });
 
-  assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: "4300" }).port, 4300);
+  assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: " 4300 " }).port, 4300);
   assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: "0" }).port, 0);
+  assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: " " }).port, 4300);
   assert.equal(loadTelegramAppConfig({ TELEGRAM_WEBHOOK_PATH: "telegram/custom" }).webhookPath, "/telegram/custom");
   assert.equal(loadTelegramAppConfig({ TELEGRAM_WEBHOOK_PATH: "  /telegram/custom  " }).webhookPath, "/telegram/custom");
   assert.throws(() => loadTelegramAppConfig({ TELEGRAM_APP_PORT: "abc" }), /invalid TELEGRAM_APP_PORT: abc/u);

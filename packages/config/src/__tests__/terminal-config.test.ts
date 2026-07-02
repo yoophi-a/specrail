@@ -48,7 +48,8 @@ test("loadTerminalClientConfig falls back for blank API base URL values", () => 
 
 test("loadTerminalClientConfig validates refresh interval environment values", () => {
   assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_REFRESH_MS: "0" }).refreshIntervalMs, 0);
-  assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_REFRESH_MS: "15000" }).refreshIntervalMs, 15000);
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_REFRESH_MS: " 15000 " }).refreshIntervalMs, 15000);
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_REFRESH_MS: " " }).refreshIntervalMs, 5000);
 
   assert.throws(
     () => loadTerminalClientConfig({ SPECRAIL_TERMINAL_REFRESH_MS: "abc" }),

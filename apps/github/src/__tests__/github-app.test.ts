@@ -922,7 +922,8 @@ test("loadGitHubAppConfig normalizes follow terminal events flag", () => {
 test("loadGitHubAppConfig validates port environment values", () => {
   assert.equal(loadGitHubAppConfig({}).port, 4200);
   assert.equal(loadGitHubAppConfig({ GITHUB_APP_PORT: "0" }).port, 0);
-  assert.equal(loadGitHubAppConfig({ GITHUB_APP_PORT: "4300" }).port, 4300);
+  assert.equal(loadGitHubAppConfig({ GITHUB_APP_PORT: " 4300 " }).port, 4300);
+  assert.equal(loadGitHubAppConfig({ GITHUB_APP_PORT: " " }).port, 4200);
   assert.equal(loadGitHubAppConfig({ GITHUB_WEBHOOK_PATH: "github/custom" }).webhookPath, "/github/custom");
   assert.equal(loadGitHubAppConfig({ GITHUB_WEBHOOK_PATH: "  /github/custom  " }).webhookPath, "/github/custom");
 
