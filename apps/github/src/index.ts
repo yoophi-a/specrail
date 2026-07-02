@@ -371,7 +371,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubAppId: readOptionalEnvValue(env.GITHUB_APP_ID),
     githubInstallationId: readOptionalEnvValue(env.GITHUB_INSTALLATION_ID),
     githubPrivateKey: normalizePrivateKey(env.GITHUB_PRIVATE_KEY),
-    followTerminalEvents: env.GITHUB_FOLLOW_TERMINAL_EVENTS === "true",
+    followTerminalEvents: readOptionalEnvValue(env.GITHUB_FOLLOW_TERMINAL_EVENTS) === "true",
     githubRelayQueueBackend: parseGitHubRelayQueueBackend(env.GITHUB_RELAY_QUEUE_BACKEND),
     githubRelayQueuePath: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_PATH),
     githubRelayQueueDir: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_DIR),

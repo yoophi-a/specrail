@@ -912,6 +912,13 @@ test("loadGitHubAppConfig normalizes credential environment values", () => {
   assert.equal(config.githubPrivateKey, "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----");
 });
 
+test("loadGitHubAppConfig normalizes follow terminal events flag", () => {
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: " true " }).followTerminalEvents, true);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "" }).followTerminalEvents, false);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: " " }).followTerminalEvents, false);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "false" }).followTerminalEvents, false);
+});
+
 test("loadGitHubAppConfig validates port environment values", () => {
   assert.equal(loadGitHubAppConfig({}).port, 4200);
   assert.equal(loadGitHubAppConfig({ GITHUB_APP_PORT: "0" }).port, 0);
