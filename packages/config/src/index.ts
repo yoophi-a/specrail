@@ -29,20 +29,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SpecRailConfig
 
   return {
     port: parseIntegerEnv(env.SPECRAIL_PORT, 4000, "SPECRAIL_PORT", { min: 0, max: 65535 }),
-    dataDir: env.SPECRAIL_DATA_DIR ?? ".specrail-data",
-    repoArtifactDir: env.SPECRAIL_REPO_ARTIFACT_DIR ?? ".specrail",
-    executionBackend: env.SPECRAIL_EXECUTION_BACKEND ?? "codex",
-    executionProfile: env.SPECRAIL_EXECUTION_PROFILE ?? "default",
+    dataDir: readOptionalEnvValue(env.SPECRAIL_DATA_DIR) ?? ".specrail-data",
+    repoArtifactDir: readOptionalEnvValue(env.SPECRAIL_REPO_ARTIFACT_DIR) ?? ".specrail",
+    executionBackend: readOptionalEnvValue(env.SPECRAIL_EXECUTION_BACKEND) ?? "codex",
+    executionProfile: readOptionalEnvValue(env.SPECRAIL_EXECUTION_PROFILE) ?? "default",
     executionWorkspaceMode,
   };
 }
 
 function parseExecutionWorkspaceMode(value: string | undefined): SpecRailExecutionWorkspaceMode {
-  if (!value || value === "directory") {
+  const normalized = readOptionalEnvValue(value);
+  if (!normalized || normalized === "directory") {
     return "directory";
   }
 
-  if (value === "git_worktree") {
+  if (normalized === "git_worktree") {
     return "git_worktree";
   }
 

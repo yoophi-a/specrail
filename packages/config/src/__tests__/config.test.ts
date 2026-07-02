@@ -14,6 +14,46 @@ test("loadConfig returns execution defaults", () => {
   });
 });
 
+test("loadConfig normalizes optional API environment values", () => {
+  assert.deepEqual(
+    loadConfig({
+      SPECRAIL_DATA_DIR: "  /var/lib/specrail  ",
+      SPECRAIL_REPO_ARTIFACT_DIR: "  /var/lib/specrail/repo-visible  ",
+      SPECRAIL_EXECUTION_BACKEND: "  claude-code  ",
+      SPECRAIL_EXECUTION_PROFILE: "  production  ",
+      SPECRAIL_EXECUTION_WORKSPACE_MODE: "  git_worktree  ",
+    }),
+    {
+      port: 4000,
+      dataDir: "/var/lib/specrail",
+      repoArtifactDir: "/var/lib/specrail/repo-visible",
+      executionBackend: "claude-code",
+      executionProfile: "production",
+      executionWorkspaceMode: "git_worktree",
+    },
+  );
+});
+
+test("loadConfig falls back for blank API environment values", () => {
+  assert.deepEqual(
+    loadConfig({
+      SPECRAIL_DATA_DIR: " ",
+      SPECRAIL_REPO_ARTIFACT_DIR: "",
+      SPECRAIL_EXECUTION_BACKEND: " ",
+      SPECRAIL_EXECUTION_PROFILE: "",
+      SPECRAIL_EXECUTION_WORKSPACE_MODE: " ",
+    }),
+    {
+      port: 4000,
+      dataDir: ".specrail-data",
+      repoArtifactDir: ".specrail",
+      executionBackend: "codex",
+      executionProfile: "default",
+      executionWorkspaceMode: "directory",
+    },
+  );
+});
+
 test("loadConfig validates API port environment values", () => {
   assert.equal(loadConfig({ SPECRAIL_PORT: "0" }).port, 0);
   assert.equal(loadConfig({ SPECRAIL_PORT: "65535" }).port, 65535);
