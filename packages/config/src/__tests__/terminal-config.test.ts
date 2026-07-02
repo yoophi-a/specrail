@@ -21,9 +21,9 @@ test("loadTerminalClientConfig reads terminal-specific environment values", () =
     loadTerminalClientConfig({
       SPECRAIL_API_BASE_URL: "  http://localhost:9999  ",
       SPECRAIL_TERMINAL_REFRESH_MS: "15000",
-      SPECRAIL_TERMINAL_INITIAL_SCREEN: "runs",
+      SPECRAIL_TERMINAL_INITIAL_SCREEN: "  runs  ",
       SPECRAIL_TERMINAL_INITIAL_PROJECT_ID: "project-1",
-      SPECRAIL_TERMINAL_INITIAL_RUN_FILTER: "active",
+      SPECRAIL_TERMINAL_INITIAL_RUN_FILTER: "  active  ",
       SPECRAIL_TERMINAL_PREFERENCES_PATH: ".specrail-terminal/preferences.json",
       SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH: ".specrail-terminal/message-templates.json",
       SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: ".specrail-terminal/diffs",
@@ -62,4 +62,10 @@ test("loadTerminalClientConfig validates refresh interval environment values", (
 
 test("loadTerminalClientConfig falls back for unsupported initial run filters", () => {
   assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_INITIAL_RUN_FILTER: "recent" }).initialRunFilter, "all");
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_INITIAL_RUN_FILTER: " " }).initialRunFilter, "all");
+});
+
+test("loadTerminalClientConfig falls back for unsupported initial screens", () => {
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_INITIAL_SCREEN: "dashboard" }).initialScreen, "home");
+  assert.equal(loadTerminalClientConfig({ SPECRAIL_TERMINAL_INITIAL_SCREEN: " " }).initialScreen, "home");
 });

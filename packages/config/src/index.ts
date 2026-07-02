@@ -51,7 +51,7 @@ function parseExecutionWorkspaceMode(value: string | undefined): SpecRailExecuti
 }
 
 export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): SpecRailTerminalClientConfig {
-  const initialScreen = env.SPECRAIL_TERMINAL_INITIAL_SCREEN;
+  const initialScreen = parseTerminalInitialScreen(env.SPECRAIL_TERMINAL_INITIAL_SCREEN);
   const initialRunFilter = parseTerminalInitialRunFilter(env.SPECRAIL_TERMINAL_INITIAL_RUN_FILTER);
   const initialProjectId = env.SPECRAIL_TERMINAL_INITIAL_PROJECT_ID?.trim() || null;
   const preferencePath = env.SPECRAIL_TERMINAL_PREFERENCES_PATH?.trim() || null;
@@ -61,8 +61,7 @@ export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): 
   return {
     apiBaseUrl: readOptionalEnvValue(env.SPECRAIL_API_BASE_URL) ?? "http://127.0.0.1:4000",
     refreshIntervalMs: parseIntegerEnv(env.SPECRAIL_TERMINAL_REFRESH_MS, 5000, "SPECRAIL_TERMINAL_REFRESH_MS", { min: 0 }),
-    initialScreen:
-      initialScreen === "tracks" || initialScreen === "runs" || initialScreen === "settings" ? initialScreen : "home",
+    initialScreen,
     initialProjectId,
     initialRunFilter,
     preferencePath,
@@ -71,8 +70,14 @@ export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): 
   };
 }
 
+function parseTerminalInitialScreen(value: string | undefined): SpecRailTerminalClientConfig["initialScreen"] {
+  const normalized = readOptionalEnvValue(value);
+  return normalized === "tracks" || normalized === "runs" || normalized === "settings" ? normalized : "home";
+}
+
 function parseTerminalInitialRunFilter(value: string | undefined): SpecRailTerminalInitialRunFilter {
-  return value === "active" || value === "terminal" ? value : "all";
+  const normalized = readOptionalEnvValue(value);
+  return normalized === "active" || normalized === "terminal" ? normalized : "all";
 }
 
 function readOptionalEnvValue(value: string | undefined): string | undefined {
