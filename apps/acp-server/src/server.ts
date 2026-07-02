@@ -217,9 +217,10 @@ export class SpecRailAcpServer {
   private async handleSessionLoad(params: unknown, notify: (payload: unknown) => void): Promise<void> {
     const body = (params ?? {}) as SessionLoadParams;
     const sessionId = this.requireNonEmptyString(body.sessionId, "sessionId");
+    const cwd = this.optionalAbsolutePath(body.cwd, "cwd");
     const session = await this.readSession(sessionId);
 
-    if (body.cwd !== undefined && body.cwd !== session.cwd) {
+    if (cwd !== undefined && cwd !== session.cwd) {
       throw new ValidationError(`session cwd mismatch for ${sessionId}`);
     }
 
@@ -237,8 +238,9 @@ export class SpecRailAcpServer {
 
   private async handleSessionList(params: unknown): Promise<{ sessions: Array<Record<string, unknown>>; nextCursor?: string }> {
     const body = (params ?? {}) as SessionListParams;
+    const cwd = this.optionalAbsolutePath(body.cwd, "cwd");
     const all = await this.listSessions();
-    const filtered = body.cwd ? all.filter((session) => session.cwd === body.cwd) : all;
+    const filtered = cwd ? all.filter((session) => session.cwd === cwd) : all;
     const offset = this.decodeCursor(body.cursor);
     const page = filtered.slice(offset, offset + this.pageSize);
     const nextOffset = offset + page.length;
@@ -764,6 +766,13 @@ export class SpecRailAcpServer {
       throw new ValidationError(`${field} must be an absolute path`);
     }
     return text;
+  }
+
+  private optionalAbsolutePath(value: unknown, field: string): string | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    return this.requireAbsolutePath(value, field);
   }
 
   private requireNonEmptyString(value: unknown, field: string): string {

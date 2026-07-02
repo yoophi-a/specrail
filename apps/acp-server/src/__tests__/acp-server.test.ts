@@ -378,7 +378,7 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   assert.ok(JSON.stringify(notifications).includes('"totalCostUsd":0.012'));
 
   const listResponse = await server.handleMessage(
-    { jsonrpc: "2.0", id: 4, method: "session/list", params: { cwd: "/tmp/specrail" } },
+    { jsonrpc: "2.0", id: 4, method: "session/list", params: { cwd: " /tmp/specrail " } },
     () => {},
   );
   const listPayload = listResponse?.result as { sessions: Array<{ sessionId: string; _meta: { specrail: { runId: string } } }> };
@@ -387,7 +387,7 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
 
   const loadNotifications: unknown[] = [];
   const loadResponse = await server.handleMessage(
-    { jsonrpc: "2.0", id: 5, method: "session/load", params: { sessionId, cwd: "/tmp/specrail" } },
+    { jsonrpc: "2.0", id: 5, method: "session/load", params: { sessionId, cwd: " /tmp/specrail " } },
     (payload) => {
       loadNotifications.push(payload);
     },
