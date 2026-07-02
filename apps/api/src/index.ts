@@ -548,6 +548,32 @@ function normalizeForkRunBody(body: ForkRunRequestBody): ForkRunRequestBody {
   };
 }
 
+function normalizeBindChannelBody(body: BindChannelRequestBody): BindChannelRequestBody {
+  return {
+    ...body,
+    projectId: normalizeStringValue(body.projectId),
+    channelType: normalizeStringValue(body.channelType),
+    externalChatId: normalizeStringValue(body.externalChatId),
+    externalThreadId: normalizeStringValue(body.externalThreadId),
+    externalUserId: normalizeStringValue(body.externalUserId),
+    trackId: normalizeStringValue(body.trackId),
+    planningSessionId: normalizeStringValue(body.planningSessionId),
+  };
+}
+
+function normalizeRegisterAttachmentBody(body: RegisterAttachmentRequestBody): RegisterAttachmentRequestBody {
+  return {
+    ...body,
+    sourceType: normalizeStringValue(body.sourceType),
+    externalFileId: normalizeStringValue(body.externalFileId),
+    fileName: normalizeStringValue(body.fileName),
+    mimeType: normalizeStringValue(body.mimeType),
+    localPath: normalizeStringValue(body.localPath),
+    trackId: normalizeStringValue(body.trackId),
+    planningSessionId: normalizeStringValue(body.planningSessionId),
+  };
+}
+
 function assertValidTrackCreateBody(body: TrackRequestBody): void {
   const details: ApiErrorDetail[] = [];
 
@@ -1470,7 +1496,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 1 && segments[0] === "channel-bindings") {
-        const body = await readJson<BindChannelRequestBody>(request);
+        const body = normalizeBindChannelBody(await readJson<BindChannelRequestBody>(request));
         assertValidBindChannelBody(body);
         const binding = await deps.service.bindChannel(body);
         sendJson(response, 201, { binding });
@@ -1506,7 +1532,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 1 && segments[0] === "attachments") {
-        const body = await readJson<RegisterAttachmentRequestBody>(request);
+        const body = normalizeRegisterAttachmentBody(await readJson<RegisterAttachmentRequestBody>(request));
         assertValidRegisterAttachmentBody(body);
         const attachment = await deps.service.registerAttachmentReference(body);
         sendJson(response, 201, { attachment });

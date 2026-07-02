@@ -562,21 +562,26 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        projectId: "project-default",
-        channelType: "telegram",
-        externalChatId: "chat-1",
-        externalThreadId: "thread-1",
-        externalUserId: "user-1",
-        trackId: trackPayload.track.id,
-        planningSessionId: planningSessionPayload.planningSession.id,
+        projectId: " project-default ",
+        channelType: " telegram ",
+        externalChatId: " chat-1 ",
+        externalThreadId: " thread-1 ",
+        externalUserId: " user-1 ",
+        trackId: ` ${trackPayload.track.id} `,
+        planningSessionId: ` ${planningSessionPayload.planningSession.id} `,
       }),
     });
     assert.equal(bindResponse.status, 201);
-    const bindPayload = (await bindResponse.json()) as { binding: { id: string; planningSessionId?: string } };
+    const bindPayload = (await bindResponse.json()) as {
+      binding: { id: string; externalChatId: string; externalThreadId?: string; externalUserId?: string; planningSessionId?: string };
+    };
+    assert.equal(bindPayload.binding.externalChatId, "chat-1");
+    assert.equal(bindPayload.binding.externalThreadId, "thread-1");
+    assert.equal(bindPayload.binding.externalUserId, "user-1");
     assert.equal(bindPayload.binding.planningSessionId, planningSessionPayload.planningSession.id);
 
     const getBindingResponse = await fetch(
-      `${baseUrl}/channel-bindings?channelType=%20telegram%20&externalChatId=%20chat-1%20&externalThreadId=%20thread-1%20`,
+      `${baseUrl}/channel-bindings?channelType=telegram&externalChatId=chat-1&externalThreadId=thread-1`,
     );
     assert.equal(getBindingResponse.status, 200);
     const getBindingPayload = (await getBindingResponse.json()) as { binding: { id: string } };
@@ -609,16 +614,24 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        sourceType: "telegram",
-        externalFileId: "file-1",
-        fileName: "brief.txt",
-        planningSessionId: planningSessionPayload.planningSession.id,
+        sourceType: " telegram ",
+        externalFileId: " file-1 ",
+        fileName: " brief.txt ",
+        mimeType: " text/plain ",
+        planningSessionId: ` ${planningSessionPayload.planningSession.id} `,
       }),
     });
     assert.equal(attachmentResponse.status, 201);
+    const attachmentPayload = (await attachmentResponse.json()) as {
+      attachment: { externalFileId: string; fileName?: string; mimeType?: string; planningSessionId?: string };
+    };
+    assert.equal(attachmentPayload.attachment.externalFileId, "file-1");
+    assert.equal(attachmentPayload.attachment.fileName, "brief.txt");
+    assert.equal(attachmentPayload.attachment.mimeType, "text/plain");
+    assert.equal(attachmentPayload.attachment.planningSessionId, planningSessionPayload.planningSession.id);
 
     const attachmentsResponse = await fetch(
-      `${baseUrl}/attachments?planningSessionId=${encodeURIComponent(` ${planningSessionPayload.planningSession.id} `)}`,
+      `${baseUrl}/attachments?planningSessionId=${encodeURIComponent(planningSessionPayload.planningSession.id)}`,
     );
     assert.equal(attachmentsResponse.status, 200);
     const attachmentsPayload = (await attachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
