@@ -856,6 +856,8 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
     GITHUB_WEBHOOK_SECRET: "secret",
     SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "Yoophi-A/SpecRail=project-specrail, other/repo = project-other",
     GITHUB_ALLOWED_ACTORS: "OctoCat,@Hubot",
+    GITHUB_ALLOWED_ORGS: " Yoophi-A ",
+    GITHUB_ALLOWED_TEAMS: " Other/Maintainers ",
     SPECRAIL_OPERATOR_BASE_URL: " https://operator.example.test ",
     GITHUB_API_BASE_URL: " https://github.example.test/api/v3 ",
     GITHUB_RELAY_QUEUE_DIR: "/var/lib/specrail/github-relay-queue",
@@ -863,6 +865,8 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
 
   assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project-specrail", "other/repo": "project-other" });
   assert.deepEqual(config.allowedActors, ["OctoCat", "@Hubot"]);
+  assert.deepEqual(config.allowedOrganizations, ["Yoophi-A"]);
+  assert.deepEqual(config.allowedTeams, ["Other/Maintainers"]);
   assert.equal(config.apiBaseUrl, "https://specrail.example.test");
   assert.equal(config.operatorBaseUrl, "https://operator.example.test");
   assert.equal(config.githubApiBaseUrl, "https://github.example.test/api/v3");
@@ -1548,11 +1552,11 @@ test("authorizeGitHubActor supports organization and team membership", async () 
   };
 
   assert.equal(
-    await authorizeGitHubActor({ config: { allowedActors: [], allowedOrganizations: ["yoophi-a"], allowedTeams: [] }, senderLogin: "octocat", authorization }),
+    await authorizeGitHubActor({ config: { allowedActors: [], allowedOrganizations: ["Yoophi-A"], allowedTeams: [] }, senderLogin: "octocat", authorization }),
     true,
   );
   assert.equal(
-    await authorizeGitHubActor({ config: { allowedActors: [], allowedOrganizations: ["missing"], allowedTeams: ["other/maintainers"] }, senderLogin: "hubot", authorization }),
+    await authorizeGitHubActor({ config: { allowedActors: [], allowedOrganizations: ["missing"], allowedTeams: ["Other/Maintainers"] }, senderLogin: "hubot", authorization }),
     true,
   );
   assert.equal(

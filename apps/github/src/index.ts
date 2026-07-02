@@ -335,7 +335,7 @@ function parseAllowedTeam(value: string): { organization: string; teamSlug: stri
   if (!organization || !teamSlug) {
     throw new Error(`invalid GITHUB_ALLOWED_TEAMS entry: ${value}`);
   }
-  return { organization, teamSlug };
+  return { organization: normalizeGitHubPolicyIdentifier(organization), teamSlug: normalizeGitHubPolicyIdentifier(teamSlug) };
 }
 
 export async function authorizeGitHubActor(input: {
@@ -356,7 +356,7 @@ export async function authorizeGitHubActor(input: {
   }
 
   for (const organization of input.config.allowedOrganizations) {
-    if (await input.authorization.isOrganizationMember({ organization, username: input.senderLogin })) {
+    if (await input.authorization.isOrganizationMember({ organization: normalizeGitHubPolicyIdentifier(organization), username: input.senderLogin })) {
       return true;
     }
   }
@@ -366,6 +366,10 @@ export async function authorizeGitHubActor(input: {
     }
   }
   return false;
+}
+
+function normalizeGitHubPolicyIdentifier(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig {
