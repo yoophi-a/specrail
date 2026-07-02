@@ -396,6 +396,44 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   assert.ok(loadNotifications.some((payload) => JSON.stringify(payload).includes("Started run-1")));
 });
 
+test("ACP server trims session list cursors before pagination", async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
+  let nowCall = 0;
+  const server = new SpecRailAcpServer({
+    service: createFakeService() as unknown as SpecRailService,
+    stateDir,
+    now: () => `2026-04-13T12:00:0${nowCall++}.000Z`,
+    pageSize: 1,
+  });
+
+  const firstResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 1, method: "session/new", params: { cwd: "/tmp/specrail" } },
+    () => {},
+  );
+  const secondResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 2, method: "session/new", params: { cwd: "/tmp/specrail" } },
+    () => {},
+  );
+  const firstSessionId = (firstResponse?.result as { sessionId: string }).sessionId;
+  const secondSessionId = (secondResponse?.result as { sessionId: string }).sessionId;
+
+  const firstPageResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 3, method: "session/list", params: { cwd: "/tmp/specrail", cursor: "   " } },
+    () => {},
+  );
+  const firstPage = firstPageResponse?.result as { sessions: Array<{ sessionId: string }>; nextCursor?: string };
+  assert.equal(firstPage.sessions[0]?.sessionId, secondSessionId);
+  assert.ok(firstPage.nextCursor);
+
+  const nextPageResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 4, method: "session/list", params: { cwd: "/tmp/specrail", cursor: ` ${firstPage.nextCursor} ` } },
+    () => {},
+  );
+  const nextPage = nextPageResponse?.result as { sessions: Array<{ sessionId: string }>; nextCursor?: string };
+  assert.equal(nextPage.sessions[0]?.sessionId, firstSessionId);
+  assert.equal(nextPage.nextCursor, undefined);
+});
+
 test("ACP server reads linked run workspace paths through scoped capability", async () => {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-workspace-"));

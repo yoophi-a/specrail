@@ -922,12 +922,13 @@ export class SpecRailAcpServer {
   }
 
   private decodeCursor(cursor: string | undefined): number {
-    if (!cursor) {
+    const normalizedCursor = this.optionalString(cursor);
+    if (!normalizedCursor) {
       return 0;
     }
 
     try {
-      const parsed = JSON.parse(Buffer.from(cursor, "base64").toString("utf8")) as { offset?: number };
+      const parsed = JSON.parse(Buffer.from(normalizedCursor, "base64").toString("utf8")) as { offset?: number };
       return typeof parsed.offset === "number" && parsed.offset >= 0 ? parsed.offset : 0;
     } catch {
       throw new ValidationError("cursor is invalid");
