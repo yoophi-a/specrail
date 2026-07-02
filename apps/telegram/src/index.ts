@@ -342,10 +342,11 @@ export class TelegramBotClient {
   }
 
   async sendMessage(input: { chatId: string; text: string; messageThreadId?: string }): Promise<void> {
+    const messageThreadId = input.messageThreadId?.trim();
     await this.call("/sendMessage", {
       chat_id: parseTelegramIntegerId(input.chatId, "chatId", { allowNegative: true }),
       text: input.text,
-      ...(input.messageThreadId ? { message_thread_id: parseTelegramIntegerId(input.messageThreadId, "messageThreadId") } : {}),
+      ...(messageThreadId ? { message_thread_id: parseTelegramIntegerId(input.messageThreadId ?? "", "messageThreadId") } : {}),
     });
   }
 
@@ -364,12 +365,13 @@ export class TelegramBotClient {
 }
 
 function parseTelegramIntegerId(value: string, name: string, options: { allowNegative?: boolean } = {}): number {
+  const normalized = value.trim();
   const pattern = options.allowNegative ? /^-?\d+$/u : /^[1-9]\d*$/u;
-  if (!pattern.test(value)) {
+  if (!pattern.test(normalized)) {
     throw new Error(`invalid Telegram ${name}: ${value}`);
   }
 
-  const parsed = Number(value);
+  const parsed = Number(normalized);
   if (!Number.isSafeInteger(parsed)) {
     throw new Error(`invalid Telegram ${name}: ${value}`);
   }

@@ -97,11 +97,16 @@ test("TelegramBotClient validates sendMessage numeric identifiers", async () => 
     return new Response("{}", { status: 200 });
   });
 
-  await client.sendMessage({ chatId: "-100123", messageThreadId: "42", text: "hello" });
+  await client.sendMessage({ chatId: " -100123 ", messageThreadId: " 42 ", text: "hello" });
+  await client.sendMessage({ chatId: "123", messageThreadId: " ", text: "no thread" });
   assert.deepEqual(requests, [
     {
       url: "https://api.telegram.org/bottoken/sendMessage",
       body: { chat_id: -100123, message_thread_id: 42, text: "hello" },
+    },
+    {
+      url: "https://api.telegram.org/bottoken/sendMessage",
+      body: { chat_id: 123, text: "no thread" },
     },
   ]);
 
@@ -110,7 +115,7 @@ test("TelegramBotClient validates sendMessage numeric identifiers", async () => 
     () => client.sendMessage({ chatId: "123", messageThreadId: "1e1", text: "bad" }),
     /invalid Telegram messageThreadId: 1e1/u,
   );
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 2);
 });
 
 test("Telegram webhook server serves a health check", async () => {
