@@ -74,7 +74,7 @@ interface SessionPromptParams {
     specrail?: {
       permissionResolution?: {
         requestId?: string;
-        outcome?: "approved" | "rejected";
+        outcome?: string;
         decidedBy?: string;
         comment?: string;
       };
@@ -327,7 +327,7 @@ export class SpecRailAcpServer {
         const resolution = await this.resolvePendingPermission(updatedSession, execution, permissionResolution);
         if (resolution) {
           notify(this.toSessionUpdate(updatedSession.sessionId, resolution.event));
-          if (permissionResolution.outcome === "approved" && resolution.callback.status !== "handled") {
+          if (this.optionalString(permissionResolution.outcome) === "approved" && resolution.callback.status !== "handled") {
             execution = await this.options.service.resumeRun({
               runId: execution.id,
               prompt,
@@ -846,7 +846,7 @@ export class SpecRailAcpServer {
       throw new ValidationError(`permissionResolution.requestId does not match pending request: ${requestId}`);
     }
 
-    const outcome = resolution?.outcome;
+    const outcome = this.optionalString(resolution?.outcome);
     if (outcome !== "approved" && outcome !== "rejected") {
       throw new ValidationError("_meta.specrail.permissionResolution.outcome must be approved or rejected");
     }

@@ -609,10 +609,10 @@ test("ACP server emits richer permission request and resolution updates", async 
         _meta: {
           specrail: {
             permissionResolution: {
-              requestId: "run-1-approval-request",
-              outcome: "approved",
-              decidedBy: "user",
-              comment: "ok",
+              requestId: " run-1-approval-request ",
+              outcome: " approved ",
+              decidedBy: " user ",
+              comment: " ok ",
             },
           },
         },
