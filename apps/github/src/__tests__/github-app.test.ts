@@ -890,6 +890,18 @@ test("loadGitHubAppConfig rejects malformed repository and team policy entries",
     /invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: yoophi-a\/specrail/u,
   );
   assert.throws(
+    () => loadGitHubAppConfig({ SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "specrail=project-specrail" }),
+    /invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: specrail=project-specrail/u,
+  );
+  assert.throws(
+    () => loadGitHubAppConfig({ SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "yoophi-a/=project-specrail" }),
+    /invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: yoophi-a\/=project-specrail/u,
+  );
+  assert.throws(
+    () => loadGitHubAppConfig({ SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "yoophi-a/specrail/extra=project-specrail" }),
+    /invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: yoophi-a\/specrail\/extra=project-specrail/u,
+  );
+  assert.throws(
     () => loadGitHubAppConfig({ GITHUB_ALLOWED_TEAMS: "yoophi-a/maintainers/extra" }),
     /invalid GITHUB_ALLOWED_TEAMS entry: yoophi-a\/maintainers\/extra/u,
   );

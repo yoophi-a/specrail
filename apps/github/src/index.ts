@@ -238,7 +238,7 @@ function parseRepositoryProjectMap(value: string | undefined): Record<string, st
         if (!repositoryFullName || !projectId) {
           throw new Error(`invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: ${entry}`);
         }
-        return [normalizeGitHubRepositoryFullName(repositoryFullName), projectId];
+        return [normalizeConfiguredGitHubRepositoryFullName(repositoryFullName, entry), projectId];
       }),
   );
 }
@@ -335,6 +335,14 @@ export function isGitHubActorAuthorized(config: Pick<GitHubAppConfig, "allowedAc
 
 function normalizeGitHubRepositoryFullName(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeConfiguredGitHubRepositoryFullName(value: string, entry: string): string {
+  const segments = value.split("/").map((segment) => segment.trim());
+  if (segments.length !== 2 || !segments[0] || !segments[1]) {
+    throw new Error(`invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: ${entry}`);
+  }
+  return normalizeGitHubRepositoryFullName(`${segments[0]}/${segments[1]}`);
 }
 
 function normalizeGitHubActorLogin(value: string): string {
