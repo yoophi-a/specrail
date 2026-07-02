@@ -25,13 +25,36 @@ test("bootstrap helper rejects unsafe table names", async () => {
 });
 
 test("bootstrap helper parses env defaults and validates apply mode database URL", () => {
-  assert.deepEqual(readArgs([], { GITHUB_RELAY_QUEUE_POSTGRES_TABLE: "custom_jobs", DATABASE_URL: "postgres://example/db" }), {
+  assert.deepEqual(readArgs([], { GITHUB_RELAY_QUEUE_POSTGRES_TABLE: " custom_jobs ", DATABASE_URL: " postgres://example/db " }), {
     apply: false,
     help: false,
     tableName: "custom_jobs",
     databaseUrl: "postgres://example/db",
   });
 
+  assert.deepEqual(
+    readArgs([], {
+      GITHUB_RELAY_QUEUE_POSTGRES_TABLE: " ",
+      GITHUB_RELAY_QUEUE_POSTGRES_URL: " ",
+      DATABASE_URL: " postgres://example/fallback ",
+    }),
+    {
+      apply: false,
+      help: false,
+      tableName: "github_relay_jobs",
+      databaseUrl: "postgres://example/fallback",
+    },
+  );
+
+  assert.deepEqual(readArgs(["--table", " cli_jobs ", "--database-url", " postgres://example/cli "], {}), {
+    apply: false,
+    help: false,
+    tableName: "cli_jobs",
+    databaseUrl: "postgres://example/cli",
+  });
+
+  assert.throws(() => readArgs(["--table", " "], {}), /--table requires a value/u);
+  assert.throws(() => readArgs(["--database-url", " "], {}), /--database-url requires a value/u);
   assert.throws(() => validateApplyOptions(readArgs(["--apply"], {})), /--apply requires GITHUB_RELAY_QUEUE_POSTGRES_URL/u);
   assert.doesNotThrow(() => validateApplyOptions(readArgs(["--apply", "--database-url", "postgres://example/db"], {})));
 });

@@ -22,12 +22,17 @@ Options:
 `;
 }
 
+function readOptionalValue(value) {
+  const normalized = value?.trim();
+  return normalized || undefined;
+}
+
 export function readArgs(argv, env = process.env) {
   const options = {
     apply: false,
     help: false,
-    tableName: env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE ?? defaultTableName,
-    databaseUrl: env.GITHUB_RELAY_QUEUE_POSTGRES_URL ?? env.DATABASE_URL,
+    tableName: readOptionalValue(env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE) ?? defaultTableName,
+    databaseUrl: readOptionalValue(env.GITHUB_RELAY_QUEUE_POSTGRES_URL) ?? readOptionalValue(env.DATABASE_URL),
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -45,7 +50,7 @@ export function readArgs(argv, env = process.env) {
       continue;
     }
     if (arg === "--table") {
-      const value = argv[index + 1];
+      const value = readOptionalValue(argv[index + 1]);
       if (!value) {
         throw new Error("--table requires a value");
       }
@@ -54,7 +59,7 @@ export function readArgs(argv, env = process.env) {
       continue;
     }
     if (arg === "--database-url") {
-      const value = argv[index + 1];
+      const value = readOptionalValue(argv[index + 1]);
       if (!value) {
         throw new Error("--database-url requires a value");
       }
