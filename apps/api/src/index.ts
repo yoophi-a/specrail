@@ -514,6 +514,40 @@ function getNonEmptyStringDetail(field: string, value: unknown): ApiErrorDetail 
   return null;
 }
 
+function normalizeStringValue<T>(value: T): T {
+  return (typeof value === "string" ? value.trim() : value) as T;
+}
+
+function normalizeRunCreateBody(body: RunRequestBody): RunRequestBody {
+  return {
+    ...body,
+    trackId: normalizeStringValue(body.trackId),
+    prompt: normalizeStringValue(body.prompt),
+    backend: normalizeStringValue(body.backend),
+    profile: normalizeStringValue(body.profile),
+    planningSessionId: normalizeStringValue(body.planningSessionId),
+  };
+}
+
+function normalizeResumeRunBody(body: ResumeRunRequestBody): ResumeRunRequestBody {
+  return {
+    ...body,
+    prompt: normalizeStringValue(body.prompt),
+    backend: normalizeStringValue(body.backend),
+    profile: normalizeStringValue(body.profile),
+  };
+}
+
+function normalizeForkRunBody(body: ForkRunRequestBody): ForkRunRequestBody {
+  return {
+    ...body,
+    prompt: normalizeStringValue(body.prompt),
+    mode: normalizeStringValue(body.mode),
+    backend: normalizeStringValue(body.backend),
+    profile: normalizeStringValue(body.profile),
+  };
+}
+
 function assertValidTrackCreateBody(body: TrackRequestBody): void {
   const details: ApiErrorDetail[] = [];
 
@@ -1496,7 +1530,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 1 && segments[0] === "runs") {
-        const body = await readJson<RunRequestBody>(request);
+        const body = normalizeRunCreateBody(await readJson<RunRequestBody>(request));
         assertValidRunCreateBody(body);
 
         const run = await deps.service.startRun(body);
@@ -1526,7 +1560,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 3 && segments[0] === "runs" && segments[2] === "resume") {
-        const body = await readJson<ResumeRunRequestBody>(request);
+        const body = normalizeResumeRunBody(await readJson<ResumeRunRequestBody>(request));
         assertValidResumeRunBody(body);
 
         const run = await deps.service.resumeRun({
@@ -1540,7 +1574,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 3 && segments[0] === "runs" && segments[2] === "fork") {
-        const body = await readJson<ForkRunRequestBody>(request);
+        const body = normalizeForkRunBody(await readJson<ForkRunRequestBody>(request));
         assertValidForkRunBody(body);
 
         const run = await deps.service.forkRun({

@@ -652,10 +652,11 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        trackId: trackPayload.track.id,
-        prompt: "Implement the issue",
-        profile: "default",
-        planningSessionId: planningSessionPayload.planningSession.id,
+        trackId: ` ${trackPayload.track.id} `,
+        prompt: " Implement the issue ",
+        backend: " codex ",
+        profile: " default ",
+        planningSessionId: ` ${planningSessionPayload.planningSession.id} `,
       }),
     });
 
@@ -770,7 +771,7 @@ test("API supports streaming run events over SSE", async () => {
     const resumeResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/resume`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: "Continue with verification" }),
+      body: JSON.stringify({ prompt: " Continue with verification ", backend: " codex ", profile: " default " }),
     });
     assert.equal(resumeResponse.status, 200);
 
@@ -857,7 +858,7 @@ test("API supports resuming and cancelling a run", async () => {
     const forkResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/fork`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: "Continue separately", mode: "context_copy" }),
+      body: JSON.stringify({ prompt: " Continue separately ", mode: " context_copy ", backend: " codex ", profile: " default " }),
     });
     await assertJsonResponseStatus(forkResponse, 201);
     const forkPayload = (await forkResponse.json()) as {
