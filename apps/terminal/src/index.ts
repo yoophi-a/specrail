@@ -2269,12 +2269,14 @@ export async function loadTerminalPreferences(path: string | null): Promise<Part
   try {
     const raw = await readFile(path, "utf8");
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const selectedProjectId = typeof parsed.selectedProjectId === "string" && parsed.selectedProjectId.trim().length > 0
-      ? parsed.selectedProjectId
+    const normalizedProjectId = typeof parsed.selectedProjectId === "string" ? parsed.selectedProjectId.trim() : undefined;
+    const selectedProjectId = normalizedProjectId
+      ? normalizedProjectId
       : parsed.selectedProjectId === null
         ? null
         : undefined;
-    const runFilter = parsed.runFilter === "active" || parsed.runFilter === "terminal" || parsed.runFilter === "all" ? parsed.runFilter : undefined;
+    const normalizedRunFilter = typeof parsed.runFilter === "string" ? parsed.runFilter.trim() : undefined;
+    const runFilter = normalizedRunFilter === "active" || normalizedRunFilter === "terminal" || normalizedRunFilter === "all" ? normalizedRunFilter : undefined;
     const liveTailPaused = typeof parsed.liveTailPaused === "boolean" ? parsed.liveTailPaused : undefined;
     const showRunEventDetail = typeof parsed.showRunEventDetail === "boolean" ? parsed.showRunEventDetail : undefined;
     const refreshIntervalMs = typeof parsed.refreshIntervalMs === "number" && Number.isFinite(parsed.refreshIntervalMs) && parsed.refreshIntervalMs >= 0
