@@ -912,6 +912,12 @@ test("loadGitHubAppConfig normalizes credential environment values", () => {
   assert.equal(config.githubPrivateKey, "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----");
 });
 
+test("loadGitHubAppConfig normalizes webhook secret environment values", () => {
+  assert.equal(loadGitHubAppConfig({ GITHUB_WEBHOOK_SECRET: " webhook-secret " }).webhookSecret, "webhook-secret");
+  assert.equal(loadGitHubAppConfig({ GITHUB_WEBHOOK_SECRET: "" }).webhookSecret, "");
+  assert.equal(loadGitHubAppConfig({ GITHUB_WEBHOOK_SECRET: " " }).webhookSecret, "");
+});
+
 test("loadGitHubAppConfig normalizes follow terminal events flag", () => {
   assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: " true " }).followTerminalEvents, true);
   assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "" }).followTerminalEvents, false);
