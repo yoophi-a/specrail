@@ -234,7 +234,7 @@ function parseRepositoryProjectMap(value: string | undefined): Record<string, st
         if (!repositoryFullName || !projectId) {
           throw new Error(`invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: ${entry}`);
         }
-        return [repositoryFullName, projectId];
+        return [normalizeGitHubRepositoryFullName(repositoryFullName), projectId];
       }),
   );
 }
@@ -304,7 +304,7 @@ function normalizePrivateKey(value: string | undefined): string | undefined {
 }
 
 export function resolveGitHubProjectId(config: Pick<GitHubAppConfig, "projectId" | "repositoryProjects">, repositoryFullName: string): string | undefined {
-  const configuredProject = config.repositoryProjects[repositoryFullName];
+  const configuredProject = config.repositoryProjects[normalizeGitHubRepositoryFullName(repositoryFullName)];
   if (configuredProject) {
     return configuredProject;
   }
@@ -318,7 +318,16 @@ export function isGitHubActorAuthorized(config: Pick<GitHubAppConfig, "allowedAc
   if (!senderLogin) {
     return false;
   }
-  return config.allowedActors.includes(senderLogin) || config.allowedActors.includes(`@${senderLogin}`);
+  const normalizedSender = normalizeGitHubActorLogin(senderLogin);
+  return config.allowedActors.some((allowedActor) => normalizeGitHubActorLogin(allowedActor) === normalizedSender);
+}
+
+function normalizeGitHubRepositoryFullName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeGitHubActorLogin(value: string): string {
+  return value.trim().replace(/^@/u, "").toLowerCase();
 }
 
 function parseAllowedTeam(value: string): { organization: string; teamSlug: string } {

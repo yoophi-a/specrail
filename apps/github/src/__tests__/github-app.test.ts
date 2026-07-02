@@ -854,23 +854,25 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
     SPECRAIL_API_BASE_URL: " https://specrail.example.test ",
     SPECRAIL_GITHUB_PROJECT_ID: "project-default",
     GITHUB_WEBHOOK_SECRET: "secret",
-    SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "yoophi-a/specrail=project-specrail, other/repo = project-other",
-    GITHUB_ALLOWED_ACTORS: "octocat,@hubot",
+    SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "Yoophi-A/SpecRail=project-specrail, other/repo = project-other",
+    GITHUB_ALLOWED_ACTORS: "OctoCat,@Hubot",
     SPECRAIL_OPERATOR_BASE_URL: " https://operator.example.test ",
     GITHUB_API_BASE_URL: " https://github.example.test/api/v3 ",
     GITHUB_RELAY_QUEUE_DIR: "/var/lib/specrail/github-relay-queue",
   });
 
   assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project-specrail", "other/repo": "project-other" });
-  assert.deepEqual(config.allowedActors, ["octocat", "@hubot"]);
+  assert.deepEqual(config.allowedActors, ["OctoCat", "@Hubot"]);
   assert.equal(config.apiBaseUrl, "https://specrail.example.test");
   assert.equal(config.operatorBaseUrl, "https://operator.example.test");
   assert.equal(config.githubApiBaseUrl, "https://github.example.test/api/v3");
   assert.equal(config.githubRelayQueueDir, "/var/lib/specrail/github-relay-queue");
   assert.equal(resolveGitHubProjectId(config, "yoophi-a/specrail"), "project-specrail");
+  assert.equal(resolveGitHubProjectId(config, "YOOPHI-A/SPECRAIL"), "project-specrail");
   assert.equal(resolveGitHubProjectId(config, "missing/repo"), undefined);
   assert.equal(isGitHubActorAuthorized(config, "octocat"), true);
   assert.equal(isGitHubActorAuthorized(config, "hubot"), true);
+  assert.equal(isGitHubActorAuthorized(config, "HUBOT"), true);
   assert.equal(isGitHubActorAuthorized(config, "mallory"), false);
 });
 
