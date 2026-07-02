@@ -518,6 +518,70 @@ function normalizeStringValue<T>(value: T): T {
   return (typeof value === "string" ? value.trim() : value) as T;
 }
 
+function normalizeProjectCreateBody(body: ProjectCreateRequestBody): ProjectCreateRequestBody {
+  return {
+    ...body,
+    name: normalizeStringValue(body.name),
+    repoUrl: normalizeStringValue(body.repoUrl),
+    localRepoPath: normalizeStringValue(body.localRepoPath),
+    defaultWorkflowPolicy: normalizeStringValue(body.defaultWorkflowPolicy),
+    defaultPlanningSystem: normalizeStringValue(body.defaultPlanningSystem),
+  };
+}
+
+function normalizeProjectUpdateBody(body: ProjectUpdateRequestBody): ProjectUpdateRequestBody {
+  return {
+    ...body,
+    name: normalizeStringValue(body.name),
+    repoUrl: normalizeStringValue(body.repoUrl),
+    localRepoPath: normalizeStringValue(body.localRepoPath),
+    defaultWorkflowPolicy: normalizeStringValue(body.defaultWorkflowPolicy),
+    defaultPlanningSystem: normalizeStringValue(body.defaultPlanningSystem),
+  };
+}
+
+function normalizeTrackCreateBody(body: TrackRequestBody): TrackRequestBody {
+  return {
+    ...body,
+    projectId: normalizeStringValue(body.projectId),
+    title: normalizeStringValue(body.title),
+    description: normalizeStringValue(body.description),
+    priority: normalizeStringValue(body.priority),
+  };
+}
+
+function normalizeTrackUpdateBody(body: UpdateTrackRequestBody): UpdateTrackRequestBody {
+  return {
+    ...body,
+    status: normalizeStringValue(body.status),
+    specStatus: normalizeStringValue(body.specStatus),
+    planStatus: normalizeStringValue(body.planStatus),
+  };
+}
+
+function normalizeCreatePlanningSessionBody(body: CreatePlanningSessionRequestBody): CreatePlanningSessionRequestBody {
+  return {
+    ...body,
+    status: normalizeStringValue(body.status),
+  };
+}
+
+function normalizeUpdatePlanningSessionBody(body: UpdatePlanningSessionRequestBody): UpdatePlanningSessionRequestBody {
+  return {
+    ...body,
+    status: normalizeStringValue(body.status),
+  };
+}
+
+function normalizeAppendPlanningMessageBody(body: AppendPlanningMessageRequestBody): AppendPlanningMessageRequestBody {
+  return {
+    ...body,
+    authorType: normalizeStringValue(body.authorType),
+    kind: normalizeStringValue(body.kind),
+    relatedArtifact: normalizeStringValue(body.relatedArtifact),
+  };
+}
+
 function normalizeRunCreateBody(body: RunRequestBody): RunRequestBody {
   return {
     ...body,
@@ -571,6 +635,22 @@ function normalizeRegisterAttachmentBody(body: RegisterAttachmentRequestBody): R
     localPath: normalizeStringValue(body.localPath),
     trackId: normalizeStringValue(body.trackId),
     planningSessionId: normalizeStringValue(body.planningSessionId),
+  };
+}
+
+function normalizeProposeArtifactRevisionBody(body: ProposeArtifactRevisionRequestBody): ProposeArtifactRevisionRequestBody {
+  return {
+    ...body,
+    summary: normalizeStringValue(body.summary),
+    createdBy: normalizeStringValue(body.createdBy),
+  };
+}
+
+function normalizeDecisionBody<T extends DecideApprovalRequestBody | ResolveRuntimeApprovalRequestBody>(body: T): T {
+  return {
+    ...body,
+    decidedBy: normalizeStringValue(body.decidedBy),
+    comment: normalizeStringValue(body.comment),
   };
 }
 
@@ -1239,7 +1319,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 1 && segments[0] === "projects") {
-        const body = await readJson<ProjectCreateRequestBody>(request);
+        const body = normalizeProjectCreateBody(await readJson<ProjectCreateRequestBody>(request));
         assertValidProjectCreateBody(body);
 
         const project = await deps.service.createProject(body);
@@ -1259,7 +1339,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "PATCH" && segments.length === 2 && segments[0] === "projects") {
-        const body = await readJson<ProjectUpdateRequestBody>(request);
+        const body = normalizeProjectUpdateBody(await readJson<ProjectUpdateRequestBody>(request));
         assertValidProjectUpdateBody(body);
 
         const project = await deps.service.updateProject({
@@ -1275,7 +1355,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 1 && segments[0] === "tracks") {
-        const body = await readJson<TrackRequestBody>(request);
+        const body = normalizeTrackCreateBody(await readJson<TrackRequestBody>(request));
         assertValidTrackCreateBody(body);
 
         const track = await deps.service.createTrack(body);
@@ -1325,7 +1405,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           return;
         }
 
-        const body = await readJson<ProposeArtifactRevisionRequestBody>(request);
+        const body = normalizeProposeArtifactRevisionBody(await readJson<ProposeArtifactRevisionRequestBody>(request));
         assertValidProposeArtifactRevisionBody(body);
 
         const result = await deps.service.proposeArtifactRevision({
@@ -1368,7 +1448,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "PATCH" && segments.length === 2 && segments[0] === "tracks") {
-        const body = await readJson<UpdateTrackRequestBody>(request);
+        const body = normalizeTrackUpdateBody(await readJson<UpdateTrackRequestBody>(request));
         assertValidTrackUpdateBody(body);
 
         const track = await deps.service.updateTrack({
@@ -1382,7 +1462,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 3 && segments[0] === "tracks" && segments[2] === "planning-sessions") {
-        const body = await readJson<CreatePlanningSessionRequestBody>(request);
+        const body = normalizeCreatePlanningSessionBody(await readJson<CreatePlanningSessionRequestBody>(request));
         assertValidCreatePlanningSessionBody(body);
 
         const planningSession = await deps.service.createPlanningSession({
@@ -1419,7 +1499,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "PATCH" && segments.length === 2 && segments[0] === "planning-sessions") {
-        const body = await readJson<UpdatePlanningSessionRequestBody>(request);
+        const body = normalizeUpdatePlanningSessionBody(await readJson<UpdatePlanningSessionRequestBody>(request));
         assertValidUpdatePlanningSessionBody(body);
 
         const planningSession = await deps.service.updatePlanningSession({
@@ -1431,7 +1511,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 3 && segments[0] === "planning-sessions" && segments[2] === "messages") {
-        const body = await readJson<AppendPlanningMessageRequestBody>(request);
+        const body = normalizeAppendPlanningMessageBody(await readJson<AppendPlanningMessageRequestBody>(request));
         assertValidAppendPlanningMessageBody(body);
 
         const message = await deps.service.appendPlanningMessage({
@@ -1452,7 +1532,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 3 && segments[0] === "approval-requests" && segments[2] === "approve") {
-        const body = await readJson<DecideApprovalRequestBody>(request);
+        const body = normalizeDecisionBody(await readJson<DecideApprovalRequestBody>(request));
         assertValidDecideApprovalRequestBody(body);
         const approvalRequest = await deps.service.approveApprovalRequest({
           approvalRequestId: segments[1] ?? "",
@@ -1464,7 +1544,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       }
 
       if (method === "POST" && segments.length === 3 && segments[0] === "approval-requests" && segments[2] === "reject") {
-        const body = await readJson<DecideApprovalRequestBody>(request);
+        const body = normalizeDecisionBody(await readJson<DecideApprovalRequestBody>(request));
         assertValidDecideApprovalRequestBody(body);
         const approvalRequest = await deps.service.rejectApprovalRequest({
           approvalRequestId: segments[1] ?? "",
@@ -1482,7 +1562,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         segments[2] === "approval-requests" &&
         (segments[4] === "approve" || segments[4] === "reject")
       ) {
-        const body = await readJson<ResolveRuntimeApprovalRequestBody>(request);
+        const body = normalizeDecisionBody(await readJson<ResolveRuntimeApprovalRequestBody>(request));
         assertValidResolveRuntimeApprovalRequestBody(body);
         const result = await deps.service.resolveRuntimeApprovalRequest({
           runId: segments[1] ?? "",

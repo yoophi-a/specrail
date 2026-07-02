@@ -318,11 +318,11 @@ test("API supports project create, list, get, and update", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        name: "Operator UI",
-        repoUrl: "https://github.com/yoophi-a/specrail-operator",
-        localRepoPath: "/work/specrail-operator",
-        defaultWorkflowPolicy: "artifact-first-mvp",
-        defaultPlanningSystem: "openspec",
+        name: " Operator UI ",
+        repoUrl: " https://github.com/yoophi-a/specrail-operator ",
+        localRepoPath: " /work/specrail-operator ",
+        defaultWorkflowPolicy: " artifact-first-mvp ",
+        defaultPlanningSystem: " openspec ",
       }),
     });
     assert.equal(createResponse.status, 201);
@@ -343,9 +343,9 @@ test("API supports project create, list, get, and update", async () => {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        name: "Operator Console",
+        name: " Operator Console ",
         repoUrl: null,
-        defaultPlanningSystem: "speckit",
+        defaultPlanningSystem: " speckit ",
       }),
     });
     assert.equal(updateResponse.status, 200);
@@ -405,7 +405,7 @@ test("API creates and filters tracks by project", async () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         name: "Project-scoped tracks",
-        defaultPlanningSystem: "speckit",
+        defaultPlanningSystem: " speckit ",
       }),
     });
     assert.equal(createProjectResponse.status, 201);
@@ -430,7 +430,7 @@ test("API creates and filters tracks by project", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        projectId: createProjectPayload.project.id,
+        projectId: ` ${createProjectPayload.project.id} `,
         title: "Scoped project track",
         description: "Uses the requested project metadata.",
       }),
@@ -473,7 +473,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       body: JSON.stringify({
         title: "Executor MVP",
         description: "Persist command metadata and launch runs.",
-        priority: "high",
+        priority: " high ",
       }),
     });
 
@@ -504,7 +504,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const planningSessionResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/planning-sessions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status: "active" }),
+      body: JSON.stringify({ status: " active " }),
     });
     assert.equal(planningSessionResponse.status, 201);
     const planningSessionPayload = (await planningSessionResponse.json()) as {
@@ -515,7 +515,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const planningSessionUpdateResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status: "waiting_agent" }),
+      body: JSON.stringify({ status: " waiting_agent " }),
     });
     assert.equal(planningSessionUpdateResponse.status, 200);
     const planningSessionUpdatePayload = (await planningSessionUpdateResponse.json()) as {
@@ -542,9 +542,9 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        authorType: "user",
-        kind: "question",
-        relatedArtifact: "plan",
+        authorType: " user ",
+        kind: " question ",
+        relatedArtifact: " plan ",
         body: "Can we separate planning state from run events?",
       }),
     });
@@ -553,9 +553,12 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const planningMessagesResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`);
     assert.equal(planningMessagesResponse.status, 200);
     const planningMessagesPayload = (await planningMessagesResponse.json()) as {
-      messages: Array<{ body: string }>;
+      messages: Array<{ authorType: string; kind: string; relatedArtifact?: string; body: string }>;
     };
     assert.equal(planningMessagesPayload.messages.length, 1);
+    assert.equal(planningMessagesPayload.messages[0]?.authorType, "user");
+    assert.equal(planningMessagesPayload.messages[0]?.kind, "question");
+    assert.equal(planningMessagesPayload.messages[0]?.relatedArtifact, "plan");
     assert.equal(planningMessagesPayload.messages[0]?.body, "Can we separate planning state from run events?");
 
     const bindResponse = await fetch(`${baseUrl}/channel-bindings`, {
@@ -642,7 +645,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         content: "# Approved plan\n\nUse the linked planning context.",
-        createdBy: "agent",
+        createdBy: " agent ",
       }),
     });
     assert.equal(proposedPlanRevisionResponse.status, 201);
@@ -656,7 +659,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ decidedBy: "user", comment: "approved" }),
+        body: JSON.stringify({ decidedBy: " user ", comment: " approved " }),
       },
     );
     assert.equal(approvePlanResponse.status, 200);
@@ -1143,9 +1146,9 @@ test("API supports updating track workflow and approval state", async () => {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        status: "review",
-        specStatus: "approved",
-        planStatus: "pending",
+        status: " review ",
+        specStatus: " approved ",
+        planStatus: " pending ",
       }),
     });
 
