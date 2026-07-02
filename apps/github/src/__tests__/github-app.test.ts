@@ -866,7 +866,7 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
   assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project-specrail", "other/repo": "project-other" });
   assert.deepEqual(config.allowedActors, ["OctoCat", "@Hubot"]);
   assert.deepEqual(config.allowedOrganizations, ["Yoophi-A"]);
-  assert.deepEqual(config.allowedTeams, ["Other/Maintainers"]);
+  assert.deepEqual(config.allowedTeams, ["other/maintainers"]);
   assert.equal(config.apiBaseUrl, "https://specrail.example.test");
   assert.equal(config.operatorBaseUrl, "https://operator.example.test");
   assert.equal(config.githubApiBaseUrl, "https://github.example.test/api/v3");
@@ -878,6 +878,25 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
   assert.equal(isGitHubActorAuthorized(config, "hubot"), true);
   assert.equal(isGitHubActorAuthorized(config, "HUBOT"), true);
   assert.equal(isGitHubActorAuthorized(config, "mallory"), false);
+});
+
+test("loadGitHubAppConfig rejects malformed repository and team policy entries", () => {
+  assert.throws(
+    () => loadGitHubAppConfig({ SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "yoophi-a/specrail=project=extra" }),
+    /invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: yoophi-a\/specrail=project=extra/u,
+  );
+  assert.throws(
+    () => loadGitHubAppConfig({ SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "yoophi-a/specrail" }),
+    /invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: yoophi-a\/specrail/u,
+  );
+  assert.throws(
+    () => loadGitHubAppConfig({ GITHUB_ALLOWED_TEAMS: "yoophi-a/maintainers/extra" }),
+    /invalid GITHUB_ALLOWED_TEAMS entry: yoophi-a\/maintainers\/extra/u,
+  );
+  assert.throws(
+    () => loadGitHubAppConfig({ GITHUB_ALLOWED_TEAMS: "yoophi-a" }),
+    /invalid GITHUB_ALLOWED_TEAMS entry: yoophi-a/u,
+  );
 });
 
 test("loadGitHubAppConfig falls back for blank URL environment values", () => {

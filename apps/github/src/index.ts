@@ -230,7 +230,11 @@ function parseRepositoryProjectMap(value: string | undefined): Record<string, st
       .map((entry) => entry.trim())
       .filter(Boolean)
       .map((entry) => {
-        const [repositoryFullName, projectId] = entry.split("=").map((part) => part.trim());
+        const parts = entry.split("=").map((part) => part.trim());
+        if (parts.length !== 2) {
+          throw new Error(`invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: ${entry}`);
+        }
+        const [repositoryFullName, projectId] = parts;
         if (!repositoryFullName || !projectId) {
           throw new Error(`invalid SPECRAIL_GITHUB_REPOSITORY_PROJECTS entry: ${entry}`);
         }
@@ -247,6 +251,13 @@ function parseCsvList(value: string | undefined): string[] {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function parseAllowedTeamList(value: string | undefined): string[] {
+  return parseCsvList(value).map((entry) => {
+    const team = parseAllowedTeam(entry);
+    return `${team.organization}/${team.teamSlug}`;
+  });
 }
 
 function readOptionalEnvValue(value: string | undefined): string | undefined {
@@ -331,7 +342,11 @@ function normalizeGitHubActorLogin(value: string): string {
 }
 
 function parseAllowedTeam(value: string): { organization: string; teamSlug: string } {
-  const [organization, teamSlug] = value.split("/").map((part) => part.trim());
+  const parts = value.split("/").map((part) => part.trim());
+  if (parts.length !== 2) {
+    throw new Error(`invalid GITHUB_ALLOWED_TEAMS entry: ${value}`);
+  }
+  const [organization, teamSlug] = parts;
   if (!organization || !teamSlug) {
     throw new Error(`invalid GITHUB_ALLOWED_TEAMS entry: ${value}`);
   }
@@ -395,7 +410,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
     allowedOrganizations: parseCsvList(env.GITHUB_ALLOWED_ORGS),
-    allowedTeams: parseCsvList(env.GITHUB_ALLOWED_TEAMS),
+    allowedTeams: parseAllowedTeamList(env.GITHUB_ALLOWED_TEAMS),
   };
 }
 
