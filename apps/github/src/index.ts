@@ -295,10 +295,11 @@ function parsePort(value: string | undefined, defaultValue: number, name: string
 }
 
 function normalizePrivateKey(value: string | undefined): string | undefined {
-  if (!value?.trim()) {
+  const normalized = readOptionalEnvValue(value);
+  if (!normalized) {
     return undefined;
   }
-  return value.replace(/\\n/g, "\n");
+  return normalized.replace(/\\n/g, "\n");
 }
 
 export function resolveGitHubProjectId(config: Pick<GitHubAppConfig, "projectId" | "repositoryProjects">, repositoryFullName: string): string | undefined {
@@ -366,16 +367,16 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     webhookSecret: env.GITHUB_WEBHOOK_SECRET ?? "",
     projectId: readOptionalEnvValue(env.SPECRAIL_GITHUB_PROJECT_ID) ?? readOptionalEnvValue(env.SPECRAIL_PROJECT_ID) ?? "project-default",
     githubApiBaseUrl: readOptionalEnvValue(env.GITHUB_API_BASE_URL) ?? "https://api.github.com",
-    githubToken: env.GITHUB_TOKEN ?? env.GITHUB_INSTALLATION_TOKEN,
-    githubAppId: env.GITHUB_APP_ID,
-    githubInstallationId: env.GITHUB_INSTALLATION_ID,
+    githubToken: readOptionalEnvValue(env.GITHUB_TOKEN) ?? readOptionalEnvValue(env.GITHUB_INSTALLATION_TOKEN),
+    githubAppId: readOptionalEnvValue(env.GITHUB_APP_ID),
+    githubInstallationId: readOptionalEnvValue(env.GITHUB_INSTALLATION_ID),
     githubPrivateKey: normalizePrivateKey(env.GITHUB_PRIVATE_KEY),
     followTerminalEvents: env.GITHUB_FOLLOW_TERMINAL_EVENTS === "true",
     githubRelayQueueBackend: parseGitHubRelayQueueBackend(env.GITHUB_RELAY_QUEUE_BACKEND),
-    githubRelayQueuePath: env.GITHUB_RELAY_QUEUE_PATH,
-    githubRelayQueueDir: env.GITHUB_RELAY_QUEUE_DIR,
-    githubRelayQueuePostgresUrl: env.GITHUB_RELAY_QUEUE_POSTGRES_URL ?? env.DATABASE_URL,
-    githubRelayQueuePostgresTable: env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE,
+    githubRelayQueuePath: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_PATH),
+    githubRelayQueueDir: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_DIR),
+    githubRelayQueuePostgresUrl: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_POSTGRES_URL) ?? readOptionalEnvValue(env.DATABASE_URL),
+    githubRelayQueuePostgresTable: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE),
     githubRelayQueueRunningLeaseMs: parseOptionalPositiveInteger(env.GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS, "GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS"),
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),

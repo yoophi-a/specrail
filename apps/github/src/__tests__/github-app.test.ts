@@ -897,6 +897,21 @@ test("loadGitHubAppConfig normalizes project id environment values", () => {
   assert.equal(loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: "", SPECRAIL_PROJECT_ID: "" }).projectId, "project-default");
 });
 
+test("loadGitHubAppConfig normalizes credential environment values", () => {
+  const config = loadGitHubAppConfig({
+    GITHUB_TOKEN: " ",
+    GITHUB_INSTALLATION_TOKEN: " installation-token ",
+    GITHUB_APP_ID: " 12345 ",
+    GITHUB_INSTALLATION_ID: " 67890 ",
+    GITHUB_PRIVATE_KEY: " -----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY----- ",
+  });
+
+  assert.equal(config.githubToken, "installation-token");
+  assert.equal(config.githubAppId, "12345");
+  assert.equal(config.githubInstallationId, "67890");
+  assert.equal(config.githubPrivateKey, "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----");
+});
+
 test("loadGitHubAppConfig validates port environment values", () => {
   assert.equal(loadGitHubAppConfig({}).port, 4200);
   assert.equal(loadGitHubAppConfig({ GITHUB_APP_PORT: "0" }).port, 0);
@@ -912,14 +927,32 @@ test("loadGitHubAppConfig validates port environment values", () => {
 test("loadGitHubAppConfig reads explicit relay queue backend settings", () => {
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "json_file" }).githubRelayQueueBackend, "json-file");
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "postgres" }).githubRelayQueueBackend, "postgres");
-  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_URL: "postgres://specrail.example/relay" }).githubRelayQueuePostgresUrl, "postgres://specrail.example/relay");
-  assert.equal(loadGitHubAppConfig({ DATABASE_URL: "postgres://specrail.example/default" }).githubRelayQueuePostgresUrl, "postgres://specrail.example/default");
-  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_TABLE: "specrail_relay_jobs" }).githubRelayQueuePostgresTable, "specrail_relay_jobs");
+  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_PATH: " /tmp/relay.json " }).githubRelayQueuePath, "/tmp/relay.json");
+  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_DIR: " /tmp/relay " }).githubRelayQueueDir, "/tmp/relay");
+  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_URL: " postgres://specrail.example/relay " }).githubRelayQueuePostgresUrl, "postgres://specrail.example/relay");
+  assert.equal(loadGitHubAppConfig({ DATABASE_URL: " postgres://specrail.example/default " }).githubRelayQueuePostgresUrl, "postgres://specrail.example/default");
+  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_TABLE: " specrail_relay_jobs " }).githubRelayQueuePostgresTable, "specrail_relay_jobs");
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "120000" }).githubRelayQueueRunningLeaseMs, 120_000);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "redis" }), /invalid GITHUB_RELAY_QUEUE_BACKEND: redis/u);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "0" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 0/u);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "100.5" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 100.5/u);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "1e3" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 1e3/u);
+});
+
+test("loadGitHubAppConfig ignores blank relay queue environment values", () => {
+  const config = loadGitHubAppConfig({
+    GITHUB_RELAY_QUEUE_PATH: " ",
+    GITHUB_RELAY_QUEUE_DIR: "",
+    GITHUB_RELAY_QUEUE_POSTGRES_URL: " ",
+    DATABASE_URL: " ",
+    GITHUB_RELAY_QUEUE_POSTGRES_TABLE: "",
+  });
+
+  assert.equal(config.githubRelayQueuePath, undefined);
+  assert.equal(config.githubRelayQueueDir, undefined);
+  assert.equal(config.githubRelayQueuePostgresUrl, undefined);
+  assert.equal(config.githubRelayQueuePostgresTable, undefined);
+  assert.equal(resolveGitHubRelayQueueBackend(config), "none");
 });
 
 test("resolveGitHubRelayQueueBackend preserves existing env precedence", () => {
