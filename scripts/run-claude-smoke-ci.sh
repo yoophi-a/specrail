@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-STRICT_MODE="${SPECRAIL_CLAUDE_SMOKE_STRICT:-0}"
-RUN_SMOKE="${SPECRAIL_RUN_CLAUDE_SMOKE:-0}"
+trim() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+STRICT_MODE="$(trim "${SPECRAIL_CLAUDE_SMOKE_STRICT:-0}")"
+RUN_SMOKE="$(trim "${SPECRAIL_RUN_CLAUDE_SMOKE:-0}")"
 SUMMARY_FILE="${GITHUB_STEP_SUMMARY:-}"
 
 note() {
@@ -22,24 +29,24 @@ skip() {
 
 note "# Claude smoke CI"
 note ""
-note "- strict mode: \\`${STRICT_MODE}\\`"
-note "- requested: \\`${RUN_SMOKE}\\`"
+note "- strict mode: \`${STRICT_MODE}\`"
+note "- requested: \`${RUN_SMOKE}\`"
 note ""
 
 if [[ "$RUN_SMOKE" != "1" ]]; then
-  skip "Claude smoke skipped because \\`SPECRAIL_RUN_CLAUDE_SMOKE=1\\` was not set."
+  skip "Claude smoke skipped because \`SPECRAIL_RUN_CLAUDE_SMOKE=1\` was not set."
 fi
 
 if ! command -v claude >/dev/null 2>&1; then
-  skip "Claude smoke skipped because the \\`claude\\` CLI is not installed on this runner."
+  skip "Claude smoke skipped because the \`claude\` CLI is not installed on this runner."
 fi
 
 note "## Environment"
 note ""
-note "- node: \\`$(node --version)\\`"
-note "- pnpm: \\`$(pnpm --version)\\`"
-note "- claude: \\`$(claude --version)\\`"
-note "- model override: \\`${CLAUDE_SMOKE_MODEL:-default}\\`"
+note "- node: \`$(node --version)\`"
+note "- pnpm: \`$(pnpm --version)\`"
+note "- claude: \`$(claude --version)\`"
+note "- model override: \`${CLAUDE_SMOKE_MODEL:-default}\`"
 note ""
 
 note "## Running smoke test"

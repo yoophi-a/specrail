@@ -12,10 +12,14 @@ import {
   readClaudeCodeSessionMetadata,
 } from "../index.js";
 
-const enabled = process.env.SPECRAIL_RUN_CLAUDE_SMOKE === "1";
-const smokePrompt =
-  process.env.CLAUDE_SMOKE_PROMPT ?? "Reply with exactly the single word ok.";
-const smokeProfile = process.env.CLAUDE_SMOKE_MODEL ?? "default";
+function readOptionalSmokeEnvValue(value: string | undefined, defaultValue: string): string {
+  const normalized = value?.trim();
+  return normalized || defaultValue;
+}
+
+const enabled = readOptionalSmokeEnvValue(process.env.SPECRAIL_RUN_CLAUDE_SMOKE, "0") === "1";
+const smokePrompt = readOptionalSmokeEnvValue(process.env.CLAUDE_SMOKE_PROMPT, "Reply with exactly the single word ok.");
+const smokeProfile = readOptionalSmokeEnvValue(process.env.CLAUDE_SMOKE_MODEL, "default");
 
 async function waitForTerminalStatus(
   sessionsDir: string,
