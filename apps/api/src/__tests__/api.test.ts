@@ -576,7 +576,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(bindPayload.binding.planningSessionId, planningSessionPayload.planningSession.id);
 
     const getBindingResponse = await fetch(
-      `${baseUrl}/channel-bindings?channelType=telegram&externalChatId=chat-1&externalThreadId=thread-1`,
+      `${baseUrl}/channel-bindings?channelType=%20telegram%20&externalChatId=%20chat-1%20&externalThreadId=%20thread-1%20`,
     );
     assert.equal(getBindingResponse.status, 200);
     const getBindingPayload = (await getBindingResponse.json()) as { binding: { id: string } };
@@ -618,7 +618,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(attachmentResponse.status, 201);
 
     const attachmentsResponse = await fetch(
-      `${baseUrl}/attachments?planningSessionId=${planningSessionPayload.planningSession.id}`,
+      `${baseUrl}/attachments?planningSessionId=${encodeURIComponent(` ${planningSessionPayload.planningSession.id} `)}`,
     );
     assert.equal(attachmentsResponse.status, 200);
     const attachmentsPayload = (await attachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
@@ -848,7 +848,7 @@ test("API supports resuming and cancelling a run", async () => {
     const folderRunsPayload = (await folderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
     assert.ok(folderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
 
-    const sessionPreviewResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/session-preview?eventLimit=2`);
+    const sessionPreviewResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/session-preview?eventLimit=%202%20`);
     await assertJsonResponseStatus(sessionPreviewResponse, 200);
     const sessionPreviewPayload = (await sessionPreviewResponse.json()) as { events: Array<{ summary: string }>; reportPath?: string };
     assert.ok(sessionPreviewPayload.events.length <= 2);
@@ -1185,12 +1185,12 @@ test("API lists tracks and runs with basic filters", async () => {
       body: JSON.stringify({ status: "ready" }),
     });
 
-    const trackListResponse = await fetch(`${baseUrl}/tracks?priority=low`);
+    const trackListResponse = await fetch(`${baseUrl}/tracks?priority=%20low%20&page=%201%20&pageSize=%2020%20&sortBy=%20updatedAt%20&sortOrder=%20desc%20`);
     assert.equal(trackListResponse.status, 200);
     const trackListPayload = (await trackListResponse.json()) as { tracks: Array<{ id: string; priority: string }> };
     assert.deepEqual(trackListPayload.tracks.map((track) => track.id), [trackTwo.track.id]);
 
-    const trackStatusResponse = await fetch(`${baseUrl}/tracks?status=ready`);
+    const trackStatusResponse = await fetch(`${baseUrl}/tracks?status=%20ready%20`);
     const trackStatusPayload = (await trackStatusResponse.json()) as { tracks: Array<{ id: string }> };
     assert.deepEqual(trackStatusPayload.tracks.map((track) => track.id), [trackOne.track.id]);
 
@@ -1219,12 +1219,12 @@ test("API lists tracks and runs with basic filters", async () => {
     });
     assert.equal(cancelRunTwoResponse.status, 200);
 
-    const runListResponse = await fetch(`${baseUrl}/runs?trackId=${trackOne.track.id}`);
+    const runListResponse = await fetch(`${baseUrl}/runs?trackId=${encodeURIComponent(` ${trackOne.track.id} `)}`);
     assert.equal(runListResponse.status, 200);
     const runListPayload = (await runListResponse.json()) as { runs: Array<{ id: string; trackId: string }> };
     assert.deepEqual(runListPayload.runs.map((run) => run.id), [runOne.run.id]);
 
-    const cancelledRunListResponse = await fetch(`${baseUrl}/runs?status=cancelled`);
+    const cancelledRunListResponse = await fetch(`${baseUrl}/runs?status=%20cancelled%20`);
     const cancelledRunListPayload = (await cancelledRunListResponse.json()) as { runs: Array<{ id: string; status: string }> };
     assert.deepEqual(cancelledRunListPayload.runs.map((run) => run.id), [runTwo.run.id]);
   });
@@ -1247,7 +1247,7 @@ test("API paginates track listings and returns sort metadata", async () => {
       assert.equal(response.status, 201);
     }
 
-    const listResponse = await fetch(`${baseUrl}/tracks?page=2&pageSize=1&sortBy=title&sortOrder=asc`);
+    const listResponse = await fetch(`${baseUrl}/tracks?page=%202%20&pageSize=%201%20&sortBy=%20title%20&sortOrder=%20asc%20`);
     assert.equal(listResponse.status, 200);
 
     const listPayload = (await listResponse.json()) as {
@@ -1306,7 +1306,9 @@ test("API paginates run listings with explicit sort order", async () => {
       runIds.push(runPayload.run.id);
     }
 
-    const listResponse = await fetch(`${baseUrl}/runs?trackId=${trackPayload.track.id}&page=2&pageSize=1&sortBy=createdAt&sortOrder=asc`);
+    const listResponse = await fetch(
+      `${baseUrl}/runs?trackId=${encodeURIComponent(` ${trackPayload.track.id} `)}&page=%202%20&pageSize=%201%20&sortBy=%20createdAt%20&sortOrder=%20asc%20`,
+    );
     assert.equal(listResponse.status, 200);
 
     const listPayload = (await listResponse.json()) as {

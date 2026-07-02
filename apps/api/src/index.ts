@@ -436,6 +436,13 @@ function getSearchParams(request: IncomingMessage): URLSearchParams {
   return new URL(request.url ?? "/", "http://localhost").searchParams;
 }
 
+function getOptionalSearchParam(searchParams: URLSearchParams, name: string): string | undefined {
+  if (!searchParams.has(name)) {
+    return undefined;
+  }
+  return searchParams.get(name)?.trim() ?? "";
+}
+
 function writeSseEvent(response: ServerResponse, event: ExecutionEvent): void {
   response.write(`event: execution-event\n`);
   response.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -465,8 +472,8 @@ function isArtifactKind(value: unknown): value is ArtifactKind {
   return typeof value === "string" && ARTIFACT_KINDS.includes(value as ArtifactKind);
 }
 
-function parsePositiveInteger(value: string | null): number | undefined {
-  if (value === null) {
+function parsePositiveInteger(value: string | undefined): number | undefined {
+  if (value === undefined) {
     return undefined;
   }
 
@@ -1219,13 +1226,13 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       if (method === "GET" && segments.length === 1 && segments[0] === "tracks") {
         const searchParams = getSearchParams(request);
         const query: TrackListQuery = {
-          projectId: searchParams.get("projectId") ?? undefined,
-          status: (searchParams.get("status") ?? undefined) as TrackStatus | undefined,
-          priority: (searchParams.get("priority") ?? undefined) as TrackRequestBody["priority"] | undefined,
-          page: parsePositiveInteger(searchParams.get("page")),
-          pageSize: parsePositiveInteger(searchParams.get("pageSize")),
-          sortBy: (searchParams.get("sortBy") ?? undefined) as TrackListQuery["sortBy"],
-          sortOrder: (searchParams.get("sortOrder") ?? undefined) as TrackListQuery["sortOrder"],
+          projectId: getOptionalSearchParam(searchParams, "projectId"),
+          status: getOptionalSearchParam(searchParams, "status") as TrackStatus | undefined,
+          priority: getOptionalSearchParam(searchParams, "priority") as TrackRequestBody["priority"] | undefined,
+          page: parsePositiveInteger(getOptionalSearchParam(searchParams, "page")),
+          pageSize: parsePositiveInteger(getOptionalSearchParam(searchParams, "pageSize")),
+          sortBy: getOptionalSearchParam(searchParams, "sortBy") as TrackListQuery["sortBy"],
+          sortOrder: getOptionalSearchParam(searchParams, "sortOrder") as TrackListQuery["sortOrder"],
         };
         assertValidTrackListQuery(query);
 
@@ -1438,9 +1445,9 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (method === "GET" && segments.length === 1 && segments[0] === "channel-bindings") {
         const searchParams = getSearchParams(request);
-        const channelType = searchParams.get("channelType");
-        const externalChatId = searchParams.get("externalChatId");
-        const externalThreadId = searchParams.get("externalThreadId") ?? undefined;
+        const channelType = getOptionalSearchParam(searchParams, "channelType");
+        const externalChatId = getOptionalSearchParam(searchParams, "externalChatId");
+        const externalThreadId = getOptionalSearchParam(searchParams, "externalThreadId");
 
         if (!channelType || !externalChatId || !CHANNEL_TYPES.includes(channelType as ChannelType)) {
           throw new RequestValidationError("request validation failed", [
@@ -1474,8 +1481,8 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (method === "GET" && segments.length === 1 && segments[0] === "attachments") {
         const searchParams = getSearchParams(request);
-        const trackId = searchParams.get("trackId") ?? undefined;
-        const planningSessionId = searchParams.get("planningSessionId") ?? undefined;
+        const trackId = getOptionalSearchParam(searchParams, "trackId");
+        const planningSessionId = getOptionalSearchParam(searchParams, "planningSessionId");
 
         if (!trackId && !planningSessionId) {
           throw new RequestValidationError("request validation failed", [
@@ -1500,13 +1507,13 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
       if (method === "GET" && segments.length === 1 && segments[0] === "runs") {
         const searchParams = getSearchParams(request);
         const query: RunListQuery = {
-          trackId: searchParams.get("trackId") ?? undefined,
-          status: (searchParams.get("status") ?? undefined) as RunListQuery["status"],
-          workspacePath: searchParams.get("workspacePath") ?? undefined,
-          page: parsePositiveInteger(searchParams.get("page")),
-          pageSize: parsePositiveInteger(searchParams.get("pageSize")),
-          sortBy: (searchParams.get("sortBy") ?? undefined) as RunListQuery["sortBy"],
-          sortOrder: (searchParams.get("sortOrder") ?? undefined) as RunListQuery["sortOrder"],
+          trackId: getOptionalSearchParam(searchParams, "trackId"),
+          status: getOptionalSearchParam(searchParams, "status") as RunListQuery["status"],
+          workspacePath: getOptionalSearchParam(searchParams, "workspacePath"),
+          page: parsePositiveInteger(getOptionalSearchParam(searchParams, "page")),
+          pageSize: parsePositiveInteger(getOptionalSearchParam(searchParams, "pageSize")),
+          sortBy: getOptionalSearchParam(searchParams, "sortBy") as RunListQuery["sortBy"],
+          sortOrder: getOptionalSearchParam(searchParams, "sortOrder") as RunListQuery["sortOrder"],
         };
         assertValidRunListQuery(query);
 
@@ -1565,7 +1572,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (method === "GET" && segments.length === 3 && segments[0] === "runs" && segments[2] === "session-preview") {
         const eventLimitSearchParams = getSearchParams(request);
-        const eventLimit = parsePositiveInteger(eventLimitSearchParams.get("eventLimit"));
+        const eventLimit = parsePositiveInteger(getOptionalSearchParam(eventLimitSearchParams, "eventLimit"));
         assertValidSessionPreviewQuery({ eventLimit });
         const preview = await deps.service.getRunSessionPreview({ runId: segments[1] ?? "", eventLimit });
         const persistedSession = await readExecutorSessionMetadata(deps.sessionsDir, preview.execution.sessionRef);
