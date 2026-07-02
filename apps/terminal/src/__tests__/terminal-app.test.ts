@@ -243,7 +243,7 @@ test("runTerminalCommand writes report command output to an explicit file", asyn
 
   try {
     const handled = await runTerminalCommand({
-      argv: ["report", "run-1", "--output", outputPath],
+      argv: ["report", " run-1 ", "--output", outputPath],
       env: { SPECRAIL_API_BASE_URL: "http://example.test" },
       stdout: { write: (chunk) => writes.push(chunk) },
       fetchImpl: async (input) => {

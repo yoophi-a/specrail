@@ -4202,7 +4202,8 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
     return false;
   }
 
-  if (!runId?.trim()) {
+  const reportRunId = runId?.trim();
+  if (!reportRunId) {
     throw new Error("Usage: specrail-terminal report <runId> [--output <file>]");
   }
 
@@ -4215,7 +4216,7 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
 
   const config = loadTerminalClientConfig(options.env ?? process.env);
   const client = new SpecRailTerminalApiClient(config.apiBaseUrl, options.fetchImpl ?? fetch);
-  const report = await client.loadRunReportMarkdown(runId);
+  const report = await client.loadRunReportMarkdown(reportRunId);
   const output = report.endsWith("\n") ? report : `${report}\n`;
 
   if (outputPath) {
