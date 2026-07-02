@@ -260,6 +260,10 @@ function parseAllowedTeamList(value: string | undefined): string[] {
   });
 }
 
+function parseAllowedOrganizationList(value: string | undefined): string[] {
+  return parseCsvList(value).map((entry) => parseAllowedOrganization(entry));
+}
+
 function readOptionalEnvValue(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized || undefined;
@@ -349,6 +353,14 @@ function normalizeGitHubActorLogin(value: string): string {
   return value.trim().replace(/^@/u, "").toLowerCase();
 }
 
+function parseAllowedOrganization(value: string): string {
+  const normalized = normalizeGitHubPolicyIdentifier(value);
+  if (!normalized || normalized.includes("/")) {
+    throw new Error(`invalid GITHUB_ALLOWED_ORGS entry: ${value}`);
+  }
+  return normalized;
+}
+
 function parseAllowedTeam(value: string): { organization: string; teamSlug: string } {
   const parts = value.split("/").map((part) => part.trim());
   if (parts.length !== 2) {
@@ -417,7 +429,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubRelayQueueRunningLeaseMs: parseOptionalPositiveInteger(env.GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS, "GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS"),
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
-    allowedOrganizations: parseCsvList(env.GITHUB_ALLOWED_ORGS),
+    allowedOrganizations: parseAllowedOrganizationList(env.GITHUB_ALLOWED_ORGS),
     allowedTeams: parseAllowedTeamList(env.GITHUB_ALLOWED_TEAMS),
   };
 }

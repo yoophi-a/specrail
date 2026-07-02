@@ -865,7 +865,7 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
 
   assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project-specrail", "other/repo": "project-other" });
   assert.deepEqual(config.allowedActors, ["OctoCat", "@Hubot"]);
-  assert.deepEqual(config.allowedOrganizations, ["Yoophi-A"]);
+  assert.deepEqual(config.allowedOrganizations, ["yoophi-a"]);
   assert.deepEqual(config.allowedTeams, ["other/maintainers"]);
   assert.equal(config.apiBaseUrl, "https://specrail.example.test");
   assert.equal(config.operatorBaseUrl, "https://operator.example.test");
@@ -908,6 +908,10 @@ test("loadGitHubAppConfig rejects malformed repository and team policy entries",
   assert.throws(
     () => loadGitHubAppConfig({ GITHUB_ALLOWED_TEAMS: "yoophi-a" }),
     /invalid GITHUB_ALLOWED_TEAMS entry: yoophi-a/u,
+  );
+  assert.throws(
+    () => loadGitHubAppConfig({ GITHUB_ALLOWED_ORGS: "yoophi-a/team" }),
+    /invalid GITHUB_ALLOWED_ORGS entry: yoophi-a\/team/u,
   );
 });
 
