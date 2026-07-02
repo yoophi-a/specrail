@@ -67,6 +67,12 @@ test("loadTelegramAppConfig normalizes API base URL environment values", () => {
   assert.equal(loadTelegramAppConfig({ SPECRAIL_API_BASE_URL: "   " }).apiBaseUrl, "http://127.0.0.1:4000");
 });
 
+test("loadTelegramAppConfig normalizes bot token environment values", () => {
+  assert.equal(loadTelegramAppConfig({ TELEGRAM_BOT_TOKEN: " token-value " }).telegramBotToken, "token-value");
+  assert.equal(loadTelegramAppConfig({ TELEGRAM_BOT_TOKEN: "" }).telegramBotToken, "");
+  assert.equal(loadTelegramAppConfig({ TELEGRAM_BOT_TOKEN: "   " }).telegramBotToken, "");
+});
+
 test("loadTelegramAppConfig normalizes project id environment values", () => {
   assert.equal(loadTelegramAppConfig({ SPECRAIL_PROJECT_ID: " shared-project " }).projectId, "shared-project");
   assert.equal(
