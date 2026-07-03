@@ -58,7 +58,7 @@ function parseExecutionBackend(value: string | undefined): SpecRailExecutionBack
 }
 
 function parseExecutionWorkspaceMode(value: string | undefined): SpecRailExecutionWorkspaceMode {
-  const normalized = readOptionalEnvValue(value);
+  const normalized = readOptionalEnvValue(value)?.toLowerCase().replace(/-/gu, "_");
   if (!normalized || normalized === "directory") {
     return "directory";
   }

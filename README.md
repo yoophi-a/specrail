@@ -403,7 +403,7 @@ For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, an
 For the API server, you can set `SPECRAIL_EXECUTION_BACKEND` and `SPECRAIL_EXECUTION_PROFILE` to choose the default executor/backend and profile used when callers omit them.
 `SPECRAIL_EXECUTION_BACKEND` accepts `codex` and `claude_code`; `claude-code` is normalized to `claude_code` for env-manager compatibility.
 Set `SPECRAIL_EXECUTION_WORKSPACE_ROOT` to place execution workspaces outside the default `<SPECRAIL_DATA_DIR>/workspaces` directory.
-Set `SPECRAIL_EXECUTION_WORKSPACE_MODE=directory` for the default plain workspace directory behavior, or `SPECRAIL_EXECUTION_WORKSPACE_MODE=git_worktree` to allocate execution workspaces with `git worktree add -b specrail/<runId> workspaces/<runId>` from the configured local repo path.
+Set `SPECRAIL_EXECUTION_WORKSPACE_MODE=directory` for the default plain workspace directory behavior, or `SPECRAIL_EXECUTION_WORKSPACE_MODE=git_worktree` to allocate execution workspaces with `git worktree add -b specrail/<runId> workspaces/<runId>` from the configured local repo path. `git-worktree` is normalized to `git_worktree` for env-manager compatibility.
 
 Then call the API locally, for example:
 

@@ -66,7 +66,7 @@ The API process needs durable local or mounted storage for:
 
 - `SPECRAIL_DATA_DIR`
 - `SPECRAIL_REPO_ARTIFACT_DIR`
-- execution workspace roots when `SPECRAIL_EXECUTION_WORKSPACE_MODE=directory` or `git_worktree`
+- execution workspace roots when `SPECRAIL_EXECUTION_WORKSPACE_MODE=directory` or `git_worktree` (`git-worktree` is normalized)
 
 The GitHub process needs durable relay storage if terminal outcome comments must survive restarts:
 

@@ -75,7 +75,10 @@ test("loadConfig validates API port environment values", () => {
 
 test("loadConfig reads execution workspace mode", () => {
   assert.equal(loadConfig({ SPECRAIL_EXECUTION_WORKSPACE_MODE: "git_worktree" }).executionWorkspaceMode, "git_worktree");
+  assert.equal(loadConfig({ SPECRAIL_EXECUTION_WORKSPACE_MODE: "git-worktree" }).executionWorkspaceMode, "git_worktree");
+  assert.equal(loadConfig({ SPECRAIL_EXECUTION_WORKSPACE_MODE: " GIT_WORKTREE " }).executionWorkspaceMode, "git_worktree");
   assert.equal(loadConfig({ SPECRAIL_EXECUTION_WORKSPACE_MODE: "directory" }).executionWorkspaceMode, "directory");
+  assert.equal(loadConfig({ SPECRAIL_EXECUTION_WORKSPACE_MODE: " Directory " }).executionWorkspaceMode, "directory");
 });
 
 test("loadConfig reads supported execution backends", () => {
