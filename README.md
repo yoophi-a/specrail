@@ -390,6 +390,7 @@ Operator notes:
 Read `docs/claude-code-operations.md` for setup, limitations, recovery, and smoke-test steps.
 
 For an opt-in real-CLI smoke run, set `SPECRAIL_RUN_CLAUDE_SMOKE=1` and run `pnpm test:claude-smoke`.
+The smoke flag accepts `1`, `true`, `yes`, and `on` case-insensitively.
 By default this smoke path stays out of `pnpm test` so local and CI runs do not become provider-dependent unless explicitly enabled.
 
 For GitHub Actions, use the opt-in stub at `.github/workflows/claude-smoke.yml` together with `scripts/run-claude-smoke-ci.sh`.

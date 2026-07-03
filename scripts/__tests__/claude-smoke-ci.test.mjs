@@ -16,7 +16,7 @@ function runSmokeCi(env = {}) {
 }
 
 test("Claude smoke CI trims requested smoke flag before deciding to run", () => {
-  const result = runSmokeCi({ SPECRAIL_RUN_CLAUDE_SMOKE: " 1 " });
+  const result = runSmokeCi({ SPECRAIL_RUN_CLAUDE_SMOKE: " true " });
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /- requested: `1`/u);
@@ -25,8 +25,8 @@ test("Claude smoke CI trims requested smoke flag before deciding to run", () => 
 
 test("Claude smoke CI trims strict mode before failing skipped runs", () => {
   const result = runSmokeCi({
-    SPECRAIL_CLAUDE_SMOKE_STRICT: " 1 ",
-    SPECRAIL_RUN_CLAUDE_SMOKE: " 0 ",
+    SPECRAIL_CLAUDE_SMOKE_STRICT: " yes ",
+    SPECRAIL_RUN_CLAUDE_SMOKE: " off ",
   });
 
   assert.equal(result.status, 1);

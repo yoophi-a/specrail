@@ -8,8 +8,21 @@ trim() {
   printf '%s' "$value"
 }
 
-STRICT_MODE="$(trim "${SPECRAIL_CLAUDE_SMOKE_STRICT:-0}")"
-RUN_SMOKE="$(trim "${SPECRAIL_RUN_CLAUDE_SMOKE:-0}")"
+normalize_bool() {
+  local value
+  value="$(trim "$1")"
+  case "$value" in
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn])
+      printf '1'
+      ;;
+    *)
+      printf '0'
+      ;;
+  esac
+}
+
+STRICT_MODE="$(normalize_bool "${SPECRAIL_CLAUDE_SMOKE_STRICT:-0}")"
+RUN_SMOKE="$(normalize_bool "${SPECRAIL_RUN_CLAUDE_SMOKE:-0}")"
 SUMMARY_FILE="${GITHUB_STEP_SUMMARY:-}"
 
 note() {

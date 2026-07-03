@@ -17,7 +17,12 @@ function readOptionalSmokeEnvValue(value: string | undefined, defaultValue: stri
   return normalized || defaultValue;
 }
 
-const enabled = readOptionalSmokeEnvValue(process.env.SPECRAIL_RUN_CLAUDE_SMOKE, "0") === "1";
+function readOptionalSmokeBooleanEnvValue(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+const enabled = readOptionalSmokeBooleanEnvValue(process.env.SPECRAIL_RUN_CLAUDE_SMOKE);
 const smokePrompt = readOptionalSmokeEnvValue(process.env.CLAUDE_SMOKE_PROMPT, "Reply with exactly the single word ok.");
 const smokeProfile = readOptionalSmokeEnvValue(process.env.CLAUDE_SMOKE_MODEL, "default");
 

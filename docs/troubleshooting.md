@@ -106,6 +106,8 @@ The Claude smoke path is opt-in. A skip is expected unless this is set:
 SPECRAIL_RUN_CLAUDE_SMOKE=1 pnpm test:claude-smoke
 ```
 
+The smoke flag accepts `1`, `true`, `yes`, and `on` case-insensitively.
+
 For CI, the smoke workflow is additionally gated by the repository variable `SPECRAIL_ENABLE_CLAUDE_SMOKE=1`.
 
 ## Claude Code run fails

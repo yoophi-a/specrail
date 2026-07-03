@@ -236,7 +236,7 @@ Runner requirements for the smoke job:
 - the `claude` CLI installed on the runner, for example `npm install -g @anthropic-ai/claude-code`
 - Claude authentication already available to the runner user, typically via `CLAUDE_CODE_OAUTH_TOKEN` or another supported non-interactive auth path
 - network egress that allows Claude Code to reach Anthropic services
-- `SPECRAIL_RUN_CLAUDE_SMOKE=1` explicitly set for the smoke step
+- `SPECRAIL_RUN_CLAUDE_SMOKE=1` explicitly set for the smoke step. The smoke flag accepts `1`, `true`, `yes`, and `on` case-insensitively; `SPECRAIL_CLAUDE_SMOKE_STRICT` accepts the same true values.
 
 Repository wiring now includes:
 - `.github/workflows/claude-smoke.yml` as an opt-in workflow stub
