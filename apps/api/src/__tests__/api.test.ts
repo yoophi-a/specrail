@@ -373,6 +373,26 @@ test("API supports project create, list, get, and update", async () => {
   });
 });
 
+test("API bootstraps the default project on direct project access", async () => {
+  await withServer(async (baseUrl) => {
+    const getDefaultResponse = await fetch(`${baseUrl}/projects/project-default`);
+    assert.equal(getDefaultResponse.status, 200);
+    const getDefaultPayload = (await getDefaultResponse.json()) as { project: { id: string; name: string } };
+    assert.equal(getDefaultPayload.project.id, "project-default");
+    assert.equal(getDefaultPayload.project.name, "SpecRail");
+
+    const updateDefaultResponse = await fetch(`${baseUrl}/projects/project-default`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: " Default Project Updated " }),
+    });
+    assert.equal(updateDefaultResponse.status, 200);
+    const updateDefaultPayload = (await updateDefaultResponse.json()) as { project: { id: string; name: string } };
+    assert.equal(updateDefaultPayload.project.id, "project-default");
+    assert.equal(updateDefaultPayload.project.name, "Default Project Updated");
+  });
+});
+
 test("API validates project payloads and returns 404s for missing projects", async () => {
   await withServer(async (baseUrl) => {
     const createResponse = await fetch(`${baseUrl}/projects`, {

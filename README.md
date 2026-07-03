@@ -114,10 +114,12 @@ Current endpoints in `apps/api/src/index.ts`:
   - `defaultPlanningSystem` supports `native`, `openspec`, and `speckit`; mixed-case and separator-friendly values such as `OpenSpec` and `spec-kit` are normalized before validation
 - `GET /projects/:projectId`
   - return project metadata
+  - direct access to the configured default project also bootstraps it when needed
 - `PATCH /projects/:projectId`
   - update project metadata
   - body: any of `{ name, repoUrl, localRepoPath, defaultWorkflowPolicy, defaultPlanningSystem }`
   - nullable optional fields clear the stored value
+  - updates to the configured default project also bootstrap it when needed
 
 ### Tracks
 - `POST /tracks`

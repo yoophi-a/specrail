@@ -534,6 +534,10 @@ export class SpecRailService {
   }
 
   async getProject(projectId: string): Promise<Project | null> {
+    if (projectId === this.dependencies.defaultProject.id) {
+      return this.ensureDefaultProject();
+    }
+
     return this.dependencies.projectRepository.getById(projectId);
   }
 
@@ -544,7 +548,10 @@ export class SpecRailService {
   }
 
   async updateProject(input: UpdateProjectInput): Promise<Project> {
-    const existing = await this.dependencies.projectRepository.getById(input.projectId);
+    const existing =
+      input.projectId === this.dependencies.defaultProject.id
+        ? await this.ensureDefaultProject()
+        : await this.dependencies.projectRepository.getById(input.projectId);
     if (!existing) {
       throw new NotFoundError(`Project not found: ${input.projectId}`);
     }
