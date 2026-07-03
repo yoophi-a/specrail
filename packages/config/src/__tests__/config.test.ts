@@ -11,6 +11,7 @@ test("loadConfig returns execution defaults", () => {
     executionBackend: "codex",
     executionProfile: "default",
     executionWorkspaceMode: "directory",
+    executionWorkspaceRoot: ".specrail-data/workspaces",
   });
 });
 
@@ -22,6 +23,7 @@ test("loadConfig normalizes optional API environment values", () => {
       SPECRAIL_EXECUTION_BACKEND: "  claude-code  ",
       SPECRAIL_EXECUTION_PROFILE: "  production  ",
       SPECRAIL_EXECUTION_WORKSPACE_MODE: "  git_worktree  ",
+      SPECRAIL_EXECUTION_WORKSPACE_ROOT: "  /var/lib/specrail/workspaces  ",
     }),
     {
       port: 4000,
@@ -30,6 +32,7 @@ test("loadConfig normalizes optional API environment values", () => {
       executionBackend: "claude-code",
       executionProfile: "production",
       executionWorkspaceMode: "git_worktree",
+      executionWorkspaceRoot: "/var/lib/specrail/workspaces",
     },
   );
 });
@@ -42,6 +45,7 @@ test("loadConfig falls back for blank API environment values", () => {
       SPECRAIL_EXECUTION_BACKEND: " ",
       SPECRAIL_EXECUTION_PROFILE: "",
       SPECRAIL_EXECUTION_WORKSPACE_MODE: " ",
+      SPECRAIL_EXECUTION_WORKSPACE_ROOT: "",
     }),
     {
       port: 4000,
@@ -50,7 +54,12 @@ test("loadConfig falls back for blank API environment values", () => {
       executionBackend: "codex",
       executionProfile: "default",
       executionWorkspaceMode: "directory",
+      executionWorkspaceRoot: ".specrail-data/workspaces",
     },
+  );
+  assert.equal(
+    loadConfig({ SPECRAIL_DATA_DIR: "/var/lib/specrail", SPECRAIL_EXECUTION_WORKSPACE_ROOT: " " }).executionWorkspaceRoot,
+    "/var/lib/specrail/workspaces",
   );
 });
 

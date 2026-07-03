@@ -20,6 +20,7 @@ Then confirm the runtime configuration you expect:
 - `SPECRAIL_EXECUTION_BACKEND`
 - `SPECRAIL_EXECUTION_PROFILE`
 - `SPECRAIL_EXECUTION_WORKSPACE_MODE` (`directory` or `git_worktree`)
+- `SPECRAIL_EXECUTION_WORKSPACE_ROOT`
 - `SPECRAIL_API_BASE_URL`
 
 For deployed services, start with the lightweight health endpoints:

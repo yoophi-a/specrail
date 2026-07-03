@@ -52,3 +52,5 @@ pnpm dev:telegram
 The GitHub webhook app requires `GITHUB_WEBHOOK_SECRET` for real webhook signature validation and optionally `SPECRAIL_API_BASE_URL`, `SPECRAIL_GITHUB_PROJECT_ID`, `GITHUB_APP_PORT` / `GITHUB_WEBHOOK_PATH`, and GitHub token/app credentials when posting terminal outcome comments. `GITHUB_APP_PORT` must be an integer TCP port in the `0..65535` range. `GITHUB_WEBHOOK_PATH` is normalized to start with `/` when configured.
 
 The Telegram adapter requires `SPECRAIL_API_BASE_URL` and `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH`. `TELEGRAM_APP_PORT` must be an integer TCP port in the `0..65535` range. `TELEGRAM_WEBHOOK_PATH` is normalized to start with `/` when configured. Set `SPECRAIL_TELEGRAM_PROJECT_ID` or the shared `SPECRAIL_PROJECT_ID` when new Telegram-bound tracks should be created in a non-default project.
+
+The API and ACP server use `<SPECRAIL_DATA_DIR>/workspaces` for execution workspaces by default. Set `SPECRAIL_EXECUTION_WORKSPACE_ROOT` when local development needs a separate workspace mount or cleanup boundary.

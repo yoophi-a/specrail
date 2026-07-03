@@ -1,3 +1,5 @@
+import path from "node:path";
+
 export * from "./artifacts.js";
 
 export interface SpecRailConfig {
@@ -7,6 +9,7 @@ export interface SpecRailConfig {
   executionBackend: string;
   executionProfile: string;
   executionWorkspaceMode: SpecRailExecutionWorkspaceMode;
+  executionWorkspaceRoot: string;
 }
 
 export type SpecRailExecutionWorkspaceMode = "directory" | "git_worktree";
@@ -26,14 +29,16 @@ export interface SpecRailTerminalClientConfig {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): SpecRailConfig {
   const executionWorkspaceMode = parseExecutionWorkspaceMode(env.SPECRAIL_EXECUTION_WORKSPACE_MODE);
+  const dataDir = readOptionalEnvValue(env.SPECRAIL_DATA_DIR) ?? ".specrail-data";
 
   return {
     port: parseIntegerEnv(env.SPECRAIL_PORT, 4000, "SPECRAIL_PORT", { min: 0, max: 65535 }),
-    dataDir: readOptionalEnvValue(env.SPECRAIL_DATA_DIR) ?? ".specrail-data",
+    dataDir,
     repoArtifactDir: readOptionalEnvValue(env.SPECRAIL_REPO_ARTIFACT_DIR) ?? ".specrail",
     executionBackend: readOptionalEnvValue(env.SPECRAIL_EXECUTION_BACKEND) ?? "codex",
     executionProfile: readOptionalEnvValue(env.SPECRAIL_EXECUTION_PROFILE) ?? "default",
     executionWorkspaceMode,
+    executionWorkspaceRoot: readOptionalEnvValue(env.SPECRAIL_EXECUTION_WORKSPACE_ROOT) ?? path.join(dataDir, "workspaces"),
   };
 }
 

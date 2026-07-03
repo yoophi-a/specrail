@@ -239,7 +239,7 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
   const config = loadConfig();
   const stateDir = path.join(dataDir, "state");
   const artifactRoot = path.join(dataDir, "artifacts");
-  const workspaceRoot = path.join(dataDir, "workspaces");
+  const workspaceRoot = config.executionWorkspaceRoot;
   const sessionsDir = path.join(dataDir, "sessions");
   const templateDir = path.resolve(PROJECT_ROOT, ".specrail-template");
 
