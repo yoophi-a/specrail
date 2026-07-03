@@ -329,7 +329,7 @@ test("API supports project create, list, get, and update", async () => {
         repoUrl: " https://github.com/yoophi-a/specrail-operator ",
         localRepoPath: " /work/specrail-operator ",
         defaultWorkflowPolicy: " artifact-first-mvp ",
-        defaultPlanningSystem: " openspec ",
+        defaultPlanningSystem: " OpenSpec ",
       }),
     });
     assert.equal(createResponse.status, 201);
@@ -352,7 +352,7 @@ test("API supports project create, list, get, and update", async () => {
       body: JSON.stringify({
         name: " Operator Console ",
         repoUrl: null,
-        defaultPlanningSystem: " speckit ",
+        defaultPlanningSystem: " spec-kit ",
       }),
     });
     assert.equal(updateResponse.status, 200);

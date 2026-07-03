@@ -111,7 +111,7 @@ Current endpoints in `apps/api/src/index.ts`:
 - `POST /projects`
   - create a project
   - body: `{ name, repoUrl?, localRepoPath?, defaultWorkflowPolicy?, defaultPlanningSystem? }`
-  - `defaultPlanningSystem` supports `native`, `openspec`, and `speckit`
+  - `defaultPlanningSystem` supports `native`, `openspec`, and `speckit`; mixed-case and separator-friendly values such as `OpenSpec` and `spec-kit` are normalized before validation
 - `GET /projects/:projectId`
   - return project metadata
 - `PATCH /projects/:projectId`

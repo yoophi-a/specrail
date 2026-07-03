@@ -526,6 +526,10 @@ function normalizeForkModeValue<T>(value: T): T {
   return (typeof value === "string" ? value.trim().toLowerCase().replace(/-/gu, "_") : value) as T;
 }
 
+function normalizePlanningSystemValue<T>(value: T): T {
+  return (typeof value === "string" ? value.trim().toLowerCase().replace(/[-_]/gu, "") : value) as T;
+}
+
 function normalizeProjectCreateBody(body: ProjectCreateRequestBody): ProjectCreateRequestBody {
   return {
     ...body,
@@ -533,7 +537,7 @@ function normalizeProjectCreateBody(body: ProjectCreateRequestBody): ProjectCrea
     repoUrl: normalizeStringValue(body.repoUrl),
     localRepoPath: normalizeStringValue(body.localRepoPath),
     defaultWorkflowPolicy: normalizeStringValue(body.defaultWorkflowPolicy),
-    defaultPlanningSystem: normalizeStringValue(body.defaultPlanningSystem),
+    defaultPlanningSystem: normalizePlanningSystemValue(body.defaultPlanningSystem),
   };
 }
 
@@ -544,7 +548,7 @@ function normalizeProjectUpdateBody(body: ProjectUpdateRequestBody): ProjectUpda
     repoUrl: normalizeStringValue(body.repoUrl),
     localRepoPath: normalizeStringValue(body.localRepoPath),
     defaultWorkflowPolicy: normalizeStringValue(body.defaultWorkflowPolicy),
-    defaultPlanningSystem: normalizeStringValue(body.defaultPlanningSystem),
+    defaultPlanningSystem: normalizePlanningSystemValue(body.defaultPlanningSystem),
   };
 }
 
