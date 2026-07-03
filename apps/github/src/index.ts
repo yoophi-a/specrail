@@ -284,6 +284,20 @@ function parseGitHubRelayQueueBackend(value: string | undefined): GitHubRelayQue
   throw new Error(`invalid GITHUB_RELAY_QUEUE_BACKEND: ${value}`);
 }
 
+function parseBooleanEnv(value: string | undefined, name: string, defaultValue = false): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return defaultValue;
+  }
+  if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+  throw new Error(`invalid ${name}: ${value}`);
+}
+
 function parseOptionalPositiveInteger(value: string | undefined, name: string): number | undefined {
   const normalized = value?.trim();
   if (!normalized) {
@@ -432,7 +446,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubAppId: readOptionalEnvValue(env.GITHUB_APP_ID),
     githubInstallationId: readOptionalEnvValue(env.GITHUB_INSTALLATION_ID),
     githubPrivateKey: normalizePrivateKey(env.GITHUB_PRIVATE_KEY),
-    followTerminalEvents: readOptionalEnvValue(env.GITHUB_FOLLOW_TERMINAL_EVENTS) === "true",
+    followTerminalEvents: parseBooleanEnv(env.GITHUB_FOLLOW_TERMINAL_EVENTS, "GITHUB_FOLLOW_TERMINAL_EVENTS"),
     githubRelayQueueBackend: parseGitHubRelayQueueBackend(env.GITHUB_RELAY_QUEUE_BACKEND),
     githubRelayQueuePath: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_PATH),
     githubRelayQueueDir: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_DIR),

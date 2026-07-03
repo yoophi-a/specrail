@@ -969,9 +969,20 @@ test("loadGitHubAppConfig normalizes webhook secret environment values", () => {
 
 test("loadGitHubAppConfig normalizes follow terminal events flag", () => {
   assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: " true " }).followTerminalEvents, true);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: " TRUE " }).followTerminalEvents, true);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "1" }).followTerminalEvents, true);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "yes" }).followTerminalEvents, true);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "on" }).followTerminalEvents, true);
   assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "" }).followTerminalEvents, false);
   assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: " " }).followTerminalEvents, false);
   assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "false" }).followTerminalEvents, false);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "0" }).followTerminalEvents, false);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "no" }).followTerminalEvents, false);
+  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "off" }).followTerminalEvents, false);
+  assert.throws(
+    () => loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "enabled" }),
+    /invalid GITHUB_FOLLOW_TERMINAL_EVENTS: enabled/u,
+  );
 });
 
 test("loadGitHubAppConfig validates port environment values", () => {
