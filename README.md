@@ -128,6 +128,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - list tracks with pagination and explicit sorting
   - default sort: `sortBy=updatedAt&sortOrder=desc`
   - query: `projectId?`, `status?`, `priority?`, `page?=1`, `pageSize?=20`, `sortBy?=updatedAt|createdAt|title|priority|status`, `sortOrder?=asc|desc`
+  - enum query values for `status`, `priority`, and `sortOrder` are normalized for case, and `status` also accepts hyphenated forms such as `in-progress`
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /tracks/:trackId`
   - return track metadata plus `spec`, `plan`, and `tasks` artifact contents
@@ -155,6 +156,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - list runs with pagination and explicit sorting
   - default sort: `sortBy=createdAt&sortOrder=desc`
   - query: `trackId?`, `status?`, `page?=1`, `pageSize?=20`, `sortBy?=createdAt|startedAt|finishedAt|status`, `sortOrder?=asc|desc`
+  - enum query values for `status` and `sortOrder` are normalized for case, and `status` also accepts hyphenated forms such as `waiting-approval`
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /runs/:runId`
   - return persisted run metadata

@@ -530,6 +530,10 @@ function normalizePlanningSystemValue<T>(value: T): T {
   return (typeof value === "string" ? value.trim().toLowerCase().replace(/[-_]/gu, "") : value) as T;
 }
 
+function normalizeQueryEnumValue<T>(value: T): T {
+  return (typeof value === "string" ? value.trim().toLowerCase().replace(/-/gu, "_") : value) as T;
+}
+
 function normalizeProjectCreateBody(body: ProjectCreateRequestBody): ProjectCreateRequestBody {
   return {
     ...body,
@@ -1379,12 +1383,12 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const searchParams = getSearchParams(request);
         const query: TrackListQuery = {
           projectId: getOptionalSearchParam(searchParams, "projectId"),
-          status: getOptionalSearchParam(searchParams, "status") as TrackStatus | undefined,
-          priority: getOptionalSearchParam(searchParams, "priority") as TrackRequestBody["priority"] | undefined,
+          status: normalizeQueryEnumValue(getOptionalSearchParam(searchParams, "status")) as TrackStatus | undefined,
+          priority: normalizeQueryEnumValue(getOptionalSearchParam(searchParams, "priority")) as TrackRequestBody["priority"] | undefined,
           page: parsePositiveInteger(getOptionalSearchParam(searchParams, "page")),
           pageSize: parsePositiveInteger(getOptionalSearchParam(searchParams, "pageSize")),
           sortBy: getOptionalSearchParam(searchParams, "sortBy") as TrackListQuery["sortBy"],
-          sortOrder: getOptionalSearchParam(searchParams, "sortOrder") as TrackListQuery["sortOrder"],
+          sortOrder: normalizeQueryEnumValue(getOptionalSearchParam(searchParams, "sortOrder")) as TrackListQuery["sortOrder"],
         };
         assertValidTrackListQuery(query);
 
@@ -1660,12 +1664,12 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         const searchParams = getSearchParams(request);
         const query: RunListQuery = {
           trackId: getOptionalSearchParam(searchParams, "trackId"),
-          status: getOptionalSearchParam(searchParams, "status") as RunListQuery["status"],
+          status: normalizeQueryEnumValue(getOptionalSearchParam(searchParams, "status")) as RunListQuery["status"],
           workspacePath: getOptionalSearchParam(searchParams, "workspacePath"),
           page: parsePositiveInteger(getOptionalSearchParam(searchParams, "page")),
           pageSize: parsePositiveInteger(getOptionalSearchParam(searchParams, "pageSize")),
           sortBy: getOptionalSearchParam(searchParams, "sortBy") as RunListQuery["sortBy"],
-          sortOrder: getOptionalSearchParam(searchParams, "sortOrder") as RunListQuery["sortOrder"],
+          sortOrder: normalizeQueryEnumValue(getOptionalSearchParam(searchParams, "sortOrder")) as RunListQuery["sortOrder"],
         };
         assertValidRunListQuery(query);
 
