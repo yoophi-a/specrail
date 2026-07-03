@@ -6,11 +6,13 @@ export interface SpecRailConfig {
   port: number;
   dataDir: string;
   repoArtifactDir: string;
-  executionBackend: string;
+  executionBackend: SpecRailExecutionBackend;
   executionProfile: string;
   executionWorkspaceMode: SpecRailExecutionWorkspaceMode;
   executionWorkspaceRoot: string;
 }
+
+export type SpecRailExecutionBackend = "codex" | "claude_code";
 
 export type SpecRailExecutionWorkspaceMode = "directory" | "git_worktree";
 
@@ -35,11 +37,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SpecRailConfig
     port: parseIntegerEnv(env.SPECRAIL_PORT, 4000, "SPECRAIL_PORT", { min: 0, max: 65535 }),
     dataDir,
     repoArtifactDir: readOptionalEnvValue(env.SPECRAIL_REPO_ARTIFACT_DIR) ?? ".specrail",
-    executionBackend: readOptionalEnvValue(env.SPECRAIL_EXECUTION_BACKEND) ?? "codex",
+    executionBackend: parseExecutionBackend(env.SPECRAIL_EXECUTION_BACKEND),
     executionProfile: readOptionalEnvValue(env.SPECRAIL_EXECUTION_PROFILE) ?? "default",
     executionWorkspaceMode,
     executionWorkspaceRoot: readOptionalEnvValue(env.SPECRAIL_EXECUTION_WORKSPACE_ROOT) ?? path.join(dataDir, "workspaces"),
   };
+}
+
+function parseExecutionBackend(value: string | undefined): SpecRailExecutionBackend {
+  const normalized = readOptionalEnvValue(value)?.toLowerCase().replace(/-/gu, "_");
+  if (!normalized || normalized === "codex") {
+    return "codex";
+  }
+
+  if (normalized === "claude_code") {
+    return "claude_code";
+  }
+
+  throw new Error(`Unsupported SPECRAIL_EXECUTION_BACKEND: ${value}`);
 }
 
 function parseExecutionWorkspaceMode(value: string | undefined): SpecRailExecutionWorkspaceMode {

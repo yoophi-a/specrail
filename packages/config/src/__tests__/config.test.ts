@@ -20,7 +20,7 @@ test("loadConfig normalizes optional API environment values", () => {
     loadConfig({
       SPECRAIL_DATA_DIR: "  /var/lib/specrail  ",
       SPECRAIL_REPO_ARTIFACT_DIR: "  /var/lib/specrail/repo-visible  ",
-      SPECRAIL_EXECUTION_BACKEND: "  claude-code  ",
+      SPECRAIL_EXECUTION_BACKEND: "  Claude-Code  ",
       SPECRAIL_EXECUTION_PROFILE: "  production  ",
       SPECRAIL_EXECUTION_WORKSPACE_MODE: "  git_worktree  ",
       SPECRAIL_EXECUTION_WORKSPACE_ROOT: "  /var/lib/specrail/workspaces  ",
@@ -29,7 +29,7 @@ test("loadConfig normalizes optional API environment values", () => {
       port: 4000,
       dataDir: "/var/lib/specrail",
       repoArtifactDir: "/var/lib/specrail/repo-visible",
-      executionBackend: "claude-code",
+      executionBackend: "claude_code",
       executionProfile: "production",
       executionWorkspaceMode: "git_worktree",
       executionWorkspaceRoot: "/var/lib/specrail/workspaces",
@@ -76,6 +76,20 @@ test("loadConfig validates API port environment values", () => {
 test("loadConfig reads execution workspace mode", () => {
   assert.equal(loadConfig({ SPECRAIL_EXECUTION_WORKSPACE_MODE: "git_worktree" }).executionWorkspaceMode, "git_worktree");
   assert.equal(loadConfig({ SPECRAIL_EXECUTION_WORKSPACE_MODE: "directory" }).executionWorkspaceMode, "directory");
+});
+
+test("loadConfig reads supported execution backends", () => {
+  assert.equal(loadConfig({ SPECRAIL_EXECUTION_BACKEND: "codex" }).executionBackend, "codex");
+  assert.equal(loadConfig({ SPECRAIL_EXECUTION_BACKEND: "claude_code" }).executionBackend, "claude_code");
+  assert.equal(loadConfig({ SPECRAIL_EXECUTION_BACKEND: "claude-code" }).executionBackend, "claude_code");
+  assert.equal(loadConfig({ SPECRAIL_EXECUTION_BACKEND: " " }).executionBackend, "codex");
+});
+
+test("loadConfig rejects unsupported execution backends", () => {
+  assert.throws(
+    () => loadConfig({ SPECRAIL_EXECUTION_BACKEND: "opencode" }),
+    /Unsupported SPECRAIL_EXECUTION_BACKEND: opencode/,
+  );
 });
 
 test("loadConfig rejects unsupported execution workspace modes", () => {

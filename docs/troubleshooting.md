@@ -39,7 +39,7 @@ Check:
 
 1. The selected port is free.
 2. `SPECRAIL_DATA_DIR` and `SPECRAIL_REPO_ARTIFACT_DIR` are writable.
-3. The configured default execution backend is supported by the current build.
+3. The configured default execution backend is supported by the current build. `SPECRAIL_EXECUTION_BACKEND` accepts `codex` and `claude_code`; `claude-code` is normalized to `claude_code`.
 4. `pnpm dev:api` is being run from the repository root.
 
 If startup still fails, capture the error message and the relevant environment keys, but redact secrets and machine-specific paths before sharing publicly.

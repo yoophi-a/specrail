@@ -401,6 +401,7 @@ For the GitHub webhook app, set `GITHUB_WEBHOOK_SECRET` for real deliveries and 
 For the Telegram frontend, set `SPECRAIL_API_BASE_URL`, `TELEGRAM_BOT_TOKEN`, and optionally `TELEGRAM_APP_PORT` / `TELEGRAM_WEBHOOK_PATH` before `pnpm dev:telegram`. `TELEGRAM_APP_PORT` must be an integer TCP port in the `0..65535` range, and `TELEGRAM_WEBHOOK_PATH` is normalized to start with `/` when configured. Set `SPECRAIL_TELEGRAM_PROJECT_ID` (or shared `SPECRAIL_PROJECT_ID`) to create new Telegram-bound tracks in a non-default project; omit it to keep the default-project behavior.
 
 For the API server, you can set `SPECRAIL_EXECUTION_BACKEND` and `SPECRAIL_EXECUTION_PROFILE` to choose the default executor/backend and profile used when callers omit them.
+`SPECRAIL_EXECUTION_BACKEND` accepts `codex` and `claude_code`; `claude-code` is normalized to `claude_code` for env-manager compatibility.
 Set `SPECRAIL_EXECUTION_WORKSPACE_ROOT` to place execution workspaces outside the default `<SPECRAIL_DATA_DIR>/workspaces` directory.
 Set `SPECRAIL_EXECUTION_WORKSPACE_MODE=directory` for the default plain workspace directory behavior, or `SPECRAIL_EXECUTION_WORKSPACE_MODE=git_worktree` to allocate execution workspaces with `git worktree add -b specrail/<runId> workspaces/<runId>` from the configured local repo path.
 
