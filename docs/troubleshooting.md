@@ -62,9 +62,9 @@ Check:
 1. The API server is running.
 2. `SPECRAIL_API_BASE_URL` points to the same port as the API server.
 3. `SPECRAIL_TERMINAL_REFRESH_MS` is a non-negative integer millisecond interval; `0` disables auto-refresh.
-4. `SPECRAIL_TERMINAL_INITIAL_SCREEN` is one of `home`, `tracks`, `runs`, or `settings`.
+4. `SPECRAIL_TERMINAL_INITIAL_SCREEN` is one of `home`, `tracks`, `runs`, or `settings`; matching is case-insensitive.
 5. `SPECRAIL_TERMINAL_INITIAL_PROJECT_ID`, when set, matches an existing project id.
-6. `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER` is one of `all`, `active`, or `terminal`.
+6. `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER` is one of `all`, `active`, or `terminal`; matching is case-insensitive.
 7. `SPECRAIL_TERMINAL_PREFERENCES_PATH`, when set, points to a writable local JSON path; malformed files are ignored and recreated on the next preference change.
 8. `SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH`, when set, points to a readable JSON array of planning-message templates.
 9. `SPECRAIL_TERMINAL_DIFF_EXPORT_DIR`, when set, points to a writable directory for revision-diff patch exports.

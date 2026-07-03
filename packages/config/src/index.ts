@@ -91,12 +91,12 @@ export function loadTerminalClientConfig(env: NodeJS.ProcessEnv = process.env): 
 }
 
 function parseTerminalInitialScreen(value: string | undefined): SpecRailTerminalClientConfig["initialScreen"] {
-  const normalized = readOptionalEnvValue(value);
+  const normalized = readOptionalEnvValue(value)?.toLowerCase();
   return normalized === "tracks" || normalized === "runs" || normalized === "settings" ? normalized : "home";
 }
 
 function parseTerminalInitialRunFilter(value: string | undefined): SpecRailTerminalInitialRunFilter {
-  const normalized = readOptionalEnvValue(value);
+  const normalized = readOptionalEnvValue(value)?.toLowerCase();
   return normalized === "active" || normalized === "terminal" ? normalized : "all";
 }
 
