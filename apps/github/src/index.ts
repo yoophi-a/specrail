@@ -313,6 +313,11 @@ function parseOptionalPositiveInteger(value: string | undefined, name: string): 
   return parsed;
 }
 
+function parseOptionalPostgresIdentifier(value: string | undefined): string | undefined {
+  const normalized = readOptionalEnvValue(value);
+  return normalized ? assertSafePostgresIdentifier(normalized) : undefined;
+}
+
 function parsePort(value: string | undefined, defaultValue: number, name: string): number {
   const normalized = value?.trim();
   if (!normalized) {
@@ -451,7 +456,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubRelayQueuePath: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_PATH),
     githubRelayQueueDir: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_DIR),
     githubRelayQueuePostgresUrl: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_POSTGRES_URL) ?? readOptionalEnvValue(env.DATABASE_URL),
-    githubRelayQueuePostgresTable: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE),
+    githubRelayQueuePostgresTable: parseOptionalPostgresIdentifier(env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE),
     githubRelayQueueRunningLeaseMs: parseOptionalPositiveInteger(env.GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS, "GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS"),
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseAllowedActorList(env.GITHUB_ALLOWED_ACTORS),

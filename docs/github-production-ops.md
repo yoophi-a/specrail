@@ -64,7 +64,7 @@ GITHUB_RELAY_QUEUE_POSTGRES_TABLE=github_relay_jobs
 GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS=300000
 ```
 
-When `GITHUB_RELAY_QUEUE_BACKEND=postgres`, the app requires `GITHUB_RELAY_QUEUE_POSTGRES_URL` or `DATABASE_URL`. `GITHUB_RELAY_QUEUE_POSTGRES_TABLE` defaults to `github_relay_jobs`; only lowercase identifiers with letters, digits, and underscores are accepted. `GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS` defaults to `300000` and must be a positive integer when set.
+When `GITHUB_RELAY_QUEUE_BACKEND=postgres`, the app requires `GITHUB_RELAY_QUEUE_POSTGRES_URL` or `DATABASE_URL`. `GITHUB_RELAY_QUEUE_POSTGRES_TABLE` defaults to `github_relay_jobs`; only lowercase identifiers with letters, digits, and underscores are accepted and validated at startup. `GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS` defaults to `300000` and must be a positive integer when set.
 
 With `GITHUB_RELAY_QUEUE_DIR`, `GITHUB_RELAY_QUEUE_POSTGRES_URL`/`DATABASE_URL`, or `GITHUB_RELAY_QUEUE_PATH` and GitHub comment credentials configured, the webhook app creates a durable queue and polls it every 5 seconds. On each poll, `processGitHubRelayQueue` checks queued/retryable jobs, reads SpecRail run events, and posts exactly one terminal outcome comment when the run reaches `completed`, `failed`, or `cancelled`.
 

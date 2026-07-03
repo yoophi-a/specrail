@@ -1008,6 +1008,10 @@ test("loadGitHubAppConfig reads explicit relay queue backend settings", () => {
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_TABLE: " specrail_relay_jobs " }).githubRelayQueuePostgresTable, "specrail_relay_jobs");
   assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "120000" }).githubRelayQueueRunningLeaseMs, 120_000);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "redis" }), /invalid GITHUB_RELAY_QUEUE_BACKEND: redis/u);
+  assert.throws(
+    () => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_TABLE: "bad-table" }),
+    /invalid PostgreSQL relay queue table name: bad-table/u,
+  );
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "0" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 0/u);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "100.5" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 100.5/u);
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "1e3" }), /invalid GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: 1e3/u);
