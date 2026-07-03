@@ -273,6 +273,7 @@ test("runTerminalCommand ignores non-report commands and validates report usage"
   assert.equal(await runTerminalCommand({ argv: ["interactive"] }), false);
   await assert.rejects(() => runTerminalCommand({ argv: ["report"] }), /Usage: specrail-terminal report <runId>/);
   await assert.rejects(() => runTerminalCommand({ argv: ["report", "run-1", "--output"] }), /Usage: specrail-terminal report <runId>/);
+  await assert.rejects(() => runTerminalCommand({ argv: ["report", "run-1", "--output", "--bogus"] }), /Usage: specrail-terminal report <runId>/);
   await assert.rejects(() => runTerminalCommand({ argv: ["report", "run-1", "--bogus"] }), /Usage: specrail-terminal report <runId>/);
 });
 
@@ -328,6 +329,10 @@ test("runTerminalCommand lists revision diff export manifest entries", async () 
     );
     await assert.rejects(
       () => runTerminalCommand({ argv: ["diff-exports", "--limit", "1e1"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
+      /Usage: specrail-terminal diff-exports/,
+    );
+    await assert.rejects(
+      () => runTerminalCommand({ argv: ["diff-exports", "--track", "--artifact", "plan"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
       /Usage: specrail-terminal diff-exports/,
     );
     await assert.rejects(
@@ -438,6 +443,7 @@ test("runTerminalCommand prints revision diff export patch content by index", as
 
     await assert.rejects(() => runTerminalCommand({ argv: ["diff-export", "0"] }), /Usage: specrail-terminal diff-export <positive-index>/);
     await assert.rejects(() => runTerminalCommand({ argv: ["diff-export", "1e1"] }), /Usage: specrail-terminal diff-export <positive-index>/);
+    await assert.rejects(() => runTerminalCommand({ argv: ["diff-export", "1", "--output", "--bogus"] }), /Usage: specrail-terminal diff-export <positive-index>/);
     await assert.rejects(() => runTerminalCommand({ argv: ["diff-export", "1", "--bogus"] }), /Usage: specrail-terminal diff-export <positive-index>/);
     await assert.rejects(
       () => runTerminalCommand({ argv: ["diff-export", "3"], env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory } }),
@@ -561,6 +567,10 @@ test("runTerminalCommand lists planning message templates", async () => {
 
     await assert.rejects(
       () => runTerminalCommand({ argv: ["message-templates", "--bogus"], env: { SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH: templatesPath } }),
+      /Usage: specrail-terminal message-templates/,
+    );
+    await assert.rejects(
+      () => runTerminalCommand({ argv: ["message-templates", "--output", "--json"], env: { SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH: templatesPath } }),
       /Usage: specrail-terminal message-templates/,
     );
   } finally {

@@ -2255,6 +2255,10 @@ function assertKnownTerminalCommandFlags(
       throw new Error(usage);
     }
     if (valueFlagSet.has(arg)) {
+      const value = argv[index + 1]?.trim();
+      if (!value || value.startsWith("-")) {
+        throw new Error(usage);
+      }
       index += 1;
     }
   }
