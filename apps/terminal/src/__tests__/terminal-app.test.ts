@@ -363,7 +363,7 @@ test("runTerminalCommand filters revision diff export manifest entries", async (
 
     assert.equal(
       await runTerminalCommand({
-        argv: ["diff-exports", "--artifact", "tasks", "--limit", "1", "--json"],
+        argv: ["diff-exports", "--artifact", " Tasks ", "--limit", "1", "--json"],
         env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
         stdout: { write: (chunk) => jsonWrites.push(chunk) },
       }),
@@ -466,7 +466,7 @@ test("runTerminalCommand applies revision diff export filters before detail sele
 
     assert.equal(
       await runTerminalCommand({
-        argv: ["diff-export", "1", "--track", "track-1", "--artifact", "spec"],
+        argv: ["diff-export", "1", "--track", "track-1", "--artifact", " Spec "],
         env: { SPECRAIL_TERMINAL_DIFF_EXPORT_DIR: directory },
         stdout: { write: (chunk) => writes.push(chunk) },
       }),

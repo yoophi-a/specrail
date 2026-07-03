@@ -2225,7 +2225,7 @@ function parseRevisionDiffExportFilters(argv: readonly string[], usage: string):
   const trackFlagIndex = argv.indexOf("--track");
   const trackId = trackFlagIndex >= 0 ? argv[trackFlagIndex + 1]?.trim() : null;
   const artifactFlagIndex = argv.indexOf("--artifact");
-  const artifact = artifactFlagIndex >= 0 ? argv[artifactFlagIndex + 1]?.trim() : null;
+  const artifact = artifactFlagIndex >= 0 ? argv[artifactFlagIndex + 1]?.trim().toLowerCase() : null;
 
   if (trackFlagIndex >= 0 && !trackId) {
     throw new Error(usage);
