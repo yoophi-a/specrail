@@ -165,6 +165,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - return run metadata, persisted executor session metadata when available, and backend continuity capabilities
 - `GET /runs/:runId/session-preview`
   - return a compact session preview with recent events and a derived report path
+  - query: `eventLimit?=10`, integer `1..50`
 - `POST /runs/:runId/resume`
   - resume an existing run
   - body: `{ prompt, backend?, profile? }`

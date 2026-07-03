@@ -1486,6 +1486,9 @@ test("API returns structured validation and bad-request errors", async () => {
       ["eventLimit"],
     );
 
+    const overLimitSessionPreviewResponse = await fetch(`${baseUrl}/runs/run-1/session-preview?eventLimit=51`);
+    assert.equal(overLimitSessionPreviewResponse.status, 422);
+
     const unsafeTrackPageResponse = await fetch(`${baseUrl}/tracks?page=999999999999999999999`);
     assert.equal(unsafeTrackPageResponse.status, 422);
 

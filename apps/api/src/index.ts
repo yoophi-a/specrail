@@ -8,6 +8,7 @@ import { renderOperatorUiHtml } from "./operator-ui.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..", "..");
+const SESSION_PREVIEW_EVENT_LIMIT_MAX = 50;
 
 import { ClaudeCodeAdapter, CodexAdapter } from "@specrail/adapters";
 import { getTrackArtifactPaths, loadConfig, materializeTrackArtifacts, writeApprovedTrackArtifact } from "@specrail/config";
@@ -1163,8 +1164,11 @@ function assertValidRunListQuery(query: RunListQuery): void {
 function assertValidSessionPreviewQuery(query: { eventLimit?: number }): void {
   const details: ApiErrorDetail[] = [];
 
-  if (query.eventLimit !== undefined && (!Number.isInteger(query.eventLimit) || query.eventLimit < 1)) {
-    details.push({ field: "eventLimit", message: "must be an integer greater than or equal to 1" });
+  if (
+    query.eventLimit !== undefined &&
+    (!Number.isInteger(query.eventLimit) || query.eventLimit < 1 || query.eventLimit > SESSION_PREVIEW_EVENT_LIMIT_MAX)
+  ) {
+    details.push({ field: "eventLimit", message: `must be an integer between 1 and ${SESSION_PREVIEW_EVENT_LIMIT_MAX}` });
   }
 
   if (details.length > 0) {
