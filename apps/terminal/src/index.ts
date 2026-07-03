@@ -2237,6 +2237,29 @@ function parseRevisionDiffExportFilters(argv: readonly string[], usage: string):
   return { trackId, artifact: artifact ? (artifact as ArtifactKind) : null };
 }
 
+function assertKnownTerminalCommandFlags(
+  argv: readonly string[],
+  allowedFlags: readonly string[],
+  valueFlags: readonly string[],
+  usage: string,
+): void {
+  const allowedFlagSet = new Set(allowedFlags);
+  const valueFlagSet = new Set(valueFlags);
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (!arg?.startsWith("-")) {
+      continue;
+    }
+    if (!allowedFlagSet.has(arg)) {
+      throw new Error(usage);
+    }
+    if (valueFlagSet.has(arg)) {
+      index += 1;
+    }
+  }
+}
+
 function formatPlanningMessageTemplates(templates: readonly PlanningMessageTemplate[]): string {
   return `${templates
     .map((template, index) => [String(index + 1), template.name, template.kind, template.relatedArtifact].join("\t"))
@@ -4125,6 +4148,7 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
 
   if (command === "diff-exports") {
     const usage = "Usage: specrail-terminal diff-exports [--json] [--limit <positive-number>] [--track <trackId>] [--artifact <spec|plan|tasks>]";
+    assertKnownTerminalCommandFlags(argv.slice(1), ["--json", "--limit", "--track", "--artifact"], ["--limit", "--track", "--artifact"], usage);
     const limitFlagIndex = argv.indexOf("--limit");
     const limitValue = limitFlagIndex >= 0 ? argv[limitFlagIndex + 1]?.trim() : null;
     const parsedLimit = limitValue ? parsePositiveCliInteger(limitValue) : null;
@@ -4150,6 +4174,7 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
 
   if (command === "diff-export") {
     const usage = "Usage: specrail-terminal diff-export <positive-index> [--track <trackId>] [--artifact <spec|plan|tasks>] [--output <file>|-o <file>]";
+    assertKnownTerminalCommandFlags(argv.slice(2), ["--track", "--artifact", "--output", "-o"], ["--track", "--artifact", "--output", "-o"], usage);
     const indexValue = runId?.trim();
     const parsedIndex = indexValue ? parsePositiveCliInteger(indexValue) : null;
     const filters = parseRevisionDiffExportFilters(argv, usage);
@@ -4188,13 +4213,15 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
   }
 
   if (command === "message-templates") {
+    const usage = "Usage: specrail-terminal message-templates [--json] [--output <file>|-o <file>]";
+    assertKnownTerminalCommandFlags(argv.slice(1), ["--json", "--output", "-o"], ["--output", "-o"], usage);
     const config = loadTerminalClientConfig(options.env ?? process.env);
     const templates = await loadPlanningMessageTemplates(config.messageTemplatesPath ?? null);
     const outputFlagIndex = argv.findIndex((arg) => arg === "--output" || arg === "-o");
     const outputPath = outputFlagIndex >= 0 ? argv[outputFlagIndex + 1]?.trim() : null;
 
     if (outputFlagIndex >= 0 && !outputPath) {
-      throw new Error("Usage: specrail-terminal message-templates [--json] [--output <file>|-o <file>]");
+      throw new Error(usage);
     }
 
     if (outputPath) {
@@ -4215,15 +4242,17 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
   }
 
   const reportRunId = runId?.trim();
+  const reportUsage = "Usage: specrail-terminal report <runId> [--output <file>|-o <file>]";
   if (!reportRunId) {
-    throw new Error("Usage: specrail-terminal report <runId> [--output <file>|-o <file>]");
+    throw new Error(reportUsage);
   }
+  assertKnownTerminalCommandFlags(args, ["--output", "-o"], ["--output", "-o"], reportUsage);
 
   const outputFlagIndex = args.findIndex((arg) => arg === "--output" || arg === "-o");
   const outputPath = outputFlagIndex >= 0 ? args[outputFlagIndex + 1]?.trim() : null;
 
   if (outputFlagIndex >= 0 && !outputPath) {
-    throw new Error("Usage: specrail-terminal report <runId> [--output <file>|-o <file>]");
+    throw new Error(reportUsage);
   }
 
   const config = loadTerminalClientConfig(options.env ?? process.env);
