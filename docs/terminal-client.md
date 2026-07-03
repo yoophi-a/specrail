@@ -50,6 +50,7 @@ The run detail pane also highlights:
 - folder-session discovery in the start composer: operators can edit a folder path, call `GET /runs?workspacePath=...`, preview the selected run with `GET /runs/:runId/session-preview`, then resume, fork, or start fresh using the existing run lifecycle endpoints
 - contextual keyboard help for the active screen or currently open multi-step composer
 - startup defaults for initial project scope and run filter, plus optional local persistence for project scope, run filter, refresh interval, live-tail pause, and event-detail visibility changes
+- persisted run-filter preferences are trimmed and parsed case-insensitively, matching `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER`
 
 ## Planning and approval workflow support
 

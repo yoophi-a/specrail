@@ -917,7 +917,7 @@ test("terminal preferences load and save local UI defaults", async () => {
     assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
     assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
 
-    await writeFile(path, JSON.stringify({ selectedProjectId: " project-2 ", runFilter: " all ", refreshIntervalMs: 999.4 }), "utf8");
+    await writeFile(path, JSON.stringify({ selectedProjectId: " project-2 ", runFilter: " ALL ", refreshIntervalMs: 999.4 }), "utf8");
     assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project-2", runFilter: "all", refreshIntervalMs: 999 });
 
     await writeFile(path, "{not json", "utf8");

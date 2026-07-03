@@ -2284,7 +2284,7 @@ export async function loadTerminalPreferences(path: string | null): Promise<Part
       : parsed.selectedProjectId === null
         ? null
         : undefined;
-    const normalizedRunFilter = typeof parsed.runFilter === "string" ? parsed.runFilter.trim() : undefined;
+    const normalizedRunFilter = typeof parsed.runFilter === "string" ? parsed.runFilter.trim().toLowerCase() : undefined;
     const runFilter = normalizedRunFilter === "active" || normalizedRunFilter === "terminal" || normalizedRunFilter === "all" ? normalizedRunFilter : undefined;
     const liveTailPaused = typeof parsed.liveTailPaused === "boolean" ? parsed.liveTailPaused : undefined;
     const showRunEventDetail = typeof parsed.showRunEventDetail === "boolean" ? parsed.showRunEventDetail : undefined;

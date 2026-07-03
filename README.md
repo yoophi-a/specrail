@@ -356,7 +356,7 @@ Operator environment:
 - `SPECRAIL_TERMINAL_INITIAL_SCREEN` one of `home`, `tracks`, `runs`, `settings`; parsed case-insensitively
 - `SPECRAIL_TERMINAL_INITIAL_PROJECT_ID` optional project id for the initial track/run scope
 - `SPECRAIL_TERMINAL_INITIAL_RUN_FILTER` one of `all`, `active`, `terminal`; parsed case-insensitively and defaults to `all`
-- `SPECRAIL_TERMINAL_PREFERENCES_PATH` optional local JSON file for persisting project scope, run filter, refresh interval, live-tail pause, and event-detail visibility changes
+- `SPECRAIL_TERMINAL_PREFERENCES_PATH` optional local JSON file for persisting project scope, run filter, refresh interval, live-tail pause, and event-detail visibility changes; persisted `runFilter` values are trimmed and parsed case-insensitively
 - `SPECRAIL_TERMINAL_MESSAGE_TEMPLATES_PATH` optional JSON file for custom terminal planning-message templates; template `kind` and `relatedArtifact` enum values are trimmed and parsed case-insensitively
 - `SPECRAIL_TERMINAL_DIFF_EXPORT_DIR` optional directory for terminal revision-diff patch exports; terminal exports also append `specrail-revision-diff-exports.jsonl` metadata in that directory
 
