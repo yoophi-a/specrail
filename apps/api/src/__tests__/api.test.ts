@@ -882,7 +882,7 @@ test("API supports resuming and cancelling a run", async () => {
     const forkResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/fork`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: " Continue separately ", mode: " context_copy ", backend: " CoDeX ", profile: " default " }),
+      body: JSON.stringify({ prompt: " Continue separately ", mode: " Context-Copy ", backend: " CoDeX ", profile: " default " }),
     });
     await assertJsonResponseStatus(forkResponse, 201);
     const forkPayload = (await forkResponse.json()) as {

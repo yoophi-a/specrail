@@ -55,7 +55,7 @@ For release handoff notes, call out any changes to:
 - Claude smoke-test environment variables
 
 Numeric environment values are validated at startup. Port variables such as `SPECRAIL_PORT`, `GITHUB_APP_PORT`, and `TELEGRAM_APP_PORT` must be integer TCP ports in the `0..65535` range. `SPECRAIL_TERMINAL_REFRESH_MS` must be a non-negative integer millisecond interval; `0` disables auto-refresh.
-`SPECRAIL_EXECUTION_BACKEND` is validated at startup and accepts `codex`, `claude_code`, or `claude-code`. Run API request body `backend` values use the same normalization before validation.
+`SPECRAIL_EXECUTION_BACKEND` is validated at startup and accepts `codex`, `claude_code`, or `claude-code`. Run API request body `backend` values use the same normalization before validation. Fork API `mode` values also normalize hyphens to underscores before validation.
 
 Never include real provider credentials, bot tokens, local transcripts, or run logs in public release notes.
 

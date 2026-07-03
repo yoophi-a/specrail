@@ -522,6 +522,10 @@ export function normalizeExecutionBackendValue<T>(value: T): T {
   return (typeof value === "string" ? value.trim().toLowerCase().replace(/-/gu, "_") : value) as T;
 }
 
+function normalizeForkModeValue<T>(value: T): T {
+  return (typeof value === "string" ? value.trim().toLowerCase().replace(/-/gu, "_") : value) as T;
+}
+
 function normalizeProjectCreateBody(body: ProjectCreateRequestBody): ProjectCreateRequestBody {
   return {
     ...body,
@@ -610,7 +614,7 @@ function normalizeForkRunBody(body: ForkRunRequestBody): ForkRunRequestBody {
   return {
     ...body,
     prompt: normalizeStringValue(body.prompt),
-    mode: normalizeStringValue(body.mode),
+    mode: normalizeForkModeValue(body.mode),
     backend: normalizeExecutionBackendValue(body.backend),
     profile: normalizeStringValue(body.profile),
   };

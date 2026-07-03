@@ -169,6 +169,7 @@ Current endpoints in `apps/api/src/index.ts`:
 - `POST /runs/:runId/fork`
   - start a linked continuation run from an existing run
   - body: `{ prompt, mode?, backend?, profile? }`
+  - `mode` accepts `context_copy`, `provider_fork`, and other supported continuity modes; hyphenated values such as `context-copy` are normalized before validation
 - `POST /runs/:runId/cancel`
   - cancel a running run
 - `GET /runs/:runId/workspace-cleanup/preview`
