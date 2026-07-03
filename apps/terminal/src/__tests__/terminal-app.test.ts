@@ -739,6 +739,11 @@ test("parsePlanningMessageTemplatesJson validates custom templates", () => {
     [{ name: "Team handoff", kind: "note", relatedArtifact: "plan", body: "Team handoff:\n- State:" }],
   );
 
+  assert.deepEqual(
+    parsePlanningMessageTemplatesJson(JSON.stringify([{ name: "Team question", kind: " Question ", relatedArtifact: " Plan ", body: "Question:\n- Context:" }]), "templates.json"),
+    [{ name: "Team question", kind: "question", relatedArtifact: "plan", body: "Question:\n- Context:" }],
+  );
+
   assert.throws(
     () => parsePlanningMessageTemplatesJson(JSON.stringify([{ name: "Broken", kind: "memo", relatedArtifact: "plan", body: "Body" }]), "templates.json"),
     /kind must be one of message, question, decision, note/,

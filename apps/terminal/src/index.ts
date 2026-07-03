@@ -14,6 +14,8 @@ export type ArtifactKind = "spec" | "plan" | "tasks";
 export type ExecutionActionKind = "start" | "resume" | "fork" | "cancel";
 export type PlanningSessionStatus = "active" | "waiting_user" | "waiting_agent" | "approved" | "archived";
 export type PlanningMessageTemplateKind = "message" | "question" | "decision" | "note";
+const PLANNING_MESSAGE_TEMPLATE_KINDS = ["message", "question", "decision", "note"] as const satisfies readonly PlanningMessageTemplateKind[];
+const PLANNING_MESSAGE_TEMPLATE_ARTIFACTS = ["none", "spec", "plan", "tasks"] as const satisfies readonly (ArtifactKind | "none")[];
 
 export interface PlanningMessageTemplate {
   name: string;
@@ -73,11 +75,15 @@ function nextPlanningSessionStatus(status: PlanningSessionStatus): PlanningSessi
 }
 
 function isPlanningMessageTemplateKind(value: unknown): value is PlanningMessageTemplateKind {
-  return value === "message" || value === "question" || value === "decision" || value === "note";
+  return typeof value === "string" && PLANNING_MESSAGE_TEMPLATE_KINDS.includes(value as PlanningMessageTemplateKind);
 }
 
 function isPlanningMessageTemplateArtifact(value: unknown): value is PlanningMessageTemplate["relatedArtifact"] {
-  return value === "none" || value === "spec" || value === "plan" || value === "tasks";
+  return typeof value === "string" && PLANNING_MESSAGE_TEMPLATE_ARTIFACTS.includes(value as PlanningMessageTemplate["relatedArtifact"]);
+}
+
+function normalizePlanningMessageTemplateEnum(value: unknown): unknown {
+  return typeof value === "string" ? value.trim().toLowerCase() : value;
 }
 
 export function parsePlanningMessageTemplatesJson(content: string, source = "planning message template file"): PlanningMessageTemplate[] {
@@ -99,13 +105,15 @@ export function parsePlanningMessageTemplatesJson(content: string, source = "pla
     }
 
     const template = item as Partial<PlanningMessageTemplate>;
+    const kind = normalizePlanningMessageTemplateEnum(template.kind);
+    const relatedArtifact = normalizePlanningMessageTemplateEnum(template.relatedArtifact);
     if (typeof template.name !== "string" || template.name.trim().length === 0) {
       throw new Error(`${prefix}: name must be a non-empty string.`);
     }
-    if (!isPlanningMessageTemplateKind(template.kind)) {
+    if (!isPlanningMessageTemplateKind(kind)) {
       throw new Error(`${prefix}: kind must be one of message, question, decision, note.`);
     }
-    if (!isPlanningMessageTemplateArtifact(template.relatedArtifact)) {
+    if (!isPlanningMessageTemplateArtifact(relatedArtifact)) {
       throw new Error(`${prefix}: relatedArtifact must be one of none, spec, plan, tasks.`);
     }
     if (typeof template.body !== "string" || template.body.trim().length === 0) {
@@ -114,8 +122,8 @@ export function parsePlanningMessageTemplatesJson(content: string, source = "pla
 
     return {
       name: template.name.trim(),
-      kind: template.kind,
-      relatedArtifact: template.relatedArtifact,
+      kind,
+      relatedArtifact,
       body: template.body,
     };
   });
