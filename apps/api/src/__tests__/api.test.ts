@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createDefaultServer, sanitizeMarkdownFilenameComponent } from "../index.js";
+import { createDefaultServer, normalizeExecutionBackendValue, sanitizeMarkdownFilenameComponent } from "../index.js";
 
 async function withServer(
   run: (baseUrl: string, paths: { dataDir: string; repoArtifactDir: string }) => Promise<void>,
@@ -237,6 +237,13 @@ test("sanitizeMarkdownFilenameComponent keeps report filenames filesystem-safe",
   assert.equal(sanitizeMarkdownFilenameComponent("run-1"), "run-1");
   assert.equal(sanitizeMarkdownFilenameComponent("run/one with spaces"), "run-one-with-spaces");
   assert.equal(sanitizeMarkdownFilenameComponent("***"), "unknown");
+});
+
+test("normalizeExecutionBackendValue accepts env-manager friendly backend spellings", () => {
+  assert.equal(normalizeExecutionBackendValue(" Claude-Code "), "claude_code");
+  assert.equal(normalizeExecutionBackendValue(" CODEX "), "codex");
+  assert.equal(normalizeExecutionBackendValue(" wat "), "wat");
+  assert.equal(normalizeExecutionBackendValue(undefined), undefined);
 });
 
 test("API serves a health check", async () => {
@@ -771,6 +778,7 @@ test("API supports streaming run events over SSE", async () => {
       body: JSON.stringify({
         trackId: trackPayload.track.id,
         prompt: "Start the work",
+        backend: " CoDeX ",
       }),
     });
     const runPayload = (await createRunResponse.json()) as { run: { id: string } };
@@ -830,7 +838,7 @@ test("API supports resuming and cancelling a run", async () => {
     const resumeResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/resume`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: "Continue with verification" }),
+      body: JSON.stringify({ prompt: "Continue with verification", backend: " CoDeX " }),
     });
 
     assert.equal(resumeResponse.status, 200);
@@ -874,7 +882,7 @@ test("API supports resuming and cancelling a run", async () => {
     const forkResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/fork`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: " Continue separately ", mode: " context_copy ", backend: " codex ", profile: " default " }),
+      body: JSON.stringify({ prompt: " Continue separately ", mode: " context_copy ", backend: " CoDeX ", profile: " default " }),
     });
     await assertJsonResponseStatus(forkResponse, 201);
     const forkPayload = (await forkResponse.json()) as {

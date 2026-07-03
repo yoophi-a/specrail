@@ -149,7 +149,7 @@ Current endpoints in `apps/api/src/index.ts`:
 - `POST /runs`
   - start a run for a track
   - body: `{ trackId, prompt, backend?, profile?, planningSessionId? }`
-  - `backend` currently supports `codex` and `claude_code`
+  - `backend` currently supports `codex` and `claude_code`; `claude-code` is normalized to `claude_code`
   - runs infer and persist the latest approved planning context, and reject starts while newer planning revisions are still pending approval
 - `GET /runs`
   - list runs with pagination and explicit sorting
@@ -165,7 +165,7 @@ Current endpoints in `apps/api/src/index.ts`:
 - `POST /runs/:runId/resume`
   - resume an existing run
   - body: `{ prompt, backend?, profile? }`
-  - `backend` is optional and must match the run's persisted backend when provided
+  - `backend` is optional, normalized like `POST /runs`, and must match the run's persisted backend when provided
 - `POST /runs/:runId/fork`
   - start a linked continuation run from an existing run
   - body: `{ prompt, mode?, backend?, profile? }`

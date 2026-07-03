@@ -518,6 +518,10 @@ function normalizeStringValue<T>(value: T): T {
   return (typeof value === "string" ? value.trim() : value) as T;
 }
 
+export function normalizeExecutionBackendValue<T>(value: T): T {
+  return (typeof value === "string" ? value.trim().toLowerCase().replace(/-/gu, "_") : value) as T;
+}
+
 function normalizeProjectCreateBody(body: ProjectCreateRequestBody): ProjectCreateRequestBody {
   return {
     ...body,
@@ -587,7 +591,7 @@ function normalizeRunCreateBody(body: RunRequestBody): RunRequestBody {
     ...body,
     trackId: normalizeStringValue(body.trackId),
     prompt: normalizeStringValue(body.prompt),
-    backend: normalizeStringValue(body.backend),
+    backend: normalizeExecutionBackendValue(body.backend),
     profile: normalizeStringValue(body.profile),
     planningSessionId: normalizeStringValue(body.planningSessionId),
   };
@@ -597,7 +601,7 @@ function normalizeResumeRunBody(body: ResumeRunRequestBody): ResumeRunRequestBod
   return {
     ...body,
     prompt: normalizeStringValue(body.prompt),
-    backend: normalizeStringValue(body.backend),
+    backend: normalizeExecutionBackendValue(body.backend),
     profile: normalizeStringValue(body.profile),
   };
 }
@@ -607,7 +611,7 @@ function normalizeForkRunBody(body: ForkRunRequestBody): ForkRunRequestBody {
     ...body,
     prompt: normalizeStringValue(body.prompt),
     mode: normalizeStringValue(body.mode),
-    backend: normalizeStringValue(body.backend),
+    backend: normalizeExecutionBackendValue(body.backend),
     profile: normalizeStringValue(body.profile),
   };
 }

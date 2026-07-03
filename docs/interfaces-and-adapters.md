@@ -228,7 +228,7 @@ sequenceDiagram
 - `POST /runs/:runId/resume` → `{ prompt, backend?, profile? }`
 - persisted run metadata에는 `backend`, `profile`, `providerSessionId`, `providerInvocationId`, `resumeSessionRef`, `providerMetadata`가 함께 남습니다.
 
-즉, caller는 provider-specific route를 따로 알 필요 없이 `backend: "claude_code"`와 원하는 profile만 넘기면 됩니다.
+즉, caller는 provider-specific route를 따로 알 필요 없이 `backend: "claude_code"`와 원하는 profile만 넘기면 됩니다. API request body의 `backend`도 env 설정과 동일하게 trim/lowercase 처리되며, `claude-code`는 canonical `claude_code`로 정규화됩니다.
 
 ### Current operational limitations
 
