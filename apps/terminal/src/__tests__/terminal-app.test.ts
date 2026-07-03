@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 import {
   appendRunEvents,
@@ -16,6 +17,7 @@ import {
   exportRevisionDiffPatch,
   loadRevisionDiffExportManifest,
   loadTerminalPreferences,
+  isTerminalEntrypoint,
   parsePlanningMessageTemplatesJson,
   renderAppShell,
   renderRevisionDiffLines,
@@ -31,6 +33,13 @@ import {
   syncRunEventSelection,
   type TerminalAppState,
 } from "../index.js";
+
+test("isTerminalEntrypoint compares argv paths through file URLs", () => {
+  const pathWithSpecialCharacters = "/tmp/specrail #terminal/index.js";
+  assert.equal(isTerminalEntrypoint(pathToFileURL(pathWithSpecialCharacters).href, pathWithSpecialCharacters), true);
+  assert.equal(isTerminalEntrypoint(pathToFileURL("/tmp/specrail-other/index.js").href, pathWithSpecialCharacters), false);
+  assert.equal(isTerminalEntrypoint(pathToFileURL(pathWithSpecialCharacters).href, undefined), false);
+});
 
 test("SpecRailTerminalApiClient loads a summary snapshot", async () => {
   const requests: string[] = [];

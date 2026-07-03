@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { emitKeypressEvents } from "node:readline";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import { loadTerminalClientConfig, type SpecRailTerminalClientConfig } from "@specrail/config";
 
 export type TerminalScreenId = "home" | "tracks" | "runs" | "settings";
@@ -4239,7 +4240,11 @@ function parsePositiveCliInteger(value: string): number | null {
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-const isEntrypoint = process.argv[1] ? import.meta.url === new URL(`file://${process.argv[1]}`).href : false;
+export function isTerminalEntrypoint(moduleUrl: string, argvPath: string | undefined): boolean {
+  return argvPath ? moduleUrl === pathToFileURL(argvPath).href : false;
+}
+
+const isEntrypoint = isTerminalEntrypoint(import.meta.url, process.argv[1]);
 
 if (isEntrypoint) {
   void runTerminalCommand()
