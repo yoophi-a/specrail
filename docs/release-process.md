@@ -58,6 +58,7 @@ Numeric environment values are validated at startup. Port variables such as `SPE
 `SPECRAIL_EXECUTION_BACKEND` is validated at startup and accepts `codex`, `claude_code`, or `claude-code`. Run API request body `backend` values use the same normalization before validation. Fork API `mode` values also normalize hyphens to underscores before validation.
 Project API `defaultPlanningSystem` values normalize case plus `-`/`_` separators before validation, so release notes can use canonical `native`, `openspec`, and `speckit` while still accepting operator-friendly input.
 Track/run list API enum query values normalize case before validation; hyphenated `status` values such as `in-progress` and `waiting-approval` normalize to their canonical underscore forms.
+Write API enum body values, including track workflow fields, planning session/message metadata, approval actors, channel types, and attachment source types, normalize case before validation; hyphenated status values normalize to underscores.
 
 Never include real provider credentials, bot tokens, local transcripts, or run logs in public release notes.
 

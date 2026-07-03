@@ -480,13 +480,14 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       body: JSON.stringify({
         title: "Executor MVP",
         description: "Persist command metadata and launch runs.",
-        priority: " high ",
+        priority: " High ",
       }),
     });
 
     assert.equal(trackResponse.status, 201);
-    const trackPayload = (await trackResponse.json()) as { track: { id: string; title: string; planningSystem: string } };
+    const trackPayload = (await trackResponse.json()) as { track: { id: string; title: string; planningSystem: string; priority: string } };
     assert.equal(trackPayload.track.title, "Executor MVP");
+    assert.equal(trackPayload.track.priority, "high");
 
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     assert.equal(getTrackResponse.status, 200);
@@ -511,7 +512,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const planningSessionResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/planning-sessions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status: " active " }),
+      body: JSON.stringify({ status: " Active " }),
     });
     assert.equal(planningSessionResponse.status, 201);
     const planningSessionPayload = (await planningSessionResponse.json()) as {
@@ -522,7 +523,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const planningSessionUpdateResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status: " waiting_agent " }),
+      body: JSON.stringify({ status: " Waiting-Agent " }),
     });
     assert.equal(planningSessionUpdateResponse.status, 200);
     const planningSessionUpdatePayload = (await planningSessionUpdateResponse.json()) as {
@@ -549,9 +550,9 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        authorType: " user ",
-        kind: " question ",
-        relatedArtifact: " plan ",
+        authorType: " USER ",
+        kind: " Question ",
+        relatedArtifact: " Plan ",
         body: "Can we separate planning state from run events?",
       }),
     });
@@ -573,7 +574,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         projectId: " project-default ",
-        channelType: " telegram ",
+        channelType: " Telegram ",
         externalChatId: " chat-1 ",
         externalThreadId: " thread-1 ",
         externalUserId: " user-1 ",
@@ -583,8 +584,9 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     });
     assert.equal(bindResponse.status, 201);
     const bindPayload = (await bindResponse.json()) as {
-      binding: { id: string; externalChatId: string; externalThreadId?: string; externalUserId?: string; planningSessionId?: string };
+      binding: { id: string; channelType: string; externalChatId: string; externalThreadId?: string; externalUserId?: string; planningSessionId?: string };
     };
+    assert.equal(bindPayload.binding.channelType, "telegram");
     assert.equal(bindPayload.binding.externalChatId, "chat-1");
     assert.equal(bindPayload.binding.externalThreadId, "thread-1");
     assert.equal(bindPayload.binding.externalUserId, "user-1");
@@ -624,7 +626,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        sourceType: " telegram ",
+        sourceType: " Telegram ",
         externalFileId: " file-1 ",
         fileName: " brief.txt ",
         mimeType: " text/plain ",
@@ -633,8 +635,9 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     });
     assert.equal(attachmentResponse.status, 201);
     const attachmentPayload = (await attachmentResponse.json()) as {
-      attachment: { externalFileId: string; fileName?: string; mimeType?: string; planningSessionId?: string };
+      attachment: { sourceType: string; externalFileId: string; fileName?: string; mimeType?: string; planningSessionId?: string };
     };
+    assert.equal(attachmentPayload.attachment.sourceType, "telegram");
     assert.equal(attachmentPayload.attachment.externalFileId, "file-1");
     assert.equal(attachmentPayload.attachment.fileName, "brief.txt");
     assert.equal(attachmentPayload.attachment.mimeType, "text/plain");
@@ -652,7 +655,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         content: "# Approved plan\n\nUse the linked planning context.",
-        createdBy: " agent ",
+        createdBy: " Agent ",
       }),
     });
     assert.equal(proposedPlanRevisionResponse.status, 201);
@@ -666,7 +669,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ decidedBy: " user ", comment: " approved " }),
+        body: JSON.stringify({ decidedBy: " User ", comment: " approved " }),
       },
     );
     assert.equal(approvePlanResponse.status, 200);
@@ -1154,9 +1157,9 @@ test("API supports updating track workflow and approval state", async () => {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        status: " review ",
-        specStatus: " approved ",
-        planStatus: " pending ",
+        status: " Review ",
+        specStatus: " Approved ",
+        planStatus: " Pending ",
       }),
     });
 

@@ -123,6 +123,7 @@ Current endpoints in `apps/api/src/index.ts`:
 - `POST /tracks`
   - create a track
   - body: `{ projectId?, title, description, priority? }`
+  - enum body values such as `priority`, workflow statuses, approval actors, channel types, and attachment source types are normalized for case, and hyphenated status values normalize to underscores before validation
   - `projectId` defaults to the bootstrap project when omitted
 - `GET /tracks`
   - list tracks with pagination and explicit sorting

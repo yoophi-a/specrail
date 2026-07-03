@@ -534,6 +534,10 @@ function normalizeQueryEnumValue<T>(value: T): T {
   return (typeof value === "string" ? value.trim().toLowerCase().replace(/-/gu, "_") : value) as T;
 }
 
+function normalizeBodyEnumValue<T>(value: T): T {
+  return (typeof value === "string" ? value.trim().toLowerCase().replace(/-/gu, "_") : value) as T;
+}
+
 function normalizeProjectCreateBody(body: ProjectCreateRequestBody): ProjectCreateRequestBody {
   return {
     ...body,
@@ -562,39 +566,39 @@ function normalizeTrackCreateBody(body: TrackRequestBody): TrackRequestBody {
     projectId: normalizeStringValue(body.projectId),
     title: normalizeStringValue(body.title),
     description: normalizeStringValue(body.description),
-    priority: normalizeStringValue(body.priority),
+    priority: normalizeBodyEnumValue(body.priority),
   };
 }
 
 function normalizeTrackUpdateBody(body: UpdateTrackRequestBody): UpdateTrackRequestBody {
   return {
     ...body,
-    status: normalizeStringValue(body.status),
-    specStatus: normalizeStringValue(body.specStatus),
-    planStatus: normalizeStringValue(body.planStatus),
+    status: normalizeBodyEnumValue(body.status),
+    specStatus: normalizeBodyEnumValue(body.specStatus),
+    planStatus: normalizeBodyEnumValue(body.planStatus),
   };
 }
 
 function normalizeCreatePlanningSessionBody(body: CreatePlanningSessionRequestBody): CreatePlanningSessionRequestBody {
   return {
     ...body,
-    status: normalizeStringValue(body.status),
+    status: normalizeBodyEnumValue(body.status),
   };
 }
 
 function normalizeUpdatePlanningSessionBody(body: UpdatePlanningSessionRequestBody): UpdatePlanningSessionRequestBody {
   return {
     ...body,
-    status: normalizeStringValue(body.status),
+    status: normalizeBodyEnumValue(body.status),
   };
 }
 
 function normalizeAppendPlanningMessageBody(body: AppendPlanningMessageRequestBody): AppendPlanningMessageRequestBody {
   return {
     ...body,
-    authorType: normalizeStringValue(body.authorType),
-    kind: normalizeStringValue(body.kind),
-    relatedArtifact: normalizeStringValue(body.relatedArtifact),
+    authorType: normalizeBodyEnumValue(body.authorType),
+    kind: normalizeBodyEnumValue(body.kind),
+    relatedArtifact: normalizeBodyEnumValue(body.relatedArtifact),
   };
 }
 
@@ -632,7 +636,7 @@ function normalizeBindChannelBody(body: BindChannelRequestBody): BindChannelRequ
   return {
     ...body,
     projectId: normalizeStringValue(body.projectId),
-    channelType: normalizeStringValue(body.channelType),
+    channelType: normalizeBodyEnumValue(body.channelType),
     externalChatId: normalizeStringValue(body.externalChatId),
     externalThreadId: normalizeStringValue(body.externalThreadId),
     externalUserId: normalizeStringValue(body.externalUserId),
@@ -644,7 +648,7 @@ function normalizeBindChannelBody(body: BindChannelRequestBody): BindChannelRequ
 function normalizeRegisterAttachmentBody(body: RegisterAttachmentRequestBody): RegisterAttachmentRequestBody {
   return {
     ...body,
-    sourceType: normalizeStringValue(body.sourceType),
+    sourceType: normalizeBodyEnumValue(body.sourceType),
     externalFileId: normalizeStringValue(body.externalFileId),
     fileName: normalizeStringValue(body.fileName),
     mimeType: normalizeStringValue(body.mimeType),
@@ -658,14 +662,14 @@ function normalizeProposeArtifactRevisionBody(body: ProposeArtifactRevisionReque
   return {
     ...body,
     summary: normalizeStringValue(body.summary),
-    createdBy: normalizeStringValue(body.createdBy),
+    createdBy: normalizeBodyEnumValue(body.createdBy),
   };
 }
 
 function normalizeDecisionBody<T extends DecideApprovalRequestBody | ResolveRuntimeApprovalRequestBody>(body: T): T {
   return {
     ...body,
-    decidedBy: normalizeStringValue(body.decidedBy),
+    decidedBy: normalizeBodyEnumValue(body.decidedBy),
     comment: normalizeStringValue(body.comment),
   };
 }
