@@ -593,7 +593,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(bindPayload.binding.planningSessionId, planningSessionPayload.planningSession.id);
 
     const getBindingResponse = await fetch(
-      `${baseUrl}/channel-bindings?channelType=telegram&externalChatId=chat-1&externalThreadId=thread-1`,
+      `${baseUrl}/channel-bindings?channelType=Telegram&externalChatId=chat-1&externalThreadId=thread-1`,
     );
     assert.equal(getBindingResponse.status, 200);
     const getBindingPayload = (await getBindingResponse.json()) as { binding: { id: string } };
@@ -616,7 +616,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(githubBindPayload.binding.channelType, "github");
 
     const getGithubBindingResponse = await fetch(
-      `${baseUrl}/channel-bindings?channelType=github&externalChatId=${encodeURIComponent("yoophi-a/specrail")}&externalThreadId=123`,
+      `${baseUrl}/channel-bindings?channelType=GitHub&externalChatId=${encodeURIComponent("yoophi-a/specrail")}&externalThreadId=123`,
     );
     assert.equal(getGithubBindingResponse.status, 200);
     const getGithubBindingPayload = (await getGithubBindingResponse.json()) as { binding: { id: string } };

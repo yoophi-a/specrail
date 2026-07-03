@@ -209,6 +209,7 @@ Current endpoints in `apps/api/src/index.ts`:
   - body: `{ projectId, channelType, externalChatId, externalThreadId?, externalUserId?, trackId?, planningSessionId? }`
 - `GET /channel-bindings?channelType=telegram&externalChatId=...&externalThreadId?...`
   - resolve a thin-channel conversation back to its linked SpecRail context
+  - `channelType` query values normalize case before validation and lookup
 - `POST /attachments`
   - register an attachment reference received by a channel frontend
   - body: `{ sourceType, externalFileId, fileName?, mimeType?, localPath?, trackId?, planningSessionId? }`

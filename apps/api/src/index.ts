@@ -1605,7 +1605,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
       if (method === "GET" && segments.length === 1 && segments[0] === "channel-bindings") {
         const searchParams = getSearchParams(request);
-        const channelType = getOptionalSearchParam(searchParams, "channelType");
+        const channelType = normalizeQueryEnumValue(getOptionalSearchParam(searchParams, "channelType"));
         const externalChatId = getOptionalSearchParam(searchParams, "externalChatId");
         const externalThreadId = getOptionalSearchParam(searchParams, "externalThreadId");
 
