@@ -264,6 +264,10 @@ function parseAllowedOrganizationList(value: string | undefined): string[] {
   return parseCsvList(value).map((entry) => parseAllowedOrganization(entry));
 }
 
+function parseAllowedActorList(value: string | undefined): string[] {
+  return parseCsvList(value).map((entry) => parseAllowedActor(entry));
+}
+
 function readOptionalEnvValue(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized || undefined;
@@ -353,6 +357,14 @@ function normalizeGitHubActorLogin(value: string): string {
   return value.trim().replace(/^@/u, "").toLowerCase();
 }
 
+function parseAllowedActor(value: string): string {
+  const normalized = normalizeGitHubActorLogin(value);
+  if (!normalized || normalized.includes("/")) {
+    throw new Error(`invalid GITHUB_ALLOWED_ACTORS entry: ${value}`);
+  }
+  return normalized;
+}
+
 function parseAllowedOrganization(value: string): string {
   const normalized = normalizeGitHubPolicyIdentifier(value);
   if (!normalized || normalized.includes("/")) {
@@ -428,7 +440,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubRelayQueuePostgresTable: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE),
     githubRelayQueueRunningLeaseMs: parseOptionalPositiveInteger(env.GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS, "GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS"),
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
-    allowedActors: parseCsvList(env.GITHUB_ALLOWED_ACTORS),
+    allowedActors: parseAllowedActorList(env.GITHUB_ALLOWED_ACTORS),
     allowedOrganizations: parseAllowedOrganizationList(env.GITHUB_ALLOWED_ORGS),
     allowedTeams: parseAllowedTeamList(env.GITHUB_ALLOWED_TEAMS),
   };
