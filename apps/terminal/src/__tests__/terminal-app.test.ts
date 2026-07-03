@@ -239,10 +239,10 @@ test("runTerminalCommand prints command help", async () => {
 
   const output = writes.join("");
   assert.match(output, /Usage: specrail-terminal \[command\]/);
-  assert.match(output, /report <runId> \[--output <file>\]/);
+  assert.match(output, /report <runId> \[--output <file>\|-o <file>\]/);
   assert.match(output, /diff-exports \[--json\] \[--limit <n>\] \[--track <trackId>\] \[--artifact <kind>\]/);
-  assert.match(output, /diff-export <index> \[--track <trackId>\] \[--artifact <kind>\] \[--output <file>\]/);
-  assert.match(output, /message-templates \[--json\] \[--output <file>\]/);
+  assert.match(output, /diff-export <index> \[--track <trackId>\] \[--artifact <kind>\] \[--output <file>\|-o <file>\]/);
+  assert.match(output, /message-templates \[--json\] \[--output <file>\|-o <file>\]/);
 });
 
 test("runTerminalCommand writes report command output to an explicit file", async () => {

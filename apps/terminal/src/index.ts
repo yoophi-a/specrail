@@ -2248,12 +2248,13 @@ function renderTerminalCommandHelp(): string {
     "Usage: specrail-terminal [command]",
     "",
     "Commands:",
-    "  report <runId> [--output <file>]            Print or write a completed-run Markdown report.",
+    "  report <runId> [--output <file>|-o <file>]  Print or write a completed-run Markdown report.",
     "  diff-exports [--json] [--limit <n>] [--track <trackId>] [--artifact <kind>]",
     "                                              List revision diff export manifest entries.",
-    "  diff-export <index> [--track <trackId>] [--artifact <kind>] [--output <file>]",
+    "  diff-export <index> [--track <trackId>] [--artifact <kind>] [--output <file>|-o <file>]",
     "                                              Print one listed revision diff export patch.",
-    "  message-templates [--json] [--output <file>] List or export planning-message templates.",
+    "  message-templates [--json] [--output <file>|-o <file>]",
+    "                                              List or export planning-message templates.",
     "  help                                        Show this help output.",
     "",
     "Without a command, the interactive terminal UI starts.",
@@ -4148,7 +4149,7 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
   }
 
   if (command === "diff-export") {
-    const usage = "Usage: specrail-terminal diff-export <positive-index> [--track <trackId>] [--artifact <spec|plan|tasks>] [--output <file>]";
+    const usage = "Usage: specrail-terminal diff-export <positive-index> [--track <trackId>] [--artifact <spec|plan|tasks>] [--output <file>|-o <file>]";
     const indexValue = runId?.trim();
     const parsedIndex = indexValue ? parsePositiveCliInteger(indexValue) : null;
     const filters = parseRevisionDiffExportFilters(argv, usage);
@@ -4193,7 +4194,7 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
     const outputPath = outputFlagIndex >= 0 ? argv[outputFlagIndex + 1]?.trim() : null;
 
     if (outputFlagIndex >= 0 && !outputPath) {
-      throw new Error("Usage: specrail-terminal message-templates [--json] [--output <file>]");
+      throw new Error("Usage: specrail-terminal message-templates [--json] [--output <file>|-o <file>]");
     }
 
     if (outputPath) {
@@ -4215,14 +4216,14 @@ export async function runTerminalCommand(options: TerminalCommandOptions = {}): 
 
   const reportRunId = runId?.trim();
   if (!reportRunId) {
-    throw new Error("Usage: specrail-terminal report <runId> [--output <file>]");
+    throw new Error("Usage: specrail-terminal report <runId> [--output <file>|-o <file>]");
   }
 
   const outputFlagIndex = args.findIndex((arg) => arg === "--output" || arg === "-o");
   const outputPath = outputFlagIndex >= 0 ? args[outputFlagIndex + 1]?.trim() : null;
 
   if (outputFlagIndex >= 0 && !outputPath) {
-    throw new Error("Usage: specrail-terminal report <runId> [--output <file>]");
+    throw new Error("Usage: specrail-terminal report <runId> [--output <file>|-o <file>]");
   }
 
   const config = loadTerminalClientConfig(options.env ?? process.env);
