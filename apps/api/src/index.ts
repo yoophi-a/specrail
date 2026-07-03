@@ -534,6 +534,15 @@ function normalizeQueryEnumValue<T>(value: T): T {
   return (typeof value === "string" ? value.trim().toLowerCase().replace(/-/gu, "_") : value) as T;
 }
 
+function normalizeSortByValue<T>(value: T, supportedFields: readonly string[]): T {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[-_]/gu, "");
+  return (supportedFields.find((field) => field.toLowerCase() === normalized) ?? value.trim()) as T;
+}
+
 function normalizeBodyEnumValue<T>(value: T): T {
   return (typeof value === "string" ? value.trim().toLowerCase().replace(/-/gu, "_") : value) as T;
 }
@@ -1391,7 +1400,13 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           priority: normalizeQueryEnumValue(getOptionalSearchParam(searchParams, "priority")) as TrackRequestBody["priority"] | undefined,
           page: parsePositiveInteger(getOptionalSearchParam(searchParams, "page")),
           pageSize: parsePositiveInteger(getOptionalSearchParam(searchParams, "pageSize")),
-          sortBy: getOptionalSearchParam(searchParams, "sortBy") as TrackListQuery["sortBy"],
+          sortBy: normalizeSortByValue(getOptionalSearchParam(searchParams, "sortBy"), [
+            "updatedAt",
+            "createdAt",
+            "title",
+            "priority",
+            "status",
+          ]) as TrackListQuery["sortBy"],
           sortOrder: normalizeQueryEnumValue(getOptionalSearchParam(searchParams, "sortOrder")) as TrackListQuery["sortOrder"],
         };
         assertValidTrackListQuery(query);
@@ -1672,7 +1687,12 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           workspacePath: getOptionalSearchParam(searchParams, "workspacePath"),
           page: parsePositiveInteger(getOptionalSearchParam(searchParams, "page")),
           pageSize: parsePositiveInteger(getOptionalSearchParam(searchParams, "pageSize")),
-          sortBy: getOptionalSearchParam(searchParams, "sortBy") as RunListQuery["sortBy"],
+          sortBy: normalizeSortByValue(getOptionalSearchParam(searchParams, "sortBy"), [
+            "createdAt",
+            "startedAt",
+            "finishedAt",
+            "status",
+          ]) as RunListQuery["sortBy"],
           sortOrder: normalizeQueryEnumValue(getOptionalSearchParam(searchParams, "sortOrder")) as RunListQuery["sortOrder"],
         };
         assertValidRunListQuery(query);

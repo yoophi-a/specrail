@@ -42,9 +42,10 @@ Check:
 3. The configured default execution backend is supported by the current build. `SPECRAIL_EXECUTION_BACKEND` accepts `codex` and `claude_code`; `claude-code` is normalized to `claude_code`. Run API request body `backend` values follow the same normalization, and fork API `mode` values normalize hyphens to underscores.
 4. Project API `defaultPlanningSystem` values resolve to `native`, `openspec`, or `speckit`; mixed-case and `spec-kit` style input is normalized before validation.
 5. Track/run list API enum query values resolve to canonical lowercase forms before validation; hyphenated `status` values normalize to underscores.
-6. Write API enum body values resolve to canonical lowercase forms before validation; hyphenated workflow/planning status values normalize to underscores.
-7. Channel binding lookup `channelType` query values resolve to canonical lowercase forms before validation.
-8. `pnpm dev:api` is being run from the repository root.
+6. Track/run list `sortBy` query values resolve to canonical camelCase fields before validation; hyphenated and underscore aliases are supported.
+7. Write API enum body values resolve to canonical lowercase forms before validation; hyphenated workflow/planning status values normalize to underscores.
+8. Channel binding lookup `channelType` query values resolve to canonical lowercase forms before validation.
+9. `pnpm dev:api` is being run from the repository root.
 
 If startup still fails, capture the error message and the relevant environment keys, but redact secrets and machine-specific paths before sharing publicly.
 

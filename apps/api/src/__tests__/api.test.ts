@@ -1213,7 +1213,7 @@ test("API lists tracks and runs with basic filters", async () => {
       body: JSON.stringify({ status: "in_progress" }),
     });
 
-    const trackListResponse = await fetch(`${baseUrl}/tracks?priority=%20Low%20&page=%201%20&pageSize=%2020%20&sortBy=%20updatedAt%20&sortOrder=%20DESC%20`);
+    const trackListResponse = await fetch(`${baseUrl}/tracks?priority=%20Low%20&page=%201%20&pageSize=%2020%20&sortBy=%20updated_at%20&sortOrder=%20DESC%20`);
     assert.equal(trackListResponse.status, 200);
     const trackListPayload = (await trackListResponse.json()) as { tracks: Array<{ id: string; priority: string }> };
     assert.deepEqual(trackListPayload.tracks.map((track) => track.id), [trackTwo.track.id]);
@@ -1275,7 +1275,7 @@ test("API paginates track listings and returns sort metadata", async () => {
       assert.equal(response.status, 201);
     }
 
-    const listResponse = await fetch(`${baseUrl}/tracks?page=%202%20&pageSize=%201%20&sortBy=%20title%20&sortOrder=%20ASC%20`);
+    const listResponse = await fetch(`${baseUrl}/tracks?page=%202%20&pageSize=%201%20&sortBy=%20Title%20&sortOrder=%20ASC%20`);
     assert.equal(listResponse.status, 200);
 
     const listPayload = (await listResponse.json()) as {
@@ -1335,7 +1335,7 @@ test("API paginates run listings with explicit sort order", async () => {
     }
 
     const listResponse = await fetch(
-      `${baseUrl}/runs?trackId=${encodeURIComponent(` ${trackPayload.track.id} `)}&page=%202%20&pageSize=%201%20&sortBy=%20createdAt%20&sortOrder=%20ASC%20`,
+      `${baseUrl}/runs?trackId=${encodeURIComponent(` ${trackPayload.track.id} `)}&page=%202%20&pageSize=%201%20&sortBy=%20created-at%20&sortOrder=%20ASC%20`,
     );
     assert.equal(listResponse.status, 200);
 
