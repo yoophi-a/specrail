@@ -332,7 +332,7 @@ test("operator UI client harness submits selected-track detail actions", async (
     comment: "decided from hosted operator UI",
   });
 
-  runs.push({ id: "run-existing", trackId: "track-1", status: "running", workspacePath: "/workspace/run-existing", backend: "codex", continuityMode: "fresh", summary: { lastEventSummary: "Existing folder work" } });
+  runs.push({ id: "run-existing", trackId: "track-1", status: "running", workspacePath: "/workspace/run-existing/app", backend: "codex", continuityMode: "fresh", summary: { lastEventSummary: "Existing folder work" } });
   detail.querySelector("#folder-session-path").value = "/workspace/run-existing";
   await detail.querySelector("[data-folder-session-search]").click();
   await flushClientPromises();
@@ -345,7 +345,7 @@ test("operator UI client harness submits selected-track detail actions", async (
 
   assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run-existing/session-preview?eventLimit=5"), true);
   const previewPanel = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview-panel]")[0];
-  assert.match(previewPanel?.innerHTML ?? "", /<strong>Workspace:<\/strong> \/workspace\/run-existing/);
+  assert.match(previewPanel?.innerHTML ?? "", /<strong>Workspace:<\/strong> \/workspace\/run-existing\/app/);
   assert.match(previewPanel?.innerHTML ?? "", /<a href="\/runs\/run-existing\/report\.md">\/runs\/run-existing\/report\.md<\/a>/);
   assert.match(previewPanel?.innerHTML ?? "", /contextCopyFork=true/);
 

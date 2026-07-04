@@ -1,3 +1,4 @@
+import path from "node:path";
 import vm from "node:vm";
 
 import { renderOperatorUiClientScript } from "../operator-ui.js";
@@ -268,7 +269,7 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     }
     if (path.startsWith("/runs?page=1&pageSize=10&workspacePath=") && method === "GET") {
       const workspacePath = new URLSearchParams(path.slice(path.indexOf("?") + 1)).get("workspacePath");
-      const filteredRuns = runs.filter((run) => run.workspacePath === workspacePath);
+      const filteredRuns = runs.filter((run) => workspacePath ? pathMatchesWorkspace(workspacePath, String(run.workspacePath ?? "")) : false);
       return { ok: true, json: async () => ({ runs: filteredRuns }) };
     }
     if (path === "/runs" && method === "POST") {
@@ -288,7 +289,8 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     if (/^\/runs\/[^/]+\/session-preview\?eventLimit=5$/.test(path) && method === "GET") {
       const runId = decodeURIComponent(path.split("/")[2] ?? "");
       const reportPath = sessionPreviewReportPaths.has(runId) ? sessionPreviewReportPaths.get(runId) : `/runs/${runId}/report.md`;
-      return { ok: true, json: async () => ({ execution: { id: runId, workspacePath: `/workspace/${runId}` }, session: { sessionRef: `${runId}-codex` }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ timestamp: "2026-04-09T03:00:00.000Z", summary: "Run started" }], reportPath }) };
+      const run = runs.find((candidate) => candidate.id === runId);
+      return { ok: true, json: async () => ({ execution: { id: runId, workspacePath: run?.workspacePath ?? `/workspace/${runId}` }, session: { sessionRef: `${runId}-codex` }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ timestamp: "2026-04-09T03:00:00.000Z", summary: "Run started" }], reportPath }) };
     }
     if (/^\/runs\/[^/]+\/resume$/.test(path) && method === "POST") {
       return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "running", ...(body as Record<string, unknown>) } }) };
@@ -390,4 +392,21 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
 export async function flushClientPromises(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
+}
+
+function normalizeWorkspacePathForMatch(workspacePath: string): string {
+  return path.resolve(workspacePath.trim());
+}
+
+function pathMatchesWorkspace(candidatePath: string, executionWorkspacePath: string): boolean {
+  const candidate = normalizeWorkspacePathForMatch(candidatePath);
+  const workspace = normalizeWorkspacePathForMatch(executionWorkspacePath);
+  const relativeFromCandidate = path.relative(candidate, workspace);
+  const relativeFromWorkspace = path.relative(workspace, candidate);
+
+  return (
+    candidate === workspace ||
+    Boolean(relativeFromCandidate && !relativeFromCandidate.startsWith("..") && !path.isAbsolute(relativeFromCandidate)) ||
+    Boolean(relativeFromWorkspace && !relativeFromWorkspace.startsWith("..") && !path.isAbsolute(relativeFromWorkspace))
+  );
 }
