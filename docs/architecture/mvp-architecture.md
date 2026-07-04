@@ -596,7 +596,7 @@ sequenceDiagram
   A->>S: previewWorkspaceCleanup(runId)
   S->>W: ownership/path/branch 검증 + dry-run plan
   W-->>S: cleanupPlan(dryRun=true)
-  S-->>A: cleanupPlan + expectedConfirmation
+  S-->>A: cleanupPlan
   A-->>O: 200 JSON
 
   O->>A: POST /runs/:runId/workspace-cleanup/apply
@@ -606,7 +606,7 @@ sequenceDiagram
   W-->>S: cleanupResult
   S->>L: summary event append
   S-->>A: cleanupResult
-  A-->>O: 200 JSON
+  A-->>O: 200 JSON(cleanupResult + expectedConfirmation)
 ```
 
 ## HTTP API 범위
