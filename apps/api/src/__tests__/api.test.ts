@@ -896,6 +896,16 @@ test("API supports resuming and cancelling a run", async () => {
     const folderRunsPayload = (await folderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
     assert.ok(folderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
 
+    const parentFolderRunsResponse = await fetch(`${baseUrl}/runs?workspacePath=${encodeURIComponent(path.dirname(runPayload.run.workspacePath))}`);
+    await assertJsonResponseStatus(parentFolderRunsResponse, 200);
+    const parentFolderRunsPayload = (await parentFolderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
+    assert.ok(parentFolderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
+
+    const childFolderRunsResponse = await fetch(`${baseUrl}/runs?workspacePath=${encodeURIComponent(path.join(runPayload.run.workspacePath, "src"))}`);
+    await assertJsonResponseStatus(childFolderRunsResponse, 200);
+    const childFolderRunsPayload = (await childFolderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
+    assert.ok(childFolderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
+
     const sessionPreviewResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/session-preview?eventLimit=%202%20`);
     await assertJsonResponseStatus(sessionPreviewResponse, 200);
     const sessionPreviewPayload = (await sessionPreviewResponse.json()) as { events: Array<{ summary: string }>; reportPath?: string };
