@@ -1631,6 +1631,12 @@ test("API returns 404s for unknown tracks and runs", async () => {
     assert.equal(missingStreamPayload.error.code, "not_found");
     assert.equal(missingStreamPayload.error.message, "run not found");
 
+    const missingSession = await fetch(`${baseUrl}/runs/missing/session`);
+    assert.equal(missingSession.status, 404);
+    const missingSessionPayload = (await missingSession.json()) as { error: { code: string; message: string } };
+    assert.equal(missingSessionPayload.error.code, "not_found");
+    assert.equal(missingSessionPayload.error.message, "Run not found: missing");
+
     const missingSessionPreview = await fetch(`${baseUrl}/runs/missing/session-preview`);
     assert.equal(missingSessionPreview.status, 404);
     const missingSessionPreviewPayload = (await missingSessionPreview.json()) as {
