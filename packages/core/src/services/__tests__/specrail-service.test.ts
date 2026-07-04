@@ -225,6 +225,10 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
 
   const folderRuns = await service.listRunsPage({ workspacePath: path.join(workspaceRoot, "run-run-a"), pageSize: 5 });
   assert.ok(folderRuns.items.some((item) => item.id === run.id));
+  const parentFolderRuns = await service.listRunsPage({ workspacePath: workspaceRoot, pageSize: 5 });
+  assert.ok(parentFolderRuns.items.some((item) => item.id === run.id));
+  const childFolderRuns = await service.listRunsPage({ workspacePath: path.join(workspaceRoot, "run-run-a", "src"), pageSize: 5 });
+  assert.ok(childFolderRuns.items.some((item) => item.id === run.id));
 
   const runPreview = await service.getRunSessionPreview({ runId: run.id, eventLimit: 2 });
   assert.equal(runPreview.execution.id, run.id);
