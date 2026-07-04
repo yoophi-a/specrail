@@ -1637,8 +1637,9 @@ test("API returns 404s for unknown tracks and runs", async () => {
       body: JSON.stringify({ prompt: "nope" }),
     });
     assert.equal(missingResume.status, 404);
-    const missingResumePayload = (await missingResume.json()) as { error: { code: string } };
+    const missingResumePayload = (await missingResume.json()) as { error: { code: string; message: string } };
     assert.equal(missingResumePayload.error.code, "not_found");
+    assert.equal(missingResumePayload.error.message, "Run not found: missing");
 
     const missingCancel = await fetch(`${baseUrl}/runs/missing/cancel`, {
       method: "POST",
