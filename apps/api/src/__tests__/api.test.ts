@@ -673,6 +673,23 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(attachmentPayload.attachment.mimeType, "text/plain");
     assert.equal(attachmentPayload.attachment.planningSessionId, planningSessionPayload.planningSession.id);
 
+    const invalidAttachmentResponse = await fetch(`${baseUrl}/attachments`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceType: "discord",
+        externalFileId: " ",
+      }),
+    });
+    assert.equal(invalidAttachmentResponse.status, 422);
+    const invalidAttachmentPayload = (await invalidAttachmentResponse.json()) as {
+      error: { details: Array<{ field: string }> };
+    };
+    assert.deepEqual(
+      invalidAttachmentPayload.error.details.map((detail) => detail.field),
+      ["sourceType", "externalFileId", "body"],
+    );
+
     const attachmentsResponse = await fetch(
       `${baseUrl}/attachments?planningSessionId=${encodeURIComponent(planningSessionPayload.planningSession.id)}`,
     );
