@@ -642,6 +642,16 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const getGithubBindingPayload = (await getGithubBindingResponse.json()) as { binding: { id: string } };
     assert.equal(getGithubBindingPayload.binding.id, githubBindPayload.binding.id);
 
+    const invalidBindingLookupResponse = await fetch(`${baseUrl}/channel-bindings?channelType=Discord&externalChatId=%20`);
+    assert.equal(invalidBindingLookupResponse.status, 422);
+    const invalidBindingLookupPayload = (await invalidBindingLookupResponse.json()) as {
+      error: { details: Array<{ field: string }> };
+    };
+    assert.deepEqual(
+      invalidBindingLookupPayload.error.details.map((detail) => detail.field),
+      ["channelType", "externalChatId"],
+    );
+
     const attachmentResponse = await fetch(`${baseUrl}/attachments`, {
       method: "POST",
       headers: { "content-type": "application/json" },
