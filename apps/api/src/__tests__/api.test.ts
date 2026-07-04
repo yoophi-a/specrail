@@ -1645,8 +1645,9 @@ test("API returns 404s for unknown tracks and runs", async () => {
       method: "POST",
     });
     assert.equal(missingCancel.status, 404);
-    const missingCancelPayload = (await missingCancel.json()) as { error: { code: string } };
+    const missingCancelPayload = (await missingCancel.json()) as { error: { code: string; message: string } };
     assert.equal(missingCancelPayload.error.code, "not_found");
+    assert.equal(missingCancelPayload.error.message, "Run not found: missing");
   });
 });
 
