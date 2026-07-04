@@ -158,7 +158,8 @@ Current endpoints in `apps/api/src/index.ts`:
 - `GET /runs`
   - list runs with pagination and explicit sorting
   - default sort: `sortBy=createdAt&sortOrder=desc`
-  - query: `trackId?`, `status?`, `page?=1`, `pageSize?=20`, `sortBy?=createdAt|startedAt|finishedAt|status`, `sortOrder?=asc|desc`
+  - query: `trackId?`, `status?`, `workspacePath?`, `page?=1`, `pageSize?=20`, `sortBy?=createdAt|startedAt|finishedAt|status`, `sortOrder?=asc|desc`
+  - `workspacePath?` filters runs whose workspace is the selected folder, an ancestor, or a descendant of it
   - enum query values for `status` and `sortOrder` are normalized for case, `status` accepts hyphenated forms such as `waiting-approval`, and `sortBy` accepts mixed-case or separator aliases such as `created-at`
   - response includes `meta: { page, pageSize, sortBy, sortOrder, total, totalPages, hasNextPage, hasPrevPage }`
 - `GET /runs/:runId`
