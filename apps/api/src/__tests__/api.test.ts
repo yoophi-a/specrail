@@ -817,6 +817,9 @@ test("API serves completed run Markdown reports without mutating artifacts or ev
 
     const missingResponse = await fetch(`${baseUrl}/runs/missing-run/report.md`);
     await assertJsonResponseStatus(missingResponse, 404);
+    const missingPayload = (await missingResponse.json()) as { error: { code: string; message: string } };
+    assert.equal(missingPayload.error.code, "not_found");
+    assert.equal(missingPayload.error.message, "run not found");
   });
 });
 
