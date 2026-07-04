@@ -1619,8 +1619,9 @@ test("API returns 404s for unknown tracks and runs", async () => {
 
     const missingRun = await fetch(`${baseUrl}/runs/missing/events`);
     assert.equal(missingRun.status, 404);
-    const missingRunPayload = (await missingRun.json()) as { error: { code: string } };
+    const missingRunPayload = (await missingRun.json()) as { error: { code: string; message: string } };
     assert.equal(missingRunPayload.error.code, "not_found");
+    assert.equal(missingRunPayload.error.message, "run not found");
 
     const missingStream = await fetch(`${baseUrl}/runs/missing/events/stream`, {
       headers: { accept: "text/event-stream" },
