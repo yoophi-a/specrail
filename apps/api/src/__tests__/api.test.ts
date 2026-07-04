@@ -680,6 +680,16 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const attachmentsPayload = (await attachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
     assert.deepEqual(attachmentsPayload.attachments.map((attachment) => attachment.externalFileId), ["file-1"]);
 
+    const invalidAttachmentsResponse = await fetch(`${baseUrl}/attachments`);
+    assert.equal(invalidAttachmentsResponse.status, 422);
+    const invalidAttachmentsPayload = (await invalidAttachmentsResponse.json()) as {
+      error: { details: Array<{ field: string }> };
+    };
+    assert.deepEqual(
+      invalidAttachmentsPayload.error.details.map((detail) => detail.field),
+      ["query"],
+    );
+
     const proposedPlanRevisionResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/plan`, {
       method: "POST",
       headers: { "content-type": "application/json" },
