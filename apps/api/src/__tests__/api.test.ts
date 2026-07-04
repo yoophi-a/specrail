@@ -1641,6 +1641,16 @@ test("API returns 404s for unknown tracks and runs", async () => {
     assert.equal(missingResumePayload.error.code, "not_found");
     assert.equal(missingResumePayload.error.message, "Run not found: missing");
 
+    const missingFork = await fetch(`${baseUrl}/runs/missing/fork`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "nope" }),
+    });
+    assert.equal(missingFork.status, 404);
+    const missingForkPayload = (await missingFork.json()) as { error: { code: string; message: string } };
+    assert.equal(missingForkPayload.error.code, "not_found");
+    assert.equal(missingForkPayload.error.message, "Run not found: missing");
+
     const missingCancel = await fetch(`${baseUrl}/runs/missing/cancel`, {
       method: "POST",
     });
