@@ -1101,6 +1101,14 @@ test("API refuses workspace cleanup preview for active runs", async () => {
     assert.deepEqual(cleanupPreviewPayload.cleanupPlan.refusalReasons, [
       "Execution status running is not eligible for workspace cleanup",
     ]);
+
+    const missingCleanupPreviewResponse = await fetch(`${baseUrl}/runs/missing/workspace-cleanup/preview`);
+    assert.equal(missingCleanupPreviewResponse.status, 404);
+    const missingCleanupPreviewPayload = (await missingCleanupPreviewResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingCleanupPreviewPayload.error.code, "not_found");
+    assert.equal(missingCleanupPreviewPayload.error.message, "run not found");
   });
 });
 
