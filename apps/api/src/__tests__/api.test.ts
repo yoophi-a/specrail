@@ -565,6 +565,11 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       body: JSON.stringify({ status: "active" }),
     });
     await assertJsonResponseStatus(missingPlanningSessionUpdateResponse, 404);
+    const missingPlanningSessionUpdatePayload = (await missingPlanningSessionUpdateResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingPlanningSessionUpdatePayload.error.code, "not_found");
+    assert.equal(missingPlanningSessionUpdatePayload.error.message, "Planning session not found: missing-session");
 
     const planningMessageResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`, {
       method: "POST",
