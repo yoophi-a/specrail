@@ -728,8 +728,9 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const invalidAttachmentsResponse = await fetch(`${baseUrl}/attachments`);
     assert.equal(invalidAttachmentsResponse.status, 422);
     const invalidAttachmentsPayload = (await invalidAttachmentsResponse.json()) as {
-      error: { details: Array<{ field: string }> };
+      error: { code: string; details: Array<{ field: string }> };
     };
+    assert.equal(invalidAttachmentsPayload.error.code, "validation_error");
     assert.deepEqual(
       invalidAttachmentsPayload.error.details.map((detail) => detail.field),
       ["query"],
