@@ -430,6 +430,9 @@ test("API validates project payloads and returns 404s for missing projects", asy
 
     const getResponse = await fetch(`${baseUrl}/projects/project-missing`);
     assert.equal(getResponse.status, 404);
+    const getPayload = (await getResponse.json()) as { error: { code: string; message: string } };
+    assert.equal(getPayload.error.code, "not_found");
+    assert.equal(getPayload.error.message, "project not found");
   });
 });
 
