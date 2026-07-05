@@ -497,7 +497,10 @@ test("API creates and filters tracks by project", async () => {
       }),
     });
     assert.equal(missingProjectTrackResponse.status, 404);
-    const missingProjectTrackPayload = (await missingProjectTrackResponse.json()) as { error: { message: string } };
+    const missingProjectTrackPayload = (await missingProjectTrackResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingProjectTrackPayload.error.code, "not_found");
     assert.equal(missingProjectTrackPayload.error.message, "Project not found: project-missing");
 
     const emptyProjectFilterResponse = await fetch(`${baseUrl}/tracks?projectId=`);
