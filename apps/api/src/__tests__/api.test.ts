@@ -552,6 +552,14 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(planningSessionUpdatePayload.planningSession.id, planningSessionPayload.planningSession.id);
     assert.equal(planningSessionUpdatePayload.planningSession.status, "waiting_agent");
 
+    const missingPlanningSessionLookupResponse = await fetch(`${baseUrl}/planning-sessions/missing-session`);
+    await assertJsonResponseStatus(missingPlanningSessionLookupResponse, 404);
+    const missingPlanningSessionLookupPayload = (await missingPlanningSessionLookupResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingPlanningSessionLookupPayload.error.code, "not_found");
+    assert.equal(missingPlanningSessionLookupPayload.error.message, "planning session not found");
+
     const invalidPlanningSessionUpdateResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
