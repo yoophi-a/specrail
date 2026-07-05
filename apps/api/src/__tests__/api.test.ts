@@ -1701,6 +1701,14 @@ test("API returns structured validation and bad-request errors", async () => {
 
     const unsafeTrackPageResponse = await fetch(`${baseUrl}/tracks?page=999999999999999999999`);
     assert.equal(unsafeTrackPageResponse.status, 422);
+    const unsafeTrackPagePayload = (await unsafeTrackPageResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(unsafeTrackPagePayload.error.code, "validation_error");
+    assert.deepEqual(
+      unsafeTrackPagePayload.error.details.map((detail) => detail.field),
+      ["page"],
+    );
 
     const unsafeRunEventLimitResponse = await fetch(`${baseUrl}/runs/run-1/session-preview?eventLimit=999999999999999999999`);
     assert.equal(unsafeRunEventLimitResponse.status, 422);
