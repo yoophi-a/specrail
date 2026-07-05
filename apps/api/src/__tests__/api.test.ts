@@ -1492,6 +1492,14 @@ test("API validates track updates and returns 404 for missing tracks", async () 
       body: JSON.stringify({}),
     });
     assert.equal(emptyBodyResponse.status, 422);
+    const emptyBodyPayload = (await emptyBodyResponse.json()) as {
+      error: { code: string; details: Array<{ field: string; message: string }> };
+    };
+    assert.equal(emptyBodyPayload.error.code, "validation_error");
+    assert.deepEqual(
+      emptyBodyPayload.error.details.map((detail) => detail.field),
+      ["body"],
+    );
 
     const invalidStatusResponse = await fetch(`${baseUrl}/tracks/missing`, {
       method: "PATCH",
@@ -1499,6 +1507,14 @@ test("API validates track updates and returns 404 for missing tracks", async () 
       body: JSON.stringify({ status: "oops" }),
     });
     assert.equal(invalidStatusResponse.status, 422);
+    const invalidStatusPayload = (await invalidStatusResponse.json()) as {
+      error: { code: string; details: Array<{ field: string; message: string }> };
+    };
+    assert.equal(invalidStatusPayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidStatusPayload.error.details.map((detail) => detail.field),
+      ["status"],
+    );
 
     const invalidSpecStatusResponse = await fetch(`${baseUrl}/tracks/missing`, {
       method: "PATCH",
@@ -1506,6 +1522,14 @@ test("API validates track updates and returns 404 for missing tracks", async () 
       body: JSON.stringify({ specStatus: "oops" }),
     });
     assert.equal(invalidSpecStatusResponse.status, 422);
+    const invalidSpecStatusPayload = (await invalidSpecStatusResponse.json()) as {
+      error: { code: string; details: Array<{ field: string; message: string }> };
+    };
+    assert.equal(invalidSpecStatusPayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidSpecStatusPayload.error.details.map((detail) => detail.field),
+      ["specStatus"],
+    );
 
     const invalidPlanStatusResponse = await fetch(`${baseUrl}/tracks/missing`, {
       method: "PATCH",
@@ -1513,6 +1537,14 @@ test("API validates track updates and returns 404 for missing tracks", async () 
       body: JSON.stringify({ planStatus: "oops" }),
     });
     assert.equal(invalidPlanStatusResponse.status, 422);
+    const invalidPlanStatusPayload = (await invalidPlanStatusResponse.json()) as {
+      error: { code: string; details: Array<{ field: string; message: string }> };
+    };
+    assert.equal(invalidPlanStatusPayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidPlanStatusPayload.error.details.map((detail) => detail.field),
+      ["planStatus"],
+    );
   });
 });
 
