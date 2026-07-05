@@ -1669,8 +1669,9 @@ test("API returns structured validation and bad-request errors", async () => {
     const invalidSessionPreviewResponse = await fetch(`${baseUrl}/runs/run-1/session-preview?eventLimit=abc`);
     assert.equal(invalidSessionPreviewResponse.status, 422);
     const invalidSessionPreviewPayload = (await invalidSessionPreviewResponse.json()) as {
-      error: { details: Array<{ field: string }> };
+      error: { code: string; details: Array<{ field: string }> };
     };
+    assert.equal(invalidSessionPreviewPayload.error.code, "validation_error");
     assert.deepEqual(
       invalidSessionPreviewPayload.error.details.map((detail) => detail.field),
       ["eventLimit"],
@@ -1678,15 +1679,39 @@ test("API returns structured validation and bad-request errors", async () => {
 
     const overLimitSessionPreviewResponse = await fetch(`${baseUrl}/runs/run-1/session-preview?eventLimit=51`);
     assert.equal(overLimitSessionPreviewResponse.status, 422);
+    const overLimitSessionPreviewPayload = (await overLimitSessionPreviewResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(overLimitSessionPreviewPayload.error.code, "validation_error");
+    assert.deepEqual(
+      overLimitSessionPreviewPayload.error.details.map((detail) => detail.field),
+      ["eventLimit"],
+    );
 
     const zeroLimitSessionPreviewResponse = await fetch(`${baseUrl}/runs/run-1/session-preview?eventLimit=0`);
     assert.equal(zeroLimitSessionPreviewResponse.status, 422);
+    const zeroLimitSessionPreviewPayload = (await zeroLimitSessionPreviewResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(zeroLimitSessionPreviewPayload.error.code, "validation_error");
+    assert.deepEqual(
+      zeroLimitSessionPreviewPayload.error.details.map((detail) => detail.field),
+      ["eventLimit"],
+    );
 
     const unsafeTrackPageResponse = await fetch(`${baseUrl}/tracks?page=999999999999999999999`);
     assert.equal(unsafeTrackPageResponse.status, 422);
 
     const unsafeRunEventLimitResponse = await fetch(`${baseUrl}/runs/run-1/session-preview?eventLimit=999999999999999999999`);
     assert.equal(unsafeRunEventLimitResponse.status, 422);
+    const unsafeRunEventLimitPayload = (await unsafeRunEventLimitResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(unsafeRunEventLimitPayload.error.code, "validation_error");
+    assert.deepEqual(
+      unsafeRunEventLimitPayload.error.details.map((detail) => detail.field),
+      ["eventLimit"],
+    );
 
     const malformedJsonResponse = await fetch(`${baseUrl}/tracks`, {
       method: "POST",
