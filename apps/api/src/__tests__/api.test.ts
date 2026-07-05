@@ -671,8 +671,9 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const invalidBindingLookupResponse = await fetch(`${baseUrl}/channel-bindings?channelType=Discord&externalChatId=%20`);
     assert.equal(invalidBindingLookupResponse.status, 422);
     const invalidBindingLookupPayload = (await invalidBindingLookupResponse.json()) as {
-      error: { details: Array<{ field: string }> };
+      error: { code: string; details: Array<{ field: string }> };
     };
+    assert.equal(invalidBindingLookupPayload.error.code, "validation_error");
     assert.deepEqual(
       invalidBindingLookupPayload.error.details.map((detail) => detail.field),
       ["channelType", "externalChatId"],
