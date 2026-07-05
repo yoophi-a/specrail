@@ -1615,8 +1615,9 @@ test("API returns structured validation and bad-request errors", async () => {
     });
     assert.equal(invalidResumeResponse.status, 422);
     const invalidResumePayload = (await invalidResumeResponse.json()) as {
-      error: { details: Array<{ field: string }> };
+      error: { code: string; details: Array<{ field: string }> };
     };
+    assert.equal(invalidResumePayload.error.code, "validation_error");
     assert.deepEqual(
       invalidResumePayload.error.details.map((detail) => detail.field),
       ["prompt", "backend", "profile"],
