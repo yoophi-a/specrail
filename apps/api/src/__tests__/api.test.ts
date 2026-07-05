@@ -419,6 +419,14 @@ test("API validates project payloads and returns 404s for missing projects", asy
       body: JSON.stringify({}),
     });
     assert.equal(emptyUpdateResponse.status, 422);
+    const emptyUpdatePayload = (await emptyUpdateResponse.json()) as {
+      error: { code: string; details: Array<{ field: string; message: string }> };
+    };
+    assert.equal(emptyUpdatePayload.error.code, "validation_error");
+    assert.deepEqual(
+      emptyUpdatePayload.error.details.map((detail) => detail.field),
+      ["body"],
+    );
 
     const getResponse = await fetch(`${baseUrl}/projects/project-missing`);
     assert.equal(getResponse.status, 404);
