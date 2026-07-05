@@ -1637,8 +1637,9 @@ test("API returns structured validation and bad-request errors", async () => {
     const invalidTrackPaginationResponse = await fetch(`${baseUrl}/tracks?page=0&pageSize=101&sortBy=nope&sortOrder=sideways`);
     assert.equal(invalidTrackPaginationResponse.status, 422);
     const invalidTrackPaginationPayload = (await invalidTrackPaginationResponse.json()) as {
-      error: { details: Array<{ field: string }> };
+      error: { code: string; details: Array<{ field: string }> };
     };
+    assert.equal(invalidTrackPaginationPayload.error.code, "validation_error");
     assert.deepEqual(
       invalidTrackPaginationPayload.error.details.map((detail) => detail.field),
       ["page", "pageSize", "sortBy", "sortOrder"],
