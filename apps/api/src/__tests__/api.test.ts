@@ -1109,6 +1109,16 @@ test("API refuses workspace cleanup preview for active runs", async () => {
     };
     assert.equal(missingCleanupPreviewPayload.error.code, "not_found");
     assert.equal(missingCleanupPreviewPayload.error.message, "run not found");
+
+    const missingCleanupApplyResponse = await fetch(`${baseUrl}/runs/missing/workspace-cleanup/apply`, {
+      method: "POST",
+    });
+    assert.equal(missingCleanupApplyResponse.status, 404);
+    const missingCleanupApplyPayload = (await missingCleanupApplyResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingCleanupApplyPayload.error.code, "not_found");
+    assert.equal(missingCleanupApplyPayload.error.message, "run not found");
   });
 });
 
