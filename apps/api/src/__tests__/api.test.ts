@@ -401,7 +401,8 @@ test("API validates project payloads and returns 404s for missing projects", asy
       body: JSON.stringify({ name: "", defaultPlanningSystem: "unknown" }),
     });
     assert.equal(createResponse.status, 422);
-    const createPayload = (await createResponse.json()) as { error: { details: Array<{ field: string }> } };
+    const createPayload = (await createResponse.json()) as { error: { code: string; details: Array<{ field: string }> } };
+    assert.equal(createPayload.error.code, "validation_error");
     assert.deepEqual(createPayload.error.details.map((detail) => detail.field), ["name", "defaultPlanningSystem"]);
 
     const updateResponse = await fetch(`${baseUrl}/projects/project-missing`, {
