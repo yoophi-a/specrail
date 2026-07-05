@@ -1212,7 +1212,8 @@ test("API resolves runtime approval requests", async () => {
       body: JSON.stringify({ decidedBy: "user" }),
     });
     assert.equal(duplicateResponse.status, 422);
-    const duplicatePayload = (await duplicateResponse.json()) as { error: { message: string } };
+    const duplicatePayload = (await duplicateResponse.json()) as { error: { code: string; message: string } };
+    assert.equal(duplicatePayload.error.code, "validation_error");
     assert.equal(duplicatePayload.error.message, `Runtime approval request is already resolved: ${requestId}`);
 
     const unknownResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/missing-request/approve`, {
