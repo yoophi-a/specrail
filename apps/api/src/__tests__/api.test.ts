@@ -710,8 +710,9 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     });
     assert.equal(invalidAttachmentResponse.status, 422);
     const invalidAttachmentPayload = (await invalidAttachmentResponse.json()) as {
-      error: { details: Array<{ field: string }> };
+      error: { code: string; details: Array<{ field: string }> };
     };
+    assert.equal(invalidAttachmentPayload.error.code, "validation_error");
     assert.deepEqual(
       invalidAttachmentPayload.error.details.map((detail) => detail.field),
       ["sourceType", "externalFileId", "body"],
