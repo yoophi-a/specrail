@@ -1484,6 +1484,7 @@ test("API validates track updates and returns 404 for missing tracks", async () 
       error: { code: string; message: string };
     };
     assert.equal(missingTrackPayload.error.code, "not_found");
+    assert.equal(missingTrackPayload.error.message, "Track not found: missing");
 
     const emptyBodyResponse = await fetch(`${baseUrl}/tracks/missing`, {
       method: "PATCH",
