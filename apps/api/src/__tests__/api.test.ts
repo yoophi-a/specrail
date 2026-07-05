@@ -1648,8 +1648,9 @@ test("API returns structured validation and bad-request errors", async () => {
     const invalidRunListResponse = await fetch(`${baseUrl}/runs?trackId=&workspacePath=%20&status=wat`);
     assert.equal(invalidRunListResponse.status, 422);
     const invalidRunListPayload = (await invalidRunListResponse.json()) as {
-      error: { details: Array<{ field: string }> };
+      error: { code: string; details: Array<{ field: string }> };
     };
+    assert.equal(invalidRunListPayload.error.code, "validation_error");
     assert.deepEqual(
       invalidRunListPayload.error.details.map((detail) => detail.field),
       ["trackId", "workspacePath", "status"],
