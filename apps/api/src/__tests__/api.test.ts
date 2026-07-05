@@ -411,7 +411,8 @@ test("API validates project payloads and returns 404s for missing projects", asy
       body: JSON.stringify({ name: "Missing" }),
     });
     assert.equal(updateResponse.status, 404);
-    const updatePayload = (await updateResponse.json()) as { error: { message: string } };
+    const updatePayload = (await updateResponse.json()) as { error: { code: string; message: string } };
+    assert.equal(updatePayload.error.code, "not_found");
     assert.equal(updatePayload.error.message, "Project not found: project-missing");
 
     const emptyUpdateResponse = await fetch(`${baseUrl}/projects/project-default`, {
