@@ -1351,6 +1351,16 @@ test("API resolves runtime approval requests", async () => {
     const unknownPayload = (await unknownResponse.json()) as { error: { code: string; message: string } };
     assert.equal(unknownPayload.error.code, "not_found");
     assert.equal(unknownPayload.error.message, "Runtime approval request not found: missing-request");
+
+    const unknownRejectResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/missing-request/reject`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "user" }),
+    });
+    assert.equal(unknownRejectResponse.status, 404);
+    const unknownRejectPayload = (await unknownRejectResponse.json()) as { error: { code: string; message: string } };
+    assert.equal(unknownRejectPayload.error.code, "not_found");
+    assert.equal(unknownRejectPayload.error.message, "Runtime approval request not found: missing-request");
   });
 });
 
