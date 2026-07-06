@@ -430,6 +430,21 @@ test("API validates project payloads and returns 404s for missing projects", asy
       ["body"],
     );
 
+    const invalidUpdateResponse = await fetch(`${baseUrl}/projects/project-default`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "", defaultPlanningSystem: "unknown" }),
+    });
+    assert.equal(invalidUpdateResponse.status, 422);
+    const invalidUpdatePayload = (await invalidUpdateResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(invalidUpdatePayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidUpdatePayload.error.details.map((detail) => detail.field),
+      ["name", "defaultPlanningSystem"],
+    );
+
     const getResponse = await fetch(`${baseUrl}/projects/project-missing`);
     assert.equal(getResponse.status, 404);
     const getPayload = (await getResponse.json()) as { error: { code: string; message: string } };
