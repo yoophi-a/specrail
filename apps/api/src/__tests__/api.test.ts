@@ -1743,6 +1743,7 @@ test("API returns structured validation and bad-request errors", async () => {
       error: { code: string; message: string };
     };
     assert.equal(malformedJsonPayload.error.code, "bad_request");
+    assert.equal(malformedJsonPayload.error.message, "request body must be valid JSON");
   });
 });
 
