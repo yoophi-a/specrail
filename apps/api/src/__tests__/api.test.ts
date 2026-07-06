@@ -646,6 +646,21 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       ["authorType", "body", "kind", "relatedArtifact"],
     );
 
+    const missingPlanningMessageAppendResponse = await fetch(`${baseUrl}/planning-sessions/missing-session/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authorType: "user",
+        body: "Can we add a message?",
+      }),
+    });
+    await assertJsonResponseStatus(missingPlanningMessageAppendResponse, 404);
+    const missingPlanningMessageAppendPayload = (await missingPlanningMessageAppendResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingPlanningMessageAppendPayload.error.code, "not_found");
+    assert.equal(missingPlanningMessageAppendPayload.error.message, "Planning session not found: missing-session");
+
     const planningMessageResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
