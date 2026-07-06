@@ -1904,7 +1904,7 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     assert.equal(missingRevisionResponse.status, 404);
     const missingRevisionPayload = (await missingRevisionResponse.json()) as { error: { code: string; message: string } };
     assert.equal(missingRevisionPayload.error.code, "not_found");
-    assert.match(missingRevisionPayload.error.message, /Artifact revision not found/);
+    assert.equal(missingRevisionPayload.error.message, "Artifact revision not found: missing-revision");
 
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     const getTrackPayload = (await getTrackResponse.json()) as {
