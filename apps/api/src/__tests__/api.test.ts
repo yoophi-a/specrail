@@ -1755,6 +1755,21 @@ test("API returns structured validation and bad-request errors", async () => {
       ["prompt", "backend", "profile"],
     );
 
+    const invalidForkResponse = await fetch(`${baseUrl}/runs/run-1/fork`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "", mode: "same-run", backend: "wat", profile: "" }),
+    });
+    assert.equal(invalidForkResponse.status, 422);
+    const invalidForkPayload = (await invalidForkResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(invalidForkPayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidForkPayload.error.details.map((detail) => detail.field),
+      ["prompt", "mode", "backend", "profile"],
+    );
+
     const invalidTrackListResponse = await fetch(`${baseUrl}/tracks?priority=urgent&status=wat&projectId=%20`);
     assert.equal(invalidTrackListResponse.status, 422);
     const invalidTrackListPayload = (await invalidTrackListResponse.json()) as {
