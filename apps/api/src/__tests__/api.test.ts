@@ -533,6 +533,14 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(trackPayload.track.title, "Executor MVP");
     assert.equal(trackPayload.track.priority, "high");
 
+    const missingTrackPlanningSessionsResponse = await fetch(`${baseUrl}/tracks/missing-track/planning-sessions`);
+    await assertJsonResponseStatus(missingTrackPlanningSessionsResponse, 404);
+    const missingTrackPlanningSessionsPayload = (await missingTrackPlanningSessionsResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingTrackPlanningSessionsPayload.error.code, "not_found");
+    assert.equal(missingTrackPlanningSessionsPayload.error.message, "track not found");
+
     const getTrackResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}`);
     assert.equal(getTrackResponse.status, 200);
     const getTrackPayload = (await getTrackResponse.json()) as {
