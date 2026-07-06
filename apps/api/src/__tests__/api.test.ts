@@ -2081,6 +2081,18 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     assert.equal(missingApprovalRequestPayload.error.code, "not_found");
     assert.equal(missingApprovalRequestPayload.error.message, "Approval request not found: missing-approval");
 
+    const missingApprovalRejectResponse = await fetch(`${baseUrl}/approval-requests/missing-approval/reject`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "user", comment: "Cannot find it" }),
+    });
+    assert.equal(missingApprovalRejectResponse.status, 404);
+    const missingApprovalRejectPayload = (await missingApprovalRejectResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingApprovalRejectPayload.error.code, "not_found");
+    assert.equal(missingApprovalRejectPayload.error.message, "Approval request not found: missing-approval");
+
     const invalidDecisionResponse = await fetch(`${baseUrl}/approval-requests/${rejectProposal.approvalRequest.id}/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
