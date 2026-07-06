@@ -1270,7 +1270,10 @@ test("API blocks run start when planning revisions are still pending approval", 
     assert.equal(runResponse.status, 422);
     const payload = (await runResponse.json()) as { error: { code: string; message: string } };
     assert.equal(payload.error.code, "validation_error");
-    assert.match(payload.error.message, /pending planning changes/);
+    assert.equal(
+      payload.error.message,
+      `Track has pending planning changes and cannot start a run: ${trackPayload.track.id}`,
+    );
   });
 });
 
