@@ -1750,8 +1750,9 @@ test("API returns 404s for unknown tracks and runs", async () => {
   await withServer(async (baseUrl) => {
     const missingTrack = await fetch(`${baseUrl}/tracks/missing`);
     assert.equal(missingTrack.status, 404);
-    const missingTrackPayload = (await missingTrack.json()) as { error: { code: string } };
+    const missingTrackPayload = (await missingTrack.json()) as { error: { code: string; message: string } };
     assert.equal(missingTrackPayload.error.code, "not_found");
+    assert.equal(missingTrackPayload.error.message, "track not found");
 
     const missingRunMetadata = await fetch(`${baseUrl}/runs/missing`);
     assert.equal(missingRunMetadata.status, 404);
