@@ -590,6 +590,14 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       body: JSON.stringify({ status: "bogus" }),
     });
     await assertJsonResponseStatus(invalidPlanningSessionUpdateResponse, 422);
+    const invalidPlanningSessionUpdatePayload = (await invalidPlanningSessionUpdateResponse.json()) as {
+      error: { code: string; details: Array<{ field: string; message: string }> };
+    };
+    assert.equal(invalidPlanningSessionUpdatePayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidPlanningSessionUpdatePayload.error.details.map((detail) => detail.field),
+      ["status"],
+    );
 
     const missingPlanningSessionUpdateResponse = await fetch(`${baseUrl}/planning-sessions/missing-session`, {
       method: "PATCH",
