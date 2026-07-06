@@ -564,6 +564,21 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     };
     assert.equal(planningSessionPayload.planningSession.trackId, trackPayload.track.id);
 
+    const invalidPlanningSessionCreateResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/planning-sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "bogus" }),
+    });
+    await assertJsonResponseStatus(invalidPlanningSessionCreateResponse, 422);
+    const invalidPlanningSessionCreatePayload = (await invalidPlanningSessionCreateResponse.json()) as {
+      error: { code: string; details: Array<{ field: string; message: string }> };
+    };
+    assert.equal(invalidPlanningSessionCreatePayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidPlanningSessionCreatePayload.error.details.map((detail) => detail.field),
+      ["status"],
+    );
+
     const planningSessionUpdateResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
