@@ -505,6 +505,14 @@ test("API creates and filters tracks by project", async () => {
 
     const emptyProjectFilterResponse = await fetch(`${baseUrl}/tracks?projectId=`);
     assert.equal(emptyProjectFilterResponse.status, 422);
+    const emptyProjectFilterPayload = (await emptyProjectFilterResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(emptyProjectFilterPayload.error.code, "validation_error");
+    assert.deepEqual(
+      emptyProjectFilterPayload.error.details.map((detail) => detail.field),
+      ["projectId"],
+    );
   });
 });
 
