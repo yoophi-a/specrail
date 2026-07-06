@@ -753,6 +753,12 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const getGithubBindingPayload = (await getGithubBindingResponse.json()) as { binding: { id: string } };
     assert.equal(getGithubBindingPayload.binding.id, githubBindPayload.binding.id);
 
+    const missingBindingResponse = await fetch(`${baseUrl}/channel-bindings?channelType=Telegram&externalChatId=missing-chat`);
+    assert.equal(missingBindingResponse.status, 404);
+    const missingBindingPayload = (await missingBindingResponse.json()) as { error: { code: string; message: string } };
+    assert.equal(missingBindingPayload.error.code, "not_found");
+    assert.equal(missingBindingPayload.error.message, "channel binding not found");
+
     const invalidBindingLookupResponse = await fetch(`${baseUrl}/channel-bindings?channelType=Discord&externalChatId=%20`);
     assert.equal(invalidBindingLookupResponse.status, 422);
     const invalidBindingLookupPayload = (await invalidBindingLookupResponse.json()) as {
