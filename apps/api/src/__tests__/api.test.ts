@@ -626,6 +626,26 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(missingPlanningSessionUpdatePayload.error.code, "not_found");
     assert.equal(missingPlanningSessionUpdatePayload.error.message, "Planning session not found: missing-session");
 
+    const invalidPlanningMessageResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authorType: "bot",
+        body: "",
+        kind: "memo",
+        relatedArtifact: "diagram",
+      }),
+    });
+    await assertJsonResponseStatus(invalidPlanningMessageResponse, 422);
+    const invalidPlanningMessagePayload = (await invalidPlanningMessageResponse.json()) as {
+      error: { code: string; details: Array<{ field: string; message: string }> };
+    };
+    assert.equal(invalidPlanningMessagePayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidPlanningMessagePayload.error.details.map((detail) => detail.field),
+      ["authorType", "body", "kind", "relatedArtifact"],
+    );
+
     const planningMessageResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
