@@ -1927,6 +1927,14 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     assert.equal(missingTrackProposalPayload.error.code, "not_found");
     assert.equal(missingTrackProposalPayload.error.message, "Track not found: missing-track");
 
+    const missingTrackArtifactResponse = await fetch(`${baseUrl}/tracks/missing-track/artifacts/spec`);
+    assert.equal(missingTrackArtifactResponse.status, 404);
+    const missingTrackArtifactPayload = (await missingTrackArtifactResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingTrackArtifactPayload.error.code, "not_found");
+    assert.equal(missingTrackArtifactPayload.error.message, "track not found");
+
     const rejectProposalResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/spec`, {
       method: "POST",
       headers: { "content-type": "application/json" },
