@@ -791,6 +791,24 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(attachmentPayload.attachment.mimeType, "text/plain");
     assert.equal(attachmentPayload.attachment.planningSessionId, planningSessionPayload.planningSession.id);
 
+    const trackAttachmentResponse = await fetch(`${baseUrl}/attachments`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceType: "telegram",
+        externalFileId: "track-file-1",
+        fileName: "track-brief.txt",
+        trackId: trackPayload.track.id,
+      }),
+    });
+    assert.equal(trackAttachmentResponse.status, 201);
+    const trackAttachmentPayload = (await trackAttachmentResponse.json()) as {
+      attachment: { externalFileId: string; fileName?: string; trackId?: string };
+    };
+    assert.equal(trackAttachmentPayload.attachment.externalFileId, "track-file-1");
+    assert.equal(trackAttachmentPayload.attachment.fileName, "track-brief.txt");
+    assert.equal(trackAttachmentPayload.attachment.trackId, trackPayload.track.id);
+
     const invalidAttachmentResponse = await fetch(`${baseUrl}/attachments`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -815,6 +833,11 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(attachmentsResponse.status, 200);
     const attachmentsPayload = (await attachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
     assert.deepEqual(attachmentsPayload.attachments.map((attachment) => attachment.externalFileId), ["file-1"]);
+
+    const trackAttachmentsResponse = await fetch(`${baseUrl}/attachments?trackId=${encodeURIComponent(trackPayload.track.id)}`);
+    assert.equal(trackAttachmentsResponse.status, 200);
+    const trackAttachmentsPayload = (await trackAttachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
+    assert.deepEqual(trackAttachmentsPayload.attachments.map((attachment) => attachment.externalFileId), ["track-file-1"]);
 
     const invalidAttachmentsResponse = await fetch(`${baseUrl}/attachments`);
     assert.equal(invalidAttachmentsResponse.status, 422);
