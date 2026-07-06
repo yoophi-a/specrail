@@ -1630,7 +1630,7 @@ test("SpecRailService versions artifact revisions and applies approval transitio
 
   await assert.rejects(
     () => service.approveApprovalRequest({ approvalRequestId: proposedSpecV2.approvalRequest.id, decidedBy: "user" }),
-    /already approved/,
+    { name: "ValidationError", message: "Approval request is already approved: approval-request-approval-2" },
   );
 });
 

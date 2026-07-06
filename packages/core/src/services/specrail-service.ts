@@ -1558,7 +1558,7 @@ export class SpecRailService {
     }
 
     if (request.status !== "pending") {
-      throw new Error(`Approval request is already ${request.status}: ${request.id}`);
+      throw new ValidationError(`Approval request is already ${request.status}: ${request.id}`);
     }
 
     const revision = await this.dependencies.artifactRevisionRepository.getById(request.revisionId);

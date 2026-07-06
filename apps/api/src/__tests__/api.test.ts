@@ -1924,6 +1924,19 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     });
     assert.equal(rejectResponse.status, 200);
 
+    const duplicateRejectResponse = await fetch(`${baseUrl}/approval-requests/${rejectProposal.approvalRequest.id}/reject`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "user", comment: "Still not ready" }),
+    });
+    assert.equal(duplicateRejectResponse.status, 422);
+    const duplicateRejectPayload = (await duplicateRejectResponse.json()) as { error: { code: string; message: string } };
+    assert.equal(duplicateRejectPayload.error.code, "validation_error");
+    assert.equal(
+      duplicateRejectPayload.error.message,
+      `Approval request is already rejected: ${rejectProposal.approvalRequest.id}`,
+    );
+
     const pendingProposalResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/spec`, {
       method: "POST",
       headers: { "content-type": "application/json" },
