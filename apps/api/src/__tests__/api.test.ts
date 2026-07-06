@@ -1923,6 +1923,26 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
       ["content", "summary", "createdBy"],
     );
 
+    const unsupportedArtifactProposalResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/wireframes`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: "unsupported artifact proposal", createdBy: "agent" }),
+    });
+    assert.equal(unsupportedArtifactProposalResponse.status, 404);
+    const unsupportedArtifactProposalPayload = (await unsupportedArtifactProposalResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(unsupportedArtifactProposalPayload.error.code, "not_found");
+    assert.equal(unsupportedArtifactProposalPayload.error.message, "not found");
+
+    const unsupportedArtifactLookupResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/wireframes`);
+    assert.equal(unsupportedArtifactLookupResponse.status, 404);
+    const unsupportedArtifactLookupPayload = (await unsupportedArtifactLookupResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(unsupportedArtifactLookupPayload.error.code, "not_found");
+    assert.equal(unsupportedArtifactLookupPayload.error.message, "not found");
+
     const missingTrackProposalResponse = await fetch(`${baseUrl}/tracks/missing-track/artifacts/spec`, {
       method: "POST",
       headers: { "content-type": "application/json" },
