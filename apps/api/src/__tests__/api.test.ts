@@ -1332,6 +1332,21 @@ test("API resolves runtime approval requests", async () => {
     assert.equal(approvePayload.event.payload.status, "running");
     assert.equal(approvePayload.event.payload.toolName, "Bash");
 
+    const invalidDecisionResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/${requestId}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "reviewer", comment: "" }),
+    });
+    assert.equal(invalidDecisionResponse.status, 422);
+    const invalidDecisionPayload = (await invalidDecisionResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(invalidDecisionPayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidDecisionPayload.error.details.map((detail) => detail.field),
+      ["decidedBy", "comment"],
+    );
+
     const duplicateResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/${requestId}/reject`, {
       method: "POST",
       headers: { "content-type": "application/json" },
