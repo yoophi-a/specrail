@@ -1900,6 +1900,21 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     });
     const trackPayload = (await trackResponse.json()) as { track: { id: string } };
 
+    const invalidProposalResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/spec`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: "", summary: "", createdBy: "reviewer" }),
+    });
+    assert.equal(invalidProposalResponse.status, 422);
+    const invalidProposalPayload = (await invalidProposalResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(invalidProposalPayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidProposalPayload.error.details.map((detail) => detail.field),
+      ["content", "summary", "createdBy"],
+    );
+
     const rejectProposalResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/spec`, {
       method: "POST",
       headers: { "content-type": "application/json" },
