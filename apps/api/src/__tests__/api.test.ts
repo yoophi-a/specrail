@@ -1949,6 +1949,21 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     assert.equal(missingApprovalRequestPayload.error.code, "not_found");
     assert.equal(missingApprovalRequestPayload.error.message, "Approval request not found: missing-approval");
 
+    const invalidDecisionResponse = await fetch(`${baseUrl}/approval-requests/${rejectProposal.approvalRequest.id}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decidedBy: "reviewer", comment: "" }),
+    });
+    assert.equal(invalidDecisionResponse.status, 422);
+    const invalidDecisionPayload = (await invalidDecisionResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(invalidDecisionPayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidDecisionPayload.error.details.map((detail) => detail.field),
+      ["decidedBy", "comment"],
+    );
+
     const pendingProposalResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/spec`, {
       method: "POST",
       headers: { "content-type": "application/json" },
