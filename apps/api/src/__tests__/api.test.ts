@@ -669,6 +669,14 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(planningMessagesPayload.messages[0]?.relatedArtifact, "plan");
     assert.equal(planningMessagesPayload.messages[0]?.body, "Can we separate planning state from run events?");
 
+    const missingPlanningMessagesResponse = await fetch(`${baseUrl}/planning-sessions/missing-session/messages`);
+    await assertJsonResponseStatus(missingPlanningMessagesResponse, 404);
+    const missingPlanningMessagesPayload = (await missingPlanningMessagesResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingPlanningMessagesPayload.error.code, "not_found");
+    assert.equal(missingPlanningMessagesPayload.error.message, "Planning session not found: missing-session");
+
     const bindResponse = await fetch(`${baseUrl}/channel-bindings`, {
       method: "POST",
       headers: { "content-type": "application/json" },
