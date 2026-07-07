@@ -934,6 +934,37 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(missingPlanningSessionAttachmentPayload.error.code, "not_found");
     assert.equal(missingPlanningSessionAttachmentPayload.error.message, "Planning session not found: missing-session");
 
+    const mismatchedAttachmentTrackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Attachment mismatch track",
+        description: "Used to pin attachment target consistency.",
+      }),
+    });
+    assert.equal(mismatchedAttachmentTrackResponse.status, 201);
+    const mismatchedAttachmentTrackPayload = (await mismatchedAttachmentTrackResponse.json()) as { track: { id: string } };
+
+    const mismatchedAttachmentResponse = await fetch(`${baseUrl}/attachments`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceType: "telegram",
+        externalFileId: "mismatched-target-file",
+        trackId: mismatchedAttachmentTrackPayload.track.id,
+        planningSessionId: planningSessionPayload.planningSession.id,
+      }),
+    });
+    assert.equal(mismatchedAttachmentResponse.status, 422);
+    const mismatchedAttachmentPayload = (await mismatchedAttachmentResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(mismatchedAttachmentPayload.error.code, "validation_error");
+    assert.equal(
+      mismatchedAttachmentPayload.error.message,
+      `Planning session does not belong to track: ${planningSessionPayload.planningSession.id}`,
+    );
+
     const attachmentsResponse = await fetch(
       `${baseUrl}/attachments?planningSessionId=${encodeURIComponent(planningSessionPayload.planningSession.id)}`,
     );
