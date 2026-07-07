@@ -808,6 +808,25 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       ["projectId", "externalChatId", "channelType", "externalThreadId", "externalUserId", "trackId", "planningSessionId"],
     );
 
+    const missingContextBindResponse = await fetch(`${baseUrl}/channel-bindings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "project-default",
+        channelType: "telegram",
+        externalChatId: "chat-without-context",
+      }),
+    });
+    assert.equal(missingContextBindResponse.status, 422);
+    const missingContextBindPayload = (await missingContextBindResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(missingContextBindPayload.error.code, "validation_error");
+    assert.deepEqual(
+      missingContextBindPayload.error.details.map((detail) => detail.field),
+      ["body"],
+    );
+
     const attachmentResponse = await fetch(`${baseUrl}/attachments`, {
       method: "POST",
       headers: { "content-type": "application/json" },
