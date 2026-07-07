@@ -844,6 +844,23 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(missingProjectBindPayload.error.code, "not_found");
     assert.equal(missingProjectBindPayload.error.message, "Project not found: project-missing");
 
+    const missingTrackBindResponse = await fetch(`${baseUrl}/channel-bindings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "project-default",
+        channelType: "telegram",
+        externalChatId: "missing-track-chat",
+        trackId: "missing-track",
+      }),
+    });
+    assert.equal(missingTrackBindResponse.status, 404);
+    const missingTrackBindPayload = (await missingTrackBindResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingTrackBindPayload.error.code, "not_found");
+    assert.equal(missingTrackBindPayload.error.message, "Track not found: missing-track");
+
     const attachmentResponse = await fetch(`${baseUrl}/attachments`, {
       method: "POST",
       headers: { "content-type": "application/json" },
