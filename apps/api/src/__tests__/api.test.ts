@@ -2439,6 +2439,13 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
       body: JSON.stringify({ decidedBy: "user", comment: "Need more detail" }),
     });
     assert.equal(rejectResponse.status, 200);
+    const rejectPayload = (await rejectResponse.json()) as {
+      approvalRequest: { status: string; decidedAt?: string; decidedBy?: string; decisionComment?: string };
+    };
+    assert.equal(rejectPayload.approvalRequest.status, "rejected");
+    assert.ok(rejectPayload.approvalRequest.decidedAt);
+    assert.equal(rejectPayload.approvalRequest.decidedBy, "user");
+    assert.equal(rejectPayload.approvalRequest.decisionComment, "Need more detail");
 
     const duplicateRejectResponse = await fetch(`${baseUrl}/approval-requests/${rejectProposal.approvalRequest.id}/reject`, {
       method: "POST",
@@ -2513,6 +2520,13 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
       body: JSON.stringify({ decidedBy: "user", comment: "Ship it" }),
     });
     assert.equal(approveResponse.status, 200);
+    const approvePayload = (await approveResponse.json()) as {
+      approvalRequest: { status: string; decidedAt?: string; decidedBy?: string; decisionComment?: string };
+    };
+    assert.equal(approvePayload.approvalRequest.status, "approved");
+    assert.ok(approvePayload.approvalRequest.decidedAt);
+    assert.equal(approvePayload.approvalRequest.decidedBy, "user");
+    assert.equal(approvePayload.approvalRequest.decisionComment, "Ship it");
 
     const artifactResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/spec`);
     assert.equal(artifactResponse.status, 200);
