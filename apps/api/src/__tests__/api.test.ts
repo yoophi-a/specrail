@@ -1168,6 +1168,23 @@ test("API supports resuming and cancelling a run", async () => {
     assert.equal(cleanupPreviewPayload.cleanupPlan.operations[0]?.kind, "remove_directory");
     assert.deepEqual(cleanupPreviewPayload.cleanupPlan.refusalReasons, []);
 
+    const missingConfirmationCleanupResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await assertJsonResponseStatus(missingConfirmationCleanupResponse, 200);
+    const missingConfirmationCleanupPayload = (await missingConfirmationCleanupResponse.json()) as {
+      cleanupResult: { status: string; applied: boolean; refusalReasons: string[] };
+      expectedConfirmation: string;
+    };
+    assert.equal(missingConfirmationCleanupPayload.expectedConfirmation, `apply workspace cleanup for ${runPayload.run.id}`);
+    assert.equal(missingConfirmationCleanupPayload.cleanupResult.status, "refused");
+    assert.equal(missingConfirmationCleanupPayload.cleanupResult.applied, false);
+    assert.deepEqual(missingConfirmationCleanupPayload.cleanupResult.refusalReasons, [
+      "Workspace cleanup apply requires explicit confirmation",
+    ]);
+
     const refusedCleanupResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/apply`, {
       method: "POST",
       headers: { "content-type": "application/json" },
