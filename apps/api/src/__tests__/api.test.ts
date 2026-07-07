@@ -334,17 +334,31 @@ test("API supports project create, list, get, and update", async () => {
     });
     assert.equal(createResponse.status, 201);
     const createPayload = (await createResponse.json()) as {
-      project: { id: string; name: string; repoUrl?: string; localRepoPath?: string; defaultPlanningSystem?: string };
+      project: {
+        id: string;
+        name: string;
+        repoUrl?: string;
+        localRepoPath?: string;
+        defaultWorkflowPolicy?: string;
+        defaultPlanningSystem?: string;
+      };
     };
     assert.match(createPayload.project.id, /^project-/);
     assert.equal(createPayload.project.name, "Operator UI");
+    assert.equal(createPayload.project.repoUrl, "https://github.com/yoophi-a/specrail-operator");
+    assert.equal(createPayload.project.localRepoPath, "/work/specrail-operator");
+    assert.equal(createPayload.project.defaultWorkflowPolicy, "artifact-first-mvp");
     assert.equal(createPayload.project.defaultPlanningSystem, "openspec");
 
     const getResponse = await fetch(`${baseUrl}/projects/${createPayload.project.id}`);
     assert.equal(getResponse.status, 200);
-    const getPayload = (await getResponse.json()) as { project: { id: string; repoUrl?: string } };
+    const getPayload = (await getResponse.json()) as {
+      project: { id: string; repoUrl?: string; localRepoPath?: string; defaultWorkflowPolicy?: string };
+    };
     assert.equal(getPayload.project.id, createPayload.project.id);
     assert.equal(getPayload.project.repoUrl, "https://github.com/yoophi-a/specrail-operator");
+    assert.equal(getPayload.project.localRepoPath, "/work/specrail-operator");
+    assert.equal(getPayload.project.defaultWorkflowPolicy, "artifact-first-mvp");
 
     const updateResponse = await fetch(`${baseUrl}/projects/${createPayload.project.id}`, {
       method: "PATCH",
