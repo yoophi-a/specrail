@@ -1144,6 +1144,17 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       ["query"],
     );
 
+    const blankTargetAttachmentsResponse = await fetch(`${baseUrl}/attachments?trackId=%20&planningSessionId=%20`);
+    assert.equal(blankTargetAttachmentsResponse.status, 422);
+    const blankTargetAttachmentsPayload = (await blankTargetAttachmentsResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(blankTargetAttachmentsPayload.error.code, "validation_error");
+    assert.deepEqual(
+      blankTargetAttachmentsPayload.error.details.map((detail) => detail.field),
+      ["query"],
+    );
+
     const proposedPlanRevisionResponse = await fetch(`${baseUrl}/tracks/${trackPayload.track.id}/artifacts/plan`, {
       method: "POST",
       headers: { "content-type": "application/json" },
