@@ -884,6 +884,24 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       ["sourceType", "externalFileId", "body"],
     );
 
+    const missingContextAttachmentResponse = await fetch(`${baseUrl}/attachments`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceType: "telegram",
+        externalFileId: "file-without-context",
+      }),
+    });
+    assert.equal(missingContextAttachmentResponse.status, 422);
+    const missingContextAttachmentPayload = (await missingContextAttachmentResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(missingContextAttachmentPayload.error.code, "validation_error");
+    assert.deepEqual(
+      missingContextAttachmentPayload.error.details.map((detail) => detail.field),
+      ["body"],
+    );
+
     const attachmentsResponse = await fetch(
       `${baseUrl}/attachments?planningSessionId=${encodeURIComponent(planningSessionPayload.planningSession.id)}`,
     );
