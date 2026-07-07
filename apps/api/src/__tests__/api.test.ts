@@ -1004,17 +1004,26 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
         externalFileId: " file-1 ",
         fileName: " brief.txt ",
         mimeType: " text/plain ",
+        localPath: " /tmp/specrail/brief.txt ",
         planningSessionId: ` ${planningSessionPayload.planningSession.id} `,
       }),
     });
     assert.equal(attachmentResponse.status, 201);
     const attachmentPayload = (await attachmentResponse.json()) as {
-      attachment: { sourceType: string; externalFileId: string; fileName?: string; mimeType?: string; planningSessionId?: string };
+      attachment: {
+        sourceType: string;
+        externalFileId: string;
+        fileName?: string;
+        mimeType?: string;
+        localPath?: string;
+        planningSessionId?: string;
+      };
     };
     assert.equal(attachmentPayload.attachment.sourceType, "telegram");
     assert.equal(attachmentPayload.attachment.externalFileId, "file-1");
     assert.equal(attachmentPayload.attachment.fileName, "brief.txt");
     assert.equal(attachmentPayload.attachment.mimeType, "text/plain");
+    assert.equal(attachmentPayload.attachment.localPath, "/tmp/specrail/brief.txt");
     assert.equal(attachmentPayload.attachment.planningSessionId, planningSessionPayload.planningSession.id);
 
     const trackAttachmentResponse = await fetch(`${baseUrl}/attachments`, {
