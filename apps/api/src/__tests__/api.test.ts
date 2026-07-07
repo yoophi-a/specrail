@@ -1512,6 +1512,11 @@ test("API supports resuming and cancelling a run", async () => {
     const folderRunsPayload = (await folderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
     assert.ok(folderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
 
+    const paddedFolderRunsResponse = await fetch(`${baseUrl}/runs?workspacePath=${encodeURIComponent(` ${runPayload.run.workspacePath} `)}`);
+    await assertJsonResponseStatus(paddedFolderRunsResponse, 200);
+    const paddedFolderRunsPayload = (await paddedFolderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
+    assert.ok(paddedFolderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
+
     const parentFolderRunsResponse = await fetch(`${baseUrl}/runs?workspacePath=${encodeURIComponent(path.dirname(runPayload.run.workspacePath))}`);
     await assertJsonResponseStatus(parentFolderRunsResponse, 200);
     const parentFolderRunsPayload = (await parentFolderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
