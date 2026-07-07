@@ -1108,6 +1108,31 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const trackAttachmentsPayload = (await trackAttachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
     assert.deepEqual(trackAttachmentsPayload.attachments.map((attachment) => attachment.externalFileId), ["track-file-1"]);
 
+    const dualTargetAttachmentResponse = await fetch(`${baseUrl}/attachments`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceType: "telegram",
+        externalFileId: "dual-target-file",
+        trackId: trackPayload.track.id,
+        planningSessionId: planningSessionPayload.planningSession.id,
+      }),
+    });
+    assert.equal(dualTargetAttachmentResponse.status, 201);
+    const dualTargetAttachmentPayload = (await dualTargetAttachmentResponse.json()) as {
+      attachment: { externalFileId: string; trackId?: string; planningSessionId?: string };
+    };
+    assert.equal(dualTargetAttachmentPayload.attachment.externalFileId, "dual-target-file");
+    assert.equal(dualTargetAttachmentPayload.attachment.trackId, trackPayload.track.id);
+    assert.equal(dualTargetAttachmentPayload.attachment.planningSessionId, planningSessionPayload.planningSession.id);
+
+    const dualTargetAttachmentsResponse = await fetch(
+      `${baseUrl}/attachments?trackId=${encodeURIComponent(trackPayload.track.id)}&planningSessionId=${encodeURIComponent(planningSessionPayload.planningSession.id)}`,
+    );
+    assert.equal(dualTargetAttachmentsResponse.status, 200);
+    const dualTargetAttachmentsPayload = (await dualTargetAttachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
+    assert.deepEqual(dualTargetAttachmentsPayload.attachments.map((attachment) => attachment.externalFileId), ["dual-target-file"]);
+
     const invalidAttachmentsResponse = await fetch(`${baseUrl}/attachments`);
     assert.equal(invalidAttachmentsResponse.status, 422);
     const invalidAttachmentsPayload = (await invalidAttachmentsResponse.json()) as {
