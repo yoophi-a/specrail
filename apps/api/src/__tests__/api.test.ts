@@ -377,6 +377,26 @@ test("API supports project create, list, get, and update", async () => {
     assert.equal(updatePayload.project.repoUrl, undefined);
     assert.equal(updatePayload.project.defaultPlanningSystem, "speckit");
 
+    const updatedListResponse = await fetch(`${baseUrl}/projects`);
+    assert.equal(updatedListResponse.status, 200);
+    const updatedListPayload = (await updatedListResponse.json()) as {
+      projects: Array<{
+        id: string;
+        name: string;
+        repoUrl?: string;
+        localRepoPath?: string;
+        defaultWorkflowPolicy?: string;
+        defaultPlanningSystem?: string;
+      }>;
+    };
+    const updatedListProject = updatedListPayload.projects.find((project) => project.id === createPayload.project.id);
+    assert.ok(updatedListProject);
+    assert.equal(updatedListProject.name, "Operator Console");
+    assert.equal(updatedListProject.repoUrl, undefined);
+    assert.equal(updatedListProject.localRepoPath, "/work/specrail-operator");
+    assert.equal(updatedListProject.defaultWorkflowPolicy, "artifact-first-mvp");
+    assert.equal(updatedListProject.defaultPlanningSystem, "speckit");
+
     const clearOptionalMetadataResponse = await fetch(`${baseUrl}/projects/${createPayload.project.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
