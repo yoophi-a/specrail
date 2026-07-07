@@ -377,6 +377,46 @@ test("API supports project create, list, get, and update", async () => {
     assert.equal(updatePayload.project.repoUrl, undefined);
     assert.equal(updatePayload.project.defaultPlanningSystem, "speckit");
 
+    const clearOptionalMetadataResponse = await fetch(`${baseUrl}/projects/${createPayload.project.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        localRepoPath: null,
+        defaultWorkflowPolicy: null,
+        defaultPlanningSystem: null,
+      }),
+    });
+    assert.equal(clearOptionalMetadataResponse.status, 200);
+    const clearOptionalMetadataPayload = (await clearOptionalMetadataResponse.json()) as {
+      project: {
+        id: string;
+        localRepoPath?: string;
+        defaultWorkflowPolicy?: string;
+        defaultPlanningSystem?: string;
+      };
+    };
+    assert.equal(clearOptionalMetadataPayload.project.id, createPayload.project.id);
+    assert.equal(clearOptionalMetadataPayload.project.localRepoPath, undefined);
+    assert.equal(clearOptionalMetadataPayload.project.defaultWorkflowPolicy, undefined);
+    assert.equal(clearOptionalMetadataPayload.project.defaultPlanningSystem, undefined);
+
+    const clearedGetResponse = await fetch(`${baseUrl}/projects/${createPayload.project.id}`);
+    assert.equal(clearedGetResponse.status, 200);
+    const clearedGetPayload = (await clearedGetResponse.json()) as {
+      project: {
+        id: string;
+        repoUrl?: string;
+        localRepoPath?: string;
+        defaultWorkflowPolicy?: string;
+        defaultPlanningSystem?: string;
+      };
+    };
+    assert.equal(clearedGetPayload.project.id, createPayload.project.id);
+    assert.equal(clearedGetPayload.project.repoUrl, undefined);
+    assert.equal(clearedGetPayload.project.localRepoPath, undefined);
+    assert.equal(clearedGetPayload.project.defaultWorkflowPolicy, undefined);
+    assert.equal(clearedGetPayload.project.defaultPlanningSystem, undefined);
+
     const listResponse = await fetch(`${baseUrl}/projects`);
     assert.equal(listResponse.status, 200);
     const listPayload = (await listResponse.json()) as { projects: Array<{ id: string; name: string }> };
