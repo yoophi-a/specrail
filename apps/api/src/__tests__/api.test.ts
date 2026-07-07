@@ -879,6 +879,33 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(missingPlanningSessionBindPayload.error.code, "not_found");
     assert.equal(missingPlanningSessionBindPayload.error.message, "Planning session not found: missing-session");
 
+    const mismatchedBindingProjectResponse = await fetch(`${baseUrl}/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Binding mismatch project",
+      }),
+    });
+    assert.equal(mismatchedBindingProjectResponse.status, 201);
+    const mismatchedBindingProjectPayload = (await mismatchedBindingProjectResponse.json()) as { project: { id: string } };
+
+    const mismatchedProjectBindResponse = await fetch(`${baseUrl}/channel-bindings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: mismatchedBindingProjectPayload.project.id,
+        channelType: "telegram",
+        externalChatId: "mismatched-project-chat",
+        trackId: trackPayload.track.id,
+      }),
+    });
+    assert.equal(mismatchedProjectBindResponse.status, 422);
+    const mismatchedProjectBindPayload = (await mismatchedProjectBindResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(mismatchedProjectBindPayload.error.code, "validation_error");
+    assert.equal(mismatchedProjectBindPayload.error.message, `Track does not belong to project: ${trackPayload.track.id}`);
+
     const attachmentResponse = await fetch(`${baseUrl}/attachments`, {
       method: "POST",
       headers: { "content-type": "application/json" },
