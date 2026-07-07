@@ -576,6 +576,13 @@ test("API creates and filters tracks by project", async () => {
     const filteredTracksPayload = (await filteredTracksResponse.json()) as { tracks: Array<{ id: string; projectId: string }> };
     assert.deepEqual(filteredTracksPayload.tracks.map((track) => track.id), [scopedTrackPayload.track.id]);
 
+    const paddedProjectFilterResponse = await fetch(
+      `${baseUrl}/tracks?projectId=${encodeURIComponent(` ${createProjectPayload.project.id} `)}`,
+    );
+    assert.equal(paddedProjectFilterResponse.status, 200);
+    const paddedProjectFilterPayload = (await paddedProjectFilterResponse.json()) as { tracks: Array<{ id: string; projectId: string }> };
+    assert.deepEqual(paddedProjectFilterPayload.tracks.map((track) => track.id), [scopedTrackPayload.track.id]);
+
     const missingProjectTrackResponse = await fetch(`${baseUrl}/tracks`, {
       method: "POST",
       headers: { "content-type": "application/json" },
