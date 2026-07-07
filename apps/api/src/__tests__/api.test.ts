@@ -583,6 +583,32 @@ test("API creates and filters tracks by project", async () => {
     const paddedProjectFilterPayload = (await paddedProjectFilterResponse.json()) as { tracks: Array<{ id: string; projectId: string }> };
     assert.deepEqual(paddedProjectFilterPayload.tracks.map((track) => track.id), [scopedTrackPayload.track.id]);
 
+    const clearPlanningSystemResponse = await fetch(`${baseUrl}/projects/${createProjectPayload.project.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Project-scoped tracks",
+        defaultPlanningSystem: null,
+      }),
+    });
+    assert.equal(clearPlanningSystemResponse.status, 200);
+
+    const fallbackTrackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: createProjectPayload.project.id,
+        title: "Scoped project native fallback track",
+        description: "Uses native after the project default planning system is cleared.",
+      }),
+    });
+    assert.equal(fallbackTrackResponse.status, 201);
+    const fallbackTrackPayload = (await fallbackTrackResponse.json()) as {
+      track: { id: string; projectId: string; planningSystem: string };
+    };
+    assert.equal(fallbackTrackPayload.track.projectId, createProjectPayload.project.id);
+    assert.equal(fallbackTrackPayload.track.planningSystem, "native");
+
     const missingProjectTrackResponse = await fetch(`${baseUrl}/tracks`, {
       method: "POST",
       headers: { "content-type": "application/json" },
