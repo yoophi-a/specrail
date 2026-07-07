@@ -906,6 +906,38 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     assert.equal(mismatchedProjectBindPayload.error.code, "validation_error");
     assert.equal(mismatchedProjectBindPayload.error.message, `Track does not belong to project: ${trackPayload.track.id}`);
 
+    const mismatchedBindingTrackResponse = await fetch(`${baseUrl}/tracks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Binding mismatch track",
+        description: "Used to pin channel binding target consistency.",
+      }),
+    });
+    assert.equal(mismatchedBindingTrackResponse.status, 201);
+    const mismatchedBindingTrackPayload = (await mismatchedBindingTrackResponse.json()) as { track: { id: string } };
+
+    const mismatchedPlanningSessionBindResponse = await fetch(`${baseUrl}/channel-bindings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "project-default",
+        channelType: "telegram",
+        externalChatId: "mismatched-planning-session-chat",
+        trackId: mismatchedBindingTrackPayload.track.id,
+        planningSessionId: planningSessionPayload.planningSession.id,
+      }),
+    });
+    assert.equal(mismatchedPlanningSessionBindResponse.status, 422);
+    const mismatchedPlanningSessionBindPayload = (await mismatchedPlanningSessionBindResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(mismatchedPlanningSessionBindPayload.error.code, "validation_error");
+    assert.equal(
+      mismatchedPlanningSessionBindPayload.error.message,
+      `Planning session does not belong to track: ${planningSessionPayload.planningSession.id}`,
+    );
+
     const attachmentResponse = await fetch(`${baseUrl}/attachments`, {
       method: "POST",
       headers: { "content-type": "application/json" },
