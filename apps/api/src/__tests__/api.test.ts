@@ -2519,12 +2519,18 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     const artifactPayload = (await artifactResponse.json()) as {
       artifact: { kind: string; content: string };
       revisions: Array<{ version: number; approvedAt?: string }>;
-      approvalRequests: Array<{ status: string }>;
+      approvalRequests: Array<{ status: string; decidedAt?: string; decidedBy?: string; decisionComment?: string }>;
     };
     assert.deepEqual(artifactPayload.artifact, { kind: "spec", content: "approved spec revision" });
     assert.deepEqual(artifactPayload.revisions.map((revision) => revision.version), [2, 1]);
     assert.ok(artifactPayload.revisions[0]?.approvedAt);
     assert.deepEqual(artifactPayload.approvalRequests.map((request) => request.status), ["approved", "rejected"]);
+    assert.ok(artifactPayload.approvalRequests[0]?.decidedAt);
+    assert.equal(artifactPayload.approvalRequests[0]?.decidedBy, "user");
+    assert.equal(artifactPayload.approvalRequests[0]?.decisionComment, "Ship it");
+    assert.ok(artifactPayload.approvalRequests[1]?.decidedAt);
+    assert.equal(artifactPayload.approvalRequests[1]?.decidedBy, "user");
+    assert.equal(artifactPayload.approvalRequests[1]?.decisionComment, "Need more detail");
 
     const revisionResponse = await fetch(`${baseUrl}/artifact-revisions/${pendingProposal.revision.id}`);
     assert.equal(revisionResponse.status, 200);
