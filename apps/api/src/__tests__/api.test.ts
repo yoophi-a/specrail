@@ -785,6 +785,29 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       ["channelType", "externalChatId"],
     );
 
+    const invalidBindResponse = await fetch(`${baseUrl}/channel-bindings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: " ",
+        channelType: "discord",
+        externalChatId: " ",
+        externalThreadId: " ",
+        externalUserId: " ",
+        trackId: " ",
+        planningSessionId: " ",
+      }),
+    });
+    assert.equal(invalidBindResponse.status, 422);
+    const invalidBindPayload = (await invalidBindResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(invalidBindPayload.error.code, "validation_error");
+    assert.deepEqual(
+      invalidBindPayload.error.details.map((detail) => detail.field),
+      ["projectId", "externalChatId", "channelType", "externalThreadId", "externalUserId", "trackId", "planningSessionId"],
+    );
+
     const attachmentResponse = await fetch(`${baseUrl}/attachments`, {
       method: "POST",
       headers: { "content-type": "application/json" },
