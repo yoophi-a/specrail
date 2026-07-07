@@ -745,6 +745,26 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const getBindingPayload = (await getBindingResponse.json()) as { binding: { id: string } };
     assert.equal(getBindingPayload.binding.id, bindPayload.binding.id);
 
+    const reboundResponse = await fetch(`${baseUrl}/channel-bindings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "project-default",
+        channelType: "telegram",
+        externalChatId: "chat-1",
+        externalThreadId: "thread-1",
+        externalUserId: "user-2",
+        planningSessionId: planningSessionPayload.planningSession.id,
+      }),
+    });
+    assert.equal(reboundResponse.status, 201);
+    const reboundPayload = (await reboundResponse.json()) as {
+      binding: { id: string; externalUserId?: string; planningSessionId?: string };
+    };
+    assert.equal(reboundPayload.binding.id, bindPayload.binding.id);
+    assert.equal(reboundPayload.binding.externalUserId, "user-2");
+    assert.equal(reboundPayload.binding.planningSessionId, planningSessionPayload.planningSession.id);
+
     const githubBindResponse = await fetch(`${baseUrl}/channel-bindings`, {
       method: "POST",
       headers: { "content-type": "application/json" },
