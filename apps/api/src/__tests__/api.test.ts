@@ -902,6 +902,22 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       ["body"],
     );
 
+    const missingTrackAttachmentResponse = await fetch(`${baseUrl}/attachments`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceType: "telegram",
+        externalFileId: "missing-track-file",
+        trackId: "missing-track",
+      }),
+    });
+    assert.equal(missingTrackAttachmentResponse.status, 404);
+    const missingTrackAttachmentPayload = (await missingTrackAttachmentResponse.json()) as {
+      error: { code: string; message: string };
+    };
+    assert.equal(missingTrackAttachmentPayload.error.code, "not_found");
+    assert.equal(missingTrackAttachmentPayload.error.message, "Track not found: missing-track");
+
     const attachmentsResponse = await fetch(
       `${baseUrl}/attachments?planningSessionId=${encodeURIComponent(planningSessionPayload.planningSession.id)}`,
     );
