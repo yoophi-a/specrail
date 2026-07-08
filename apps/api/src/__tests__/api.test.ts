@@ -1875,17 +1875,37 @@ test("API resolves runtime approval requests", async () => {
     const approveResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/${requestId}/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ decidedBy: "user", comment: "approved" }),
+      body: JSON.stringify({ decidedBy: " User ", comment: " approved " }),
     });
     assert.equal(approveResponse.status, 200);
     const approvePayload = (await approveResponse.json()) as {
-      event: { type: string; payload: { requestId: string; outcome: string; status: string; toolName: string } };
+      event: {
+        executionId: string;
+        type: string;
+        source: string;
+        payload: {
+          requestId: string;
+          requestEventId: string;
+          outcome: string;
+          status: string;
+          decidedBy: string;
+          comment: string;
+          toolName: string;
+          toolUseId: string;
+        };
+      };
     };
+    assert.equal(approvePayload.event.executionId, runPayload.run.id);
     assert.equal(approvePayload.event.type, "approval_resolved");
+    assert.equal(approvePayload.event.source, "specrail");
     assert.equal(approvePayload.event.payload.requestId, requestId);
+    assert.equal(approvePayload.event.payload.requestEventId, requestId);
     assert.equal(approvePayload.event.payload.outcome, "approved");
     assert.equal(approvePayload.event.payload.status, "running");
+    assert.equal(approvePayload.event.payload.decidedBy, "user");
+    assert.equal(approvePayload.event.payload.comment, "approved");
     assert.equal(approvePayload.event.payload.toolName, "Bash");
+    assert.equal(approvePayload.event.payload.toolUseId, "toolu-runtime");
 
     const invalidDecisionResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/${requestId}/approve`, {
       method: "POST",
