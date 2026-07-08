@@ -861,6 +861,14 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       }),
     });
     assert.equal(planningMessageResponse.status, 201);
+    const planningMessagePayload = (await planningMessageResponse.json()) as {
+      message: { planningSessionId: string; authorType: string; kind: string; relatedArtifact?: string; body: string };
+    };
+    assert.equal(planningMessagePayload.message.planningSessionId, planningSessionPayload.planningSession.id);
+    assert.equal(planningMessagePayload.message.authorType, "user");
+    assert.equal(planningMessagePayload.message.kind, "question");
+    assert.equal(planningMessagePayload.message.relatedArtifact, "plan");
+    assert.equal(planningMessagePayload.message.body, "Can we separate planning state from run events?");
 
     const defaultKindPlanningMessageResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`, {
       method: "POST",
@@ -871,6 +879,14 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       }),
     });
     assert.equal(defaultKindPlanningMessageResponse.status, 201);
+    const defaultKindPlanningMessagePayload = (await defaultKindPlanningMessageResponse.json()) as {
+      message: { planningSessionId: string; authorType: string; kind: string; relatedArtifact?: string; body: string };
+    };
+    assert.equal(defaultKindPlanningMessagePayload.message.planningSessionId, planningSessionPayload.planningSession.id);
+    assert.equal(defaultKindPlanningMessagePayload.message.authorType, "agent");
+    assert.equal(defaultKindPlanningMessagePayload.message.kind, "message");
+    assert.equal(defaultKindPlanningMessagePayload.message.relatedArtifact, undefined);
+    assert.equal(defaultKindPlanningMessagePayload.message.body, "Default planning note");
 
     const planningMessagesResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`);
     assert.equal(planningMessagesResponse.status, 200);
