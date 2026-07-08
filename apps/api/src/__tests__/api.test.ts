@@ -2293,6 +2293,7 @@ test("API returns structured validation and bad-request errors", async () => {
         prompt: "",
         backend: "wat",
         profile: "",
+        planningSessionId: " ",
       }),
     });
     assert.equal(invalidRunResponse.status, 422);
@@ -2302,7 +2303,7 @@ test("API returns structured validation and bad-request errors", async () => {
     assert.equal(invalidRunPayload.error.code, "validation_error");
     assert.deepEqual(
       invalidRunPayload.error.details.map((detail) => detail.field),
-      ["trackId", "prompt", "backend", "profile"],
+      ["trackId", "prompt", "backend", "profile", "planningSessionId"],
     );
 
     const invalidResumeResponse = await fetch(`${baseUrl}/runs/run-1/resume`, {
