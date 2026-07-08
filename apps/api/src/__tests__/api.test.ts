@@ -2036,8 +2036,30 @@ test("API lists tracks and runs with basic filters", async () => {
 
     const trackListResponse = await fetch(`${baseUrl}/tracks?priority=%20Low%20&page=%201%20&pageSize=%2020%20&sortBy=%20updated_at%20&sortOrder=%20DESC%20`);
     assert.equal(trackListResponse.status, 200);
-    const trackListPayload = (await trackListResponse.json()) as { tracks: Array<{ id: string; priority: string }> };
+    const trackListPayload = (await trackListResponse.json()) as {
+      tracks: Array<{ id: string; priority: string }>;
+      meta: {
+        page: number;
+        pageSize: number;
+        sortBy: string;
+        sortOrder: string;
+        total: number;
+        totalPages: number;
+        hasNextPage: boolean;
+        hasPrevPage: boolean;
+      };
+    };
     assert.deepEqual(trackListPayload.tracks.map((track) => track.id), [trackTwo.track.id]);
+    assert.deepEqual(trackListPayload.meta, {
+      page: 1,
+      pageSize: 20,
+      sortBy: "updatedAt",
+      sortOrder: "desc",
+      total: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPrevPage: false,
+    });
 
     const trackStatusResponse = await fetch(`${baseUrl}/tracks?status=%20In-Progress%20`);
     const trackStatusPayload = (await trackStatusResponse.json()) as { tracks: Array<{ id: string }> };
@@ -2070,8 +2092,30 @@ test("API lists tracks and runs with basic filters", async () => {
 
     const runListResponse = await fetch(`${baseUrl}/runs?trackId=${encodeURIComponent(` ${trackOne.track.id} `)}`);
     assert.equal(runListResponse.status, 200);
-    const runListPayload = (await runListResponse.json()) as { runs: Array<{ id: string; trackId: string }> };
+    const runListPayload = (await runListResponse.json()) as {
+      runs: Array<{ id: string; trackId: string }>;
+      meta: {
+        page: number;
+        pageSize: number;
+        sortBy: string;
+        sortOrder: string;
+        total: number;
+        totalPages: number;
+        hasNextPage: boolean;
+        hasPrevPage: boolean;
+      };
+    };
     assert.deepEqual(runListPayload.runs.map((run) => run.id), [runOne.run.id]);
+    assert.deepEqual(runListPayload.meta, {
+      page: 1,
+      pageSize: 20,
+      sortBy: "createdAt",
+      sortOrder: "desc",
+      total: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPrevPage: false,
+    });
 
     const cancelledRunListResponse = await fetch(`${baseUrl}/runs?status=%20Cancelled%20`);
     const cancelledRunListPayload = (await cancelledRunListResponse.json()) as { runs: Array<{ id: string; status: string }> };
