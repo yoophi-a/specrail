@@ -2940,8 +2940,20 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     const getTrackPayload = (await getTrackResponse.json()) as {
       track: { specStatus: string };
       artifacts: { spec: string };
+      planningContext: {
+        specRevisionId?: string;
+        planRevisionId?: string;
+        tasksRevisionId?: string;
+        hasPendingChanges: boolean;
+        updatedAt?: string;
+      };
     };
     assert.equal(getTrackPayload.track.specStatus, "approved");
     assert.equal(getTrackPayload.artifacts.spec, "approved spec revision");
+    assert.equal(getTrackPayload.planningContext.specRevisionId, pendingProposal.revision.id);
+    assert.equal(getTrackPayload.planningContext.planRevisionId, undefined);
+    assert.equal(getTrackPayload.planningContext.tasksRevisionId, undefined);
+    assert.equal(getTrackPayload.planningContext.hasPendingChanges, false);
+    assert.equal(getTrackPayload.planningContext.updatedAt, approvePayload.approvalRequest.decidedAt);
   });
 });
