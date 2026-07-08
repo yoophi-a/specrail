@@ -2825,12 +2825,28 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     const revisionResponse = await fetch(`${baseUrl}/artifact-revisions/${pendingProposal.revision.id}`);
     assert.equal(revisionResponse.status, 200);
     const revisionPayload = (await revisionResponse.json()) as {
-      revision: { id: string; trackId: string; artifact: string; content: string; approvedAt?: string };
+      revision: {
+        id: string;
+        trackId: string;
+        artifact: string;
+        version: number;
+        content: string;
+        summary?: string;
+        createdAt?: string;
+        createdBy: string;
+        approvalRequestId?: string;
+        approvedAt?: string;
+      };
     };
     assert.equal(revisionPayload.revision.id, pendingProposal.revision.id);
     assert.equal(revisionPayload.revision.trackId, trackPayload.track.id);
     assert.equal(revisionPayload.revision.artifact, "spec");
+    assert.equal(revisionPayload.revision.version, 2);
     assert.equal(revisionPayload.revision.content, "approved spec revision");
+    assert.equal(revisionPayload.revision.summary, "second pass");
+    assert.ok(revisionPayload.revision.createdAt);
+    assert.equal(revisionPayload.revision.createdBy, "agent");
+    assert.equal(revisionPayload.revision.approvalRequestId, pendingProposal.approvalRequest.id);
     assert.ok(revisionPayload.revision.approvedAt);
 
     const missingRevisionResponse = await fetch(`${baseUrl}/artifact-revisions/missing-revision`);
