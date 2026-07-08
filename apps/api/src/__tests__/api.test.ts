@@ -2673,11 +2673,41 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     });
     assert.equal(rejectProposalResponse.status, 201);
     const rejectProposal = (await rejectProposalResponse.json()) as {
-      revision: { version: number };
-      approvalRequest: { id: string; status: string };
+      revision: {
+        id: string;
+        trackId: string;
+        artifact: string;
+        version: number;
+        content: string;
+        summary?: string;
+        createdAt?: string;
+        createdBy: string;
+        approvalRequestId?: string;
+      };
+      approvalRequest: {
+        id: string;
+        trackId: string;
+        artifact: string;
+        revisionId: string;
+        status: string;
+        requestedBy: string;
+        requestedAt?: string;
+      };
     };
+    assert.equal(rejectProposal.revision.trackId, trackPayload.track.id);
+    assert.equal(rejectProposal.revision.artifact, "spec");
     assert.equal(rejectProposal.revision.version, 1);
+    assert.equal(rejectProposal.revision.content, "spec revision v1");
+    assert.equal(rejectProposal.revision.summary, "first pass");
+    assert.equal(rejectProposal.revision.createdBy, "agent");
+    assert.ok(rejectProposal.revision.createdAt);
+    assert.equal(rejectProposal.revision.approvalRequestId, rejectProposal.approvalRequest.id);
+    assert.equal(rejectProposal.approvalRequest.trackId, trackPayload.track.id);
+    assert.equal(rejectProposal.approvalRequest.artifact, "spec");
+    assert.equal(rejectProposal.approvalRequest.revisionId, rejectProposal.revision.id);
     assert.equal(rejectProposal.approvalRequest.status, "pending");
+    assert.equal(rejectProposal.approvalRequest.requestedBy, "agent");
+    assert.equal(rejectProposal.approvalRequest.requestedAt, rejectProposal.revision.createdAt);
 
     const rejectResponse = await fetch(`${baseUrl}/approval-requests/${rejectProposal.approvalRequest.id}/reject`, {
       method: "POST",
