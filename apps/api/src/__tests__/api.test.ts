@@ -1343,13 +1343,49 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       `${baseUrl}/attachments?planningSessionId=${encodeURIComponent(planningSessionPayload.planningSession.id)}`,
     );
     assert.equal(attachmentsResponse.status, 200);
-    const attachmentsPayload = (await attachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
+    const attachmentsPayload = (await attachmentsResponse.json()) as {
+      attachments: Array<{
+        sourceType: string;
+        externalFileId: string;
+        fileName?: string;
+        mimeType?: string;
+        localPath?: string;
+        trackId?: string;
+        planningSessionId?: string;
+        uploadedAt?: string;
+      }>;
+    };
     assert.deepEqual(attachmentsPayload.attachments.map((attachment) => attachment.externalFileId), ["file-1"]);
+    assert.equal(attachmentsPayload.attachments[0]?.sourceType, "telegram");
+    assert.equal(attachmentsPayload.attachments[0]?.fileName, "brief.txt");
+    assert.equal(attachmentsPayload.attachments[0]?.mimeType, "text/plain");
+    assert.equal(attachmentsPayload.attachments[0]?.localPath, "/tmp/specrail/brief.txt");
+    assert.equal(attachmentsPayload.attachments[0]?.trackId, undefined);
+    assert.equal(attachmentsPayload.attachments[0]?.planningSessionId, planningSessionPayload.planningSession.id);
+    assert.ok(attachmentsPayload.attachments[0]?.uploadedAt);
 
     const trackAttachmentsResponse = await fetch(`${baseUrl}/attachments?trackId=${encodeURIComponent(trackPayload.track.id)}`);
     assert.equal(trackAttachmentsResponse.status, 200);
-    const trackAttachmentsPayload = (await trackAttachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
+    const trackAttachmentsPayload = (await trackAttachmentsResponse.json()) as {
+      attachments: Array<{
+        sourceType: string;
+        externalFileId: string;
+        fileName?: string;
+        mimeType?: string;
+        localPath?: string;
+        trackId?: string;
+        planningSessionId?: string;
+        uploadedAt?: string;
+      }>;
+    };
     assert.deepEqual(trackAttachmentsPayload.attachments.map((attachment) => attachment.externalFileId), ["track-file-1"]);
+    assert.equal(trackAttachmentsPayload.attachments[0]?.sourceType, "telegram");
+    assert.equal(trackAttachmentsPayload.attachments[0]?.fileName, "track-brief.txt");
+    assert.equal(trackAttachmentsPayload.attachments[0]?.mimeType, undefined);
+    assert.equal(trackAttachmentsPayload.attachments[0]?.localPath, undefined);
+    assert.equal(trackAttachmentsPayload.attachments[0]?.trackId, trackPayload.track.id);
+    assert.equal(trackAttachmentsPayload.attachments[0]?.planningSessionId, undefined);
+    assert.ok(trackAttachmentsPayload.attachments[0]?.uploadedAt);
 
     const dualTargetAttachmentResponse = await fetch(`${baseUrl}/attachments`, {
       method: "POST",
@@ -1373,8 +1409,20 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       `${baseUrl}/attachments?trackId=${encodeURIComponent(trackPayload.track.id)}&planningSessionId=${encodeURIComponent(planningSessionPayload.planningSession.id)}`,
     );
     assert.equal(dualTargetAttachmentsResponse.status, 200);
-    const dualTargetAttachmentsPayload = (await dualTargetAttachmentsResponse.json()) as { attachments: Array<{ externalFileId: string }> };
+    const dualTargetAttachmentsPayload = (await dualTargetAttachmentsResponse.json()) as {
+      attachments: Array<{
+        sourceType: string;
+        externalFileId: string;
+        trackId?: string;
+        planningSessionId?: string;
+        uploadedAt?: string;
+      }>;
+    };
     assert.deepEqual(dualTargetAttachmentsPayload.attachments.map((attachment) => attachment.externalFileId), ["dual-target-file"]);
+    assert.equal(dualTargetAttachmentsPayload.attachments[0]?.sourceType, "telegram");
+    assert.equal(dualTargetAttachmentsPayload.attachments[0]?.trackId, trackPayload.track.id);
+    assert.equal(dualTargetAttachmentsPayload.attachments[0]?.planningSessionId, planningSessionPayload.planningSession.id);
+    assert.ok(dualTargetAttachmentsPayload.attachments[0]?.uploadedAt);
 
     const invalidAttachmentsResponse = await fetch(`${baseUrl}/attachments`);
     assert.equal(invalidAttachmentsResponse.status, 422);
