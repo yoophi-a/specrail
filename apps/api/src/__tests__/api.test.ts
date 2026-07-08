@@ -2930,6 +2930,33 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     assert.equal(revisionPayload.revision.approvalRequestId, pendingProposal.approvalRequest.id);
     assert.ok(revisionPayload.revision.approvedAt);
 
+    const rejectedRevisionResponse = await fetch(`${baseUrl}/artifact-revisions/${rejectProposal.revision.id}`);
+    assert.equal(rejectedRevisionResponse.status, 200);
+    const rejectedRevisionPayload = (await rejectedRevisionResponse.json()) as {
+      revision: {
+        id: string;
+        trackId: string;
+        artifact: string;
+        version: number;
+        content: string;
+        summary?: string;
+        createdAt?: string;
+        createdBy: string;
+        approvalRequestId?: string;
+        approvedAt?: string;
+      };
+    };
+    assert.equal(rejectedRevisionPayload.revision.id, rejectProposal.revision.id);
+    assert.equal(rejectedRevisionPayload.revision.trackId, trackPayload.track.id);
+    assert.equal(rejectedRevisionPayload.revision.artifact, "spec");
+    assert.equal(rejectedRevisionPayload.revision.version, 1);
+    assert.equal(rejectedRevisionPayload.revision.content, "spec revision v1");
+    assert.equal(rejectedRevisionPayload.revision.summary, "first pass");
+    assert.ok(rejectedRevisionPayload.revision.createdAt);
+    assert.equal(rejectedRevisionPayload.revision.createdBy, "agent");
+    assert.equal(rejectedRevisionPayload.revision.approvalRequestId, rejectProposal.approvalRequest.id);
+    assert.equal(rejectedRevisionPayload.revision.approvedAt, undefined);
+
     const missingRevisionResponse = await fetch(`${baseUrl}/artifact-revisions/missing-revision`);
     assert.equal(missingRevisionResponse.status, 404);
     const missingRevisionPayload = (await missingRevisionResponse.json()) as { error: { code: string; message: string } };
