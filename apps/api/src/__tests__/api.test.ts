@@ -862,16 +862,30 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     });
     assert.equal(planningMessageResponse.status, 201);
 
+    const defaultKindPlanningMessageResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        authorType: "agent",
+        body: "Default planning note",
+      }),
+    });
+    assert.equal(defaultKindPlanningMessageResponse.status, 201);
+
     const planningMessagesResponse = await fetch(`${baseUrl}/planning-sessions/${planningSessionPayload.planningSession.id}/messages`);
     assert.equal(planningMessagesResponse.status, 200);
     const planningMessagesPayload = (await planningMessagesResponse.json()) as {
       messages: Array<{ authorType: string; kind: string; relatedArtifact?: string; body: string }>;
     };
-    assert.equal(planningMessagesPayload.messages.length, 1);
+    assert.equal(planningMessagesPayload.messages.length, 2);
     assert.equal(planningMessagesPayload.messages[0]?.authorType, "user");
     assert.equal(planningMessagesPayload.messages[0]?.kind, "question");
     assert.equal(planningMessagesPayload.messages[0]?.relatedArtifact, "plan");
     assert.equal(planningMessagesPayload.messages[0]?.body, "Can we separate planning state from run events?");
+    assert.equal(planningMessagesPayload.messages[1]?.authorType, "agent");
+    assert.equal(planningMessagesPayload.messages[1]?.kind, "message");
+    assert.equal(planningMessagesPayload.messages[1]?.relatedArtifact, undefined);
+    assert.equal(planningMessagesPayload.messages[1]?.body, "Default planning note");
 
     const missingPlanningMessagesResponse = await fetch(`${baseUrl}/planning-sessions/missing-session/messages`);
     await assertJsonResponseStatus(missingPlanningMessagesResponse, 404);
