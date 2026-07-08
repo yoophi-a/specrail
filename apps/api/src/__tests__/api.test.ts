@@ -2712,7 +2712,7 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     const rejectResponse = await fetch(`${baseUrl}/approval-requests/${rejectProposal.approvalRequest.id}/reject`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ decidedBy: "user", comment: "Need more detail" }),
+      body: JSON.stringify({ decidedBy: " User ", comment: " Need more detail " }),
     });
     assert.equal(rejectResponse.status, 200);
     const rejectPayload = (await rejectResponse.json()) as {
@@ -2793,7 +2793,7 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     const approveResponse = await fetch(`${baseUrl}/approval-requests/${pendingProposal.approvalRequest.id}/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ decidedBy: "user", comment: "Ship it" }),
+      body: JSON.stringify({ decidedBy: " User ", comment: " Ship it " }),
     });
     assert.equal(approveResponse.status, 200);
     const approvePayload = (await approveResponse.json()) as {
