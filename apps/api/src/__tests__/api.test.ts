@@ -479,6 +479,26 @@ test("API validates project payloads and returns 404s for missing projects", asy
     assert.equal(createPayload.error.code, "validation_error");
     assert.deepEqual(createPayload.error.details.map((detail) => detail.field), ["name", "defaultPlanningSystem"]);
 
+    const blankMetadataCreateResponse = await fetch(`${baseUrl}/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Blank metadata project",
+        repoUrl: " ",
+        localRepoPath: " ",
+        defaultWorkflowPolicy: " ",
+      }),
+    });
+    assert.equal(blankMetadataCreateResponse.status, 422);
+    const blankMetadataCreatePayload = (await blankMetadataCreateResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(blankMetadataCreatePayload.error.code, "validation_error");
+    assert.deepEqual(
+      blankMetadataCreatePayload.error.details.map((detail) => detail.field),
+      ["repoUrl", "localRepoPath", "defaultWorkflowPolicy"],
+    );
+
     const updateResponse = await fetch(`${baseUrl}/projects/project-missing`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -517,6 +537,26 @@ test("API validates project payloads and returns 404s for missing projects", asy
     assert.deepEqual(
       invalidUpdatePayload.error.details.map((detail) => detail.field),
       ["name", "defaultPlanningSystem"],
+    );
+
+    const blankMetadataUpdateResponse = await fetch(`${baseUrl}/projects/project-default`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Default Project",
+        repoUrl: " ",
+        localRepoPath: " ",
+        defaultWorkflowPolicy: " ",
+      }),
+    });
+    assert.equal(blankMetadataUpdateResponse.status, 422);
+    const blankMetadataUpdatePayload = (await blankMetadataUpdateResponse.json()) as {
+      error: { code: string; details: Array<{ field: string }> };
+    };
+    assert.equal(blankMetadataUpdatePayload.error.code, "validation_error");
+    assert.deepEqual(
+      blankMetadataUpdatePayload.error.details.map((detail) => detail.field),
+      ["repoUrl", "localRepoPath", "defaultWorkflowPolicy"],
     );
 
     const getResponse = await fetch(`${baseUrl}/projects/project-missing`);
