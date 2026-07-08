@@ -2716,8 +2716,25 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     });
     assert.equal(rejectResponse.status, 200);
     const rejectPayload = (await rejectResponse.json()) as {
-      approvalRequest: { status: string; decidedAt?: string; decidedBy?: string; decisionComment?: string };
+      approvalRequest: {
+        id: string;
+        trackId: string;
+        artifact: string;
+        revisionId: string;
+        status: string;
+        requestedBy: string;
+        requestedAt?: string;
+        decidedAt?: string;
+        decidedBy?: string;
+        decisionComment?: string;
+      };
     };
+    assert.equal(rejectPayload.approvalRequest.id, rejectProposal.approvalRequest.id);
+    assert.equal(rejectPayload.approvalRequest.trackId, trackPayload.track.id);
+    assert.equal(rejectPayload.approvalRequest.artifact, "spec");
+    assert.equal(rejectPayload.approvalRequest.revisionId, rejectProposal.revision.id);
+    assert.equal(rejectPayload.approvalRequest.requestedBy, "agent");
+    assert.equal(rejectPayload.approvalRequest.requestedAt, rejectProposal.approvalRequest.requestedAt);
     assert.equal(rejectPayload.approvalRequest.status, "rejected");
     assert.ok(rejectPayload.approvalRequest.decidedAt);
     assert.equal(rejectPayload.approvalRequest.decidedBy, "user");
@@ -2786,7 +2803,7 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     });
     const pendingProposal = (await pendingProposalResponse.json()) as {
       revision: { id: string; version: number };
-      approvalRequest: { id: string };
+      approvalRequest: { id: string; requestedAt?: string };
     };
     assert.equal(pendingProposal.revision.version, 2);
 
@@ -2797,8 +2814,25 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     });
     assert.equal(approveResponse.status, 200);
     const approvePayload = (await approveResponse.json()) as {
-      approvalRequest: { status: string; decidedAt?: string; decidedBy?: string; decisionComment?: string };
+      approvalRequest: {
+        id: string;
+        trackId: string;
+        artifact: string;
+        revisionId: string;
+        status: string;
+        requestedBy: string;
+        requestedAt?: string;
+        decidedAt?: string;
+        decidedBy?: string;
+        decisionComment?: string;
+      };
     };
+    assert.equal(approvePayload.approvalRequest.id, pendingProposal.approvalRequest.id);
+    assert.equal(approvePayload.approvalRequest.trackId, trackPayload.track.id);
+    assert.equal(approvePayload.approvalRequest.artifact, "spec");
+    assert.equal(approvePayload.approvalRequest.revisionId, pendingProposal.revision.id);
+    assert.equal(approvePayload.approvalRequest.requestedBy, "agent");
+    assert.equal(approvePayload.approvalRequest.requestedAt, pendingProposal.approvalRequest.requestedAt);
     assert.equal(approvePayload.approvalRequest.status, "approved");
     assert.ok(approvePayload.approvalRequest.decidedAt);
     assert.equal(approvePayload.approvalRequest.decidedBy, "user");
