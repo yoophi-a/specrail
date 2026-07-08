@@ -2808,12 +2808,36 @@ test("API supports proposing, approving, and rejecting artifact revisions", asyn
     assert.equal(artifactResponse.status, 200);
     const artifactPayload = (await artifactResponse.json()) as {
       artifact: { kind: string; content: string };
-      revisions: Array<{ version: number; approvedAt?: string }>;
+      revisions: Array<{
+        id: string;
+        trackId: string;
+        artifact: string;
+        version: number;
+        content: string;
+        summary?: string;
+        createdBy: string;
+        approvalRequestId?: string;
+        approvedAt?: string;
+      }>;
       approvalRequests: Array<{ status: string; decidedAt?: string; decidedBy?: string; decisionComment?: string }>;
     };
     assert.deepEqual(artifactPayload.artifact, { kind: "spec", content: "approved spec revision" });
     assert.deepEqual(artifactPayload.revisions.map((revision) => revision.version), [2, 1]);
+    assert.equal(artifactPayload.revisions[0]?.id, pendingProposal.revision.id);
+    assert.equal(artifactPayload.revisions[0]?.trackId, trackPayload.track.id);
+    assert.equal(artifactPayload.revisions[0]?.artifact, "spec");
+    assert.equal(artifactPayload.revisions[0]?.content, "approved spec revision");
+    assert.equal(artifactPayload.revisions[0]?.summary, "second pass");
+    assert.equal(artifactPayload.revisions[0]?.createdBy, "agent");
+    assert.equal(artifactPayload.revisions[0]?.approvalRequestId, pendingProposal.approvalRequest.id);
     assert.ok(artifactPayload.revisions[0]?.approvedAt);
+    assert.equal(artifactPayload.revisions[1]?.id, rejectProposal.revision.id);
+    assert.equal(artifactPayload.revisions[1]?.trackId, trackPayload.track.id);
+    assert.equal(artifactPayload.revisions[1]?.artifact, "spec");
+    assert.equal(artifactPayload.revisions[1]?.content, "spec revision v1");
+    assert.equal(artifactPayload.revisions[1]?.summary, "first pass");
+    assert.equal(artifactPayload.revisions[1]?.createdBy, "agent");
+    assert.equal(artifactPayload.revisions[1]?.approvalRequestId, rejectProposal.approvalRequest.id);
     assert.deepEqual(artifactPayload.approvalRequests.map((request) => request.status), ["approved", "rejected"]);
     assert.ok(artifactPayload.approvalRequests[0]?.decidedAt);
     assert.equal(artifactPayload.approvalRequests[0]?.decidedBy, "user");
