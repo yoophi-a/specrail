@@ -150,6 +150,10 @@ test("executeGitHubRunCommand reuses an existing GitHub binding", async () => {
       calls.push({ name: "findChannelBinding", input });
       return { id: "binding-existing", trackId: "track-existing", planningSessionId: "planning-existing" };
     },
+    async startRun(input) {
+      calls.push({ name: "startRun", input });
+      return { run: { id: "run/created", status: "running" } };
+    },
   });
 
   const outcome = await executeGitHubRunCommand({
@@ -164,8 +168,8 @@ test("executeGitHubRunCommand reuses an existing GitHub binding", async () => {
     bindingId: "binding-existing",
     trackId: "track-existing",
     planningSessionId: "planning-existing",
-    runId: "run-created",
-    reportUrl: "https://specrail.example.test/runs/run-created/report.md",
+    runId: "run/created",
+    reportUrl: "https://specrail.example.test/runs/run%2Fcreated/report.md",
   });
   assert.deepEqual(calls.map((call) => call.name), ["findChannelBinding", "startRun"]);
   assert.deepEqual(calls[0]?.input, {
