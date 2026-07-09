@@ -973,8 +973,8 @@ test("SpecRailTerminalApiClient parses SSE frames from run event streams", async
   const encoder = new TextEncoder();
   const requests: string[] = [];
   const chunks = [
-    encoder.encode('data: {"id":"evt-1","executionId":"run-1","type":"task_status_changed","timestamp":"2026-04-10T12:00:00.000Z","source":"codex","summary":"Run started","payload":{"status":"running"}}\n\n'),
-    encoder.encode('data: {"id":"evt-2","executionId":"run-1","type":"task_status_changed","subtype":"codex_completed","timestamp":"2026-04-10T12:02:00.000Z","source":"codex","summary":"Run completed","payload":{"status":"completed"}}\n\n'),
+    encoder.encode('data: {"id":"evt-1","executionId":"run/1","type":"task_status_changed","timestamp":"2026-04-10T12:00:00.000Z","source":"codex","summary":"Run started","payload":{"status":"running"}}\n\n'),
+    encoder.encode('data: {"id":"evt-2","executionId":"run/1","type":"task_status_changed","subtype":"codex_completed","timestamp":"2026-04-10T12:02:00.000Z","source":"codex","summary":"Run completed","payload":{"status":"completed"}}\n\n'),
   ];
 
   const client = new SpecRailTerminalApiClient("http://example.test/specrail", async (input) => {
@@ -993,7 +993,7 @@ test("SpecRailTerminalApiClient parses SSE frames from run event streams", async
   });
 
   const events = [] as Array<{ id: string; type: string; summary: string; subtype?: string }>;
-  for await (const event of client.streamRunEvents("run-1")) {
+  for await (const event of client.streamRunEvents("run/1")) {
     events.push({ id: event.id, type: event.type, summary: event.summary, subtype: event.subtype });
   }
 
@@ -1001,7 +1001,7 @@ test("SpecRailTerminalApiClient parses SSE frames from run event streams", async
     { id: "evt-1", type: "task_status_changed", summary: "Run started", subtype: undefined },
     { id: "evt-2", type: "task_status_changed", summary: "Run completed", subtype: "codex_completed" },
   ]);
-  assert.deepEqual(requests, ["http://example.test/specrail/runs/run-1/events/stream"]);
+  assert.deepEqual(requests, ["http://example.test/specrail/runs/run%2F1/events/stream"]);
 });
 
 test("terminal preferences load and save local UI defaults", async () => {
