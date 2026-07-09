@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createDefaultServer, normalizeExecutionBackendValue, sanitizeMarkdownFilenameComponent } from "../index.js";
+import { createDefaultServer, getPathSegments, normalizeExecutionBackendValue, sanitizeMarkdownFilenameComponent } from "../index.js";
 
 async function withServer(
   run: (baseUrl: string, paths: { dataDir: string; repoArtifactDir: string }) => Promise<void>,
@@ -246,12 +246,37 @@ test("normalizeExecutionBackendValue accepts env-manager friendly backend spelli
   assert.equal(normalizeExecutionBackendValue(undefined), undefined);
 });
 
+test("API path parsing decodes encoded identifier segments", () => {
+  assert.deepEqual(getPathSegments({ url: "/tracks/track%2F1/planning-sessions?ignored=true" }), [
+    "tracks",
+    "track/1",
+    "planning-sessions",
+  ]);
+  assert.deepEqual(getPathSegments({ url: "/runs/run%2F1/approval-requests/request%2F2/approve" }), [
+    "runs",
+    "run/1",
+    "approval-requests",
+    "request/2",
+    "approve",
+  ]);
+});
+
 test("API serves a health check", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/healthz`);
 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true, service: "specrail-api" });
+  });
+});
+
+test("API returns bad request for malformed encoded paths", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/tracks/%E0%A4%A`);
+    await assertJsonResponseStatus(response, 400);
+    const payload = (await response.json()) as { error: { code: string; message: string } };
+    assert.equal(payload.error.code, "bad_request");
+    assert.equal(payload.error.message, "malformed URL path");
   });
 });
 

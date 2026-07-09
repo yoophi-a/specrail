@@ -426,11 +426,20 @@ function sendError(
   });
 }
 
-function getPathSegments(request: IncomingMessage): string[] {
+function decodePathSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    throw new BadRequestError("malformed URL path");
+  }
+}
+
+export function getPathSegments(request: Pick<IncomingMessage, "url">): string[] {
   return (request.url ?? "/")
     .split("?")[0]
     .split("/")
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(decodePathSegment);
 }
 
 function getSearchParams(request: IncomingMessage): URLSearchParams {
