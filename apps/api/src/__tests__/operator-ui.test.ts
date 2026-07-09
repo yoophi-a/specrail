@@ -380,6 +380,57 @@ test("operator UI client harness renders unsafe folder-session report paths as t
   assert.match(previewPanel?.innerHTML ?? "", /javascript:alert\(1\)/);
 });
 
+test("operator UI client harness encodes opaque folder-session preview and resume paths", async () => {
+  const { calls, createTrack, detail, eventSources, loadInitialState, runs } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Opaque Folder Session Track" });
+  runs.push({ id: "run/folder", trackId: "track-1", status: "running", workspacePath: "/workspace/run-folder/app", backend: "codex", continuityMode: "fresh", summary: { lastEventSummary: "Opaque folder work" } });
+
+  detail.querySelector("#folder-session-path").value = "/workspace/run-folder";
+  await detail.querySelector("[data-folder-session-search]").click();
+  await flushClientPromises();
+
+  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Frun-folder"), true);
+
+  await detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview]")[0]?.click();
+  await flushClientPromises();
+
+  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Ffolder/session-preview?eventLimit=5"), true);
+  const previewPanel = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview-panel]")[0];
+  assert.match(previewPanel?.innerHTML ?? "", /<a href="\/runs\/run%2Ffolder\/report\.md">\/runs\/run%2Ffolder\/report\.md<\/a>/);
+
+  detail.querySelector("#run-start-prompt").value = "Resume opaque folder session.";
+  await detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-resume]")[0]?.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Ffolder/resume")?.body, {
+    prompt: "Resume opaque folder session.",
+  });
+  assert.equal(eventSources.at(-1)?.url, "/runs/run%2Ffolder/events/stream");
+});
+
+test("operator UI client harness encodes opaque folder-session fork paths", async () => {
+  const { calls, createTrack, detail, eventSources, loadInitialState, runs } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Opaque Folder Fork Track" });
+  runs.push({ id: "run/fork-source", trackId: "track-1", status: "completed", workspacePath: "/workspace/run-fork-source/app", backend: "codex", continuityMode: "fresh", summary: { lastEventSummary: "Ready to fork" } });
+
+  detail.querySelector("#folder-session-path").value = "/workspace/run-fork-source";
+  await detail.querySelector("[data-folder-session-search]").click();
+  await flushClientPromises();
+
+  detail.querySelector("#run-start-prompt").value = "Fork opaque folder session.";
+  await detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-fork]")[0]?.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Ffork-source/fork")?.body, {
+    prompt: "Fork opaque folder session.",
+  });
+  assert.equal(eventSources.at(-1)?.url, "/runs/run-1/events/stream");
+});
+
 test("operator UI client harness submits selected-run detail actions", async () => {
   const { calls, createTrack, detail, elements, eventSources, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun } = createHostedUiClientHarness();
   await loadInitialState();

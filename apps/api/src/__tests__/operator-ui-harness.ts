@@ -288,7 +288,7 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     }
     if (/^\/runs\/[^/]+\/session-preview\?eventLimit=5$/.test(path) && method === "GET") {
       const runId = decodeURIComponent(path.split("/")[2] ?? "");
-      const reportPath = sessionPreviewReportPaths.has(runId) ? sessionPreviewReportPaths.get(runId) : `/runs/${runId}/report.md`;
+      const reportPath = sessionPreviewReportPaths.has(runId) ? sessionPreviewReportPaths.get(runId) : `/runs/${encodeURIComponent(runId)}/report.md`;
       const run = runs.find((candidate) => candidate.id === runId);
       return { ok: true, json: async () => ({ execution: { id: runId, workspacePath: run?.workspacePath ?? `/workspace/${runId}` }, session: { sessionRef: `${runId}-codex` }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ timestamp: "2026-04-09T03:00:00.000Z", summary: "Run started" }], reportPath }) };
     }
