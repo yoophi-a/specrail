@@ -756,7 +756,7 @@ test("relayGitHubRunTerminalOutcome no-ops when no terminal event or stream is u
 
 test("createSpecRailHttpClient streams run events and preserves SSE failures", async () => {
   await withJsonServer((request, response) => {
-    if (request.url === "/specrail/runs/run-1/events/stream") {
+    if (request.url === "/specrail/runs/run%2F1/events/stream") {
       response.statusCode = 200;
       response.setHeader("content-type", "text/event-stream");
       response.end('event: message\ndata: {"type":"task_status_changed","summary":"Run completed","payload":{"status":"completed"}}\n\n');
@@ -768,7 +768,7 @@ test("createSpecRailHttpClient streams run events and preserves SSE failures", a
   }, async (baseUrl) => {
     const client = createSpecRailHttpClient(`${baseUrl}/specrail`);
     const events = [];
-    for await (const event of client.streamRunEvents?.("run-1") ?? []) {
+    for await (const event of client.streamRunEvents?.("run/1") ?? []) {
       events.push(event);
     }
     assert.deepEqual(events, [{ type: "task_status_changed", summary: "Run completed", payload: { status: "completed" } }]);

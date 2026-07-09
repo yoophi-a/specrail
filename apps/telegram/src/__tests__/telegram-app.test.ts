@@ -557,7 +557,7 @@ test("SpecRailApiClient parses SSE frames from run event streams", async () => {
   });
 
   const events: Array<{ type: string; summary?: string }> = [];
-  for await (const event of client.streamRunEvents("run-1")) {
+  for await (const event of client.streamRunEvents("run/1")) {
     events.push(event);
   }
 
@@ -565,5 +565,5 @@ test("SpecRailApiClient parses SSE frames from run event streams", async () => {
     { type: "task_status_changed", summary: "Run started" },
     { type: "task_status_changed", summary: "Run completed" },
   ]);
-  assert.deepEqual(requests, ["http://example.test/specrail/runs/run-1/events/stream"]);
+  assert.deepEqual(requests, ["http://example.test/specrail/runs/run%2F1/events/stream"]);
 });
