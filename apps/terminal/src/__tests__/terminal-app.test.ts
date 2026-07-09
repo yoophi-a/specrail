@@ -179,6 +179,56 @@ test("SpecRailTerminalApiClient loads Markdown run reports", async () => {
   assert.equal(await client.loadRunReportMarkdown("run/1"), "# Run Report — run/1\n");
 });
 
+test("SpecRailTerminalApiClient encodes opaque run ids for run-scoped actions", async () => {
+  const requests: Array<{ url: string; method?: string; body?: string }> = [];
+  const client = new SpecRailTerminalApiClient("http://example.test/specrail", async (input, init) => {
+    const url = String(input);
+    requests.push({ url, method: init?.method, body: init?.body?.toString() });
+
+    if (url === "http://example.test/specrail/runs/run%2F1") {
+      return new Response(JSON.stringify({ run: { id: "run/1", trackId: "track-1", status: "running" } }), { status: 200 });
+    }
+
+    if (url === "http://example.test/specrail/runs/run%2F1/events") {
+      return new Response(JSON.stringify({ events: [{ id: "event-1", executionId: "run/1", type: "summary", timestamp: "2026-04-10T12:00:00.000Z", source: "codex", summary: "Started" }] }), { status: 200 });
+    }
+
+    if (url === "http://example.test/specrail/runs/run%2F1/resume" && init?.method === "POST") {
+      return new Response(JSON.stringify({ run: { id: "run/1", trackId: "track-1", status: "running" } }), { status: 200 });
+    }
+
+    if (url === "http://example.test/specrail/runs/run%2F1/cancel" && init?.method === "POST") {
+      return new Response(JSON.stringify({ run: { id: "run/1", trackId: "track-1", status: "cancelled" } }), { status: 200 });
+    }
+
+    if (url === "http://example.test/specrail/runs/run%2F1/workspace-cleanup/preview") {
+      return new Response(JSON.stringify({ cleanupPlan: { dryRun: true, eligible: false, operations: [], refusalReasons: ["run is active"] } }), { status: 200 });
+    }
+
+    if (url === "http://example.test/specrail/runs/run%2F1/workspace-cleanup/apply" && init?.method === "POST") {
+      return new Response(JSON.stringify({ cleanupResult: { applied: false, status: "refused", operations: [], refusalReasons: ["run is active"] }, expectedConfirmation: "cleanup run/1" }), { status: 200 });
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  await client.loadRunDetail("run/1");
+  await client.loadRunEvents("run/1");
+  await client.resumeRun({ runId: "run/1", prompt: "Continue", backend: "codex", profile: "default" });
+  await client.cancelRun("run/1");
+  await client.previewWorkspaceCleanup("run/1");
+  await client.applyWorkspaceCleanup("run/1", "cleanup run/1");
+
+  assert.deepEqual(requests, [
+    { url: "http://example.test/specrail/runs/run%2F1", method: undefined, body: undefined },
+    { url: "http://example.test/specrail/runs/run%2F1/events", method: undefined, body: undefined },
+    { url: "http://example.test/specrail/runs/run%2F1/resume", method: "POST", body: JSON.stringify({ prompt: "Continue", backend: "codex", profile: "default" }) },
+    { url: "http://example.test/specrail/runs/run%2F1/cancel", method: "POST", body: undefined },
+    { url: "http://example.test/specrail/runs/run%2F1/workspace-cleanup/preview", method: undefined, body: undefined },
+    { url: "http://example.test/specrail/runs/run%2F1/workspace-cleanup/apply", method: "POST", body: JSON.stringify({ confirm: "cleanup run/1" }) },
+  ]);
+});
+
 test("SpecRailTerminalApiClient supports folder session discovery, preview, and fork", async () => {
   const requests: Array<{ url: string; method?: string; body?: string }> = [];
   const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {

@@ -698,12 +698,12 @@ export class SpecRailTerminalApiClient {
   }
 
   async loadRunDetail(runId: string): Promise<RunDetailSnapshot> {
-    const payload = await this.request<RunDetailResponse>(`/runs/${runId}`);
+    const payload = await this.request<RunDetailResponse>(`/runs/${encodeURIComponent(runId)}`);
     return { run: payload.run };
   }
 
   async loadRunEvents(runId: string): Promise<ExecutionEvent[]> {
-    const payload = await this.request<RunEventsResponse>(`/runs/${runId}/events`);
+    const payload = await this.request<RunEventsResponse>(`/runs/${encodeURIComponent(runId)}/events`);
     return payload.events;
   }
 
@@ -731,7 +731,7 @@ export class SpecRailTerminalApiClient {
   }
 
   async resumeRun(input: { runId: string; prompt: string; backend?: string; profile?: string }): Promise<RunDetailSnapshot> {
-    const payload = await this.request<RunDetailResponse>(`/runs/${input.runId}/resume`, {
+    const payload = await this.request<RunDetailResponse>(`/runs/${encodeURIComponent(input.runId)}/resume`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ prompt: input.prompt, backend: input.backend, profile: input.profile }),
@@ -751,7 +751,7 @@ export class SpecRailTerminalApiClient {
   }
 
   async cancelRun(runId: string): Promise<RunDetailSnapshot> {
-    const payload = await this.request<RunDetailResponse>(`/runs/${runId}/cancel`, {
+    const payload = await this.request<RunDetailResponse>(`/runs/${encodeURIComponent(runId)}/cancel`, {
       method: "POST",
     });
 
@@ -759,11 +759,11 @@ export class SpecRailTerminalApiClient {
   }
 
   async previewWorkspaceCleanup(runId: string): Promise<WorkspaceCleanupPreviewResponse> {
-    return this.request<WorkspaceCleanupPreviewResponse>(`/runs/${runId}/workspace-cleanup/preview`);
+    return this.request<WorkspaceCleanupPreviewResponse>(`/runs/${encodeURIComponent(runId)}/workspace-cleanup/preview`);
   }
 
   async applyWorkspaceCleanup(runId: string, confirmation: string): Promise<WorkspaceCleanupApplyResponse> {
-    return this.request<WorkspaceCleanupApplyResponse>(`/runs/${runId}/workspace-cleanup/apply`, {
+    return this.request<WorkspaceCleanupApplyResponse>(`/runs/${encodeURIComponent(runId)}/workspace-cleanup/apply`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ confirm: confirmation }),
