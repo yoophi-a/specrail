@@ -168,6 +168,11 @@ test("executeGitHubRunCommand reuses an existing GitHub binding", async () => {
     reportUrl: "https://specrail.example.test/runs/run-created/report.md",
   });
   assert.deepEqual(calls.map((call) => call.name), ["findChannelBinding", "startRun"]);
+  assert.deepEqual(calls[0]?.input, {
+    channelType: "github",
+    externalChatId: "yoophi-a/specrail",
+    externalThreadId: "123",
+  });
   assert.deepEqual(calls[1]?.input, {
     trackId: "track-existing",
     planningSessionId: "planning-existing",
@@ -438,7 +443,20 @@ test("createSpecRailHttpClient maps GitHub orchestration calls to SpecRail API r
 
       if (request.url?.startsWith("/specrail/channel-bindings?") && request.method === "GET") {
         response.statusCode = 200;
-        response.end(JSON.stringify({ binding: { id: "binding-existing", trackId: "track-existing", planningSessionId: "planning-existing" } }));
+        response.end(JSON.stringify({
+          binding: {
+            id: "binding-existing",
+            projectId: "project-default",
+            channelType: "github",
+            externalChatId: "yoophi-a/specrail",
+            externalThreadId: "123",
+            externalUserId: "octocat",
+            trackId: "track-existing",
+            planningSessionId: "planning-existing",
+            createdAt: "2026-04-10T10:00:00.000Z",
+            updatedAt: "2026-04-10T10:05:00.000Z",
+          },
+        }));
         return;
       }
       if (request.url === "/specrail/tracks" && request.method === "POST") {
@@ -448,7 +466,19 @@ test("createSpecRailHttpClient maps GitHub orchestration calls to SpecRail API r
       }
       if (request.url === "/specrail/channel-bindings" && request.method === "POST") {
         response.statusCode = 201;
-        response.end(JSON.stringify({ binding: { id: "binding-created", trackId: "track-created" } }));
+        response.end(JSON.stringify({
+          binding: {
+            id: "binding-created",
+            projectId: "project-default",
+            channelType: "github",
+            externalChatId: "yoophi-a/specrail",
+            externalThreadId: "123",
+            externalUserId: "octocat",
+            trackId: "track-created",
+            createdAt: "2026-04-10T10:10:00.000Z",
+            updatedAt: "2026-04-10T10:10:00.000Z",
+          },
+        }));
         return;
       }
       if (request.url === "/specrail/runs" && request.method === "POST") {
@@ -463,8 +493,15 @@ test("createSpecRailHttpClient maps GitHub orchestration calls to SpecRail API r
     const client = createSpecRailHttpClient(`${baseUrl}/specrail`);
     assert.deepEqual(await client.findChannelBinding({ channelType: "github", externalChatId: "yoophi-a/specrail", externalThreadId: "123" }), {
       id: "binding-existing",
+      projectId: "project-default",
+      channelType: "github",
+      externalChatId: "yoophi-a/specrail",
+      externalThreadId: "123",
+      externalUserId: "octocat",
       trackId: "track-existing",
       planningSessionId: "planning-existing",
+      createdAt: "2026-04-10T10:00:00.000Z",
+      updatedAt: "2026-04-10T10:05:00.000Z",
     });
     assert.deepEqual(await client.createTrack({ projectId: "project-default", title: "Title", description: "Description", priority: "medium" }), {
       track: { id: "track-created" },
@@ -478,7 +515,19 @@ test("createSpecRailHttpClient maps GitHub orchestration calls to SpecRail API r
         externalUserId: "octocat",
         trackId: "track-created",
       }),
-      { binding: { id: "binding-created", trackId: "track-created" } },
+      {
+        binding: {
+          id: "binding-created",
+          projectId: "project-default",
+          channelType: "github",
+          externalChatId: "yoophi-a/specrail",
+          externalThreadId: "123",
+          externalUserId: "octocat",
+          trackId: "track-created",
+          createdAt: "2026-04-10T10:10:00.000Z",
+          updatedAt: "2026-04-10T10:10:00.000Z",
+        },
+      },
     );
     assert.deepEqual(await client.startRun({ trackId: "track-created", prompt: "preserve opaque prompt #123" }), {
       run: { id: "run-created", status: "running" },
