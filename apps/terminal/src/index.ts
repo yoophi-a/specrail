@@ -585,17 +585,23 @@ export class SpecRailTerminalApiClient {
   }
 
   async loadTrackDetail(trackId: string): Promise<TrackDetailSnapshot> {
-    const payload = await this.request<TrackDetailResponse>(`/tracks/${trackId}`);
-    const planningSessionsPayload = await this.request<PlanningSessionsResponse>(`/tracks/${trackId}/planning-sessions`);
+    const encodedTrackId = encodeURIComponent(trackId);
+    const payload = await this.request<TrackDetailResponse>(`/tracks/${encodedTrackId}`);
+    const planningSessionsPayload = await this.request<PlanningSessionsResponse>(`/tracks/${encodedTrackId}/planning-sessions`);
     const planningSessions = planningSessionsPayload.planningSessions;
     const selectedPlanningSessionId = payload.planningContext?.planningSessionId ?? planningSessions[0]?.id;
     const planningMessages = selectedPlanningSessionId
-      ? (await this.request<PlanningMessagesResponse>(`/planning-sessions/${selectedPlanningSessionId}/messages`)).messages
+      ? (await this.request<PlanningMessagesResponse>(`/planning-sessions/${encodeURIComponent(selectedPlanningSessionId)}/messages`)).messages
       : [];
 
     const artifacts = ["spec", "plan", "tasks"] as const;
     const workflowPayloads = await Promise.all(
-      artifacts.map(async (artifact) => [artifact, await this.request<ArtifactWorkflowResponse>(`/tracks/${trackId}/artifacts/${artifact}`)] as const),
+      artifacts.map(
+        async (artifact) => [
+          artifact,
+          await this.request<ArtifactWorkflowResponse>(`/tracks/${encodedTrackId}/artifacts/${encodeURIComponent(artifact)}`),
+        ] as const,
+      ),
     );
 
     const revisions = Object.fromEntries(workflowPayloads.map(([artifact, data]) => [artifact, data.revisions])) as TrackPlanningWorkspace["revisions"];
@@ -657,7 +663,7 @@ export class SpecRailTerminalApiClient {
     summary?: string;
     createdBy: "user" | "agent" | "system";
   }): Promise<ArtifactProposalResponse> {
-    return this.request<ArtifactProposalResponse>(`/tracks/${input.trackId}/artifacts/${input.artifact}`, {
+    return this.request<ArtifactProposalResponse>(`/tracks/${encodeURIComponent(input.trackId)}/artifacts/${encodeURIComponent(input.artifact)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -690,7 +696,7 @@ export class SpecRailTerminalApiClient {
   }
 
   async decideApprovalRequest(approvalRequestId: string, decision: "approve" | "reject"): Promise<void> {
-    await this.request(`/approval-requests/${approvalRequestId}/${decision}`, {
+    await this.request(`/approval-requests/${encodeURIComponent(approvalRequestId)}/${decision}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ decidedBy: "terminal" }),

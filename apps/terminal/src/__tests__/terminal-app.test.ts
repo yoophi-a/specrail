@@ -96,51 +96,61 @@ test("resolveTrackDefaultWorkspacePath prefers the selected project's local repo
 });
 
 test("SpecRailTerminalApiClient loads planning workspace details for a track", async () => {
+  const requests: string[] = [];
   const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
     const url = String(input);
+    requests.push(url);
 
-    if (url.endsWith("/tracks/track-1") && !init?.method) {
+    if (url === "http://example.test/tracks/track%2F1" && !init?.method) {
       return new Response(
         JSON.stringify({
-          track: { id: "track-1", title: "Terminal shell", status: "review", planStatus: "pending" },
+          track: { id: "track/1", title: "Terminal shell", status: "review", planStatus: "pending" },
           artifacts: { spec: "# Spec", plan: "# Plan", tasks: "# Tasks" },
-          planningContext: { planningSessionId: "plan-1", hasPendingChanges: true, updatedAt: "2026-04-10T12:00:00.000Z" },
+          planningContext: { planningSessionId: "planning/session-1", hasPendingChanges: true, updatedAt: "2026-04-10T12:00:00.000Z" },
         }),
         { status: 200 },
       );
     }
 
-    if (url.endsWith("/tracks/track-1/planning-sessions")) {
-      return new Response(JSON.stringify({ planningSessions: [{ id: "plan-1", trackId: "track-1", status: "active", updatedAt: "2026-04-10T12:00:00.000Z" }] }), { status: 200 });
+    if (url === "http://example.test/tracks/track%2F1/planning-sessions") {
+      return new Response(JSON.stringify({ planningSessions: [{ id: "planning/session-1", trackId: "track/1", status: "active", updatedAt: "2026-04-10T12:00:00.000Z" }] }), { status: 200 });
     }
 
-    if (url.endsWith("/planning-sessions/plan-1/messages")) {
-      return new Response(JSON.stringify({ messages: [{ id: "msg-1", planningSessionId: "plan-1", authorType: "user", kind: "question", relatedArtifact: "plan", body: "Need approval?", createdAt: "2026-04-10T12:01:00.000Z" }] }), { status: 200 });
+    if (url === "http://example.test/planning-sessions/planning%2Fsession-1/messages") {
+      return new Response(JSON.stringify({ messages: [{ id: "msg-1", planningSessionId: "planning/session-1", authorType: "user", kind: "question", relatedArtifact: "plan", body: "Need approval?", createdAt: "2026-04-10T12:01:00.000Z" }] }), { status: 200 });
     }
 
-    if (url.endsWith("/tracks/track-1/artifacts/spec")) {
+    if (url === "http://example.test/tracks/track%2F1/artifacts/spec") {
       return new Response(JSON.stringify({ revisions: [], approvalRequests: [] }), { status: 200 });
     }
 
-    if (url.endsWith("/tracks/track-1/artifacts/plan")) {
+    if (url === "http://example.test/tracks/track%2F1/artifacts/plan") {
       return new Response(JSON.stringify({
-        revisions: [{ id: "rev-1", trackId: "track-1", artifact: "plan", version: 1, createdBy: "agent", content: "# Plan v1", approvalRequestId: "approval-1", createdAt: "2026-04-10T12:00:30.000Z" }],
-        approvalRequests: [{ id: "approval-1", trackId: "track-1", artifact: "plan", revisionId: "rev-1", status: "pending", requestedBy: "agent", createdAt: "2026-04-10T12:00:31.000Z" }],
+        revisions: [{ id: "rev-1", trackId: "track/1", artifact: "plan", version: 1, createdBy: "agent", content: "# Plan v1", approvalRequestId: "approval-1", createdAt: "2026-04-10T12:00:30.000Z" }],
+        approvalRequests: [{ id: "approval-1", trackId: "track/1", artifact: "plan", revisionId: "rev-1", status: "pending", requestedBy: "agent", createdAt: "2026-04-10T12:00:31.000Z" }],
       }), { status: 200 });
     }
 
-    if (url.endsWith("/tracks/track-1/artifacts/tasks")) {
+    if (url === "http://example.test/tracks/track%2F1/artifacts/tasks") {
       return new Response(JSON.stringify({ revisions: [], approvalRequests: [] }), { status: 200 });
     }
 
     throw new Error(`Unexpected request: ${url}`);
   });
 
-  const detail = await client.loadTrackDetail("track-1");
-  assert.equal(detail.planningWorkspace?.planningSessions[0]?.id, "plan-1");
+  const detail = await client.loadTrackDetail("track/1");
+  assert.equal(detail.planningWorkspace?.planningSessions[0]?.id, "planning/session-1");
   assert.equal(detail.planningWorkspace?.planningMessages[0]?.body, "Need approval?");
   assert.equal(detail.planningWorkspace?.approvalRequests.plan[0]?.id, "approval-1");
   assert.equal(detail.planningWorkspace?.selectedApprovalRequestId, "approval-1");
+  assert.deepEqual(requests, [
+    "http://example.test/tracks/track%2F1",
+    "http://example.test/tracks/track%2F1/planning-sessions",
+    "http://example.test/planning-sessions/planning%2Fsession-1/messages",
+    "http://example.test/tracks/track%2F1/artifacts/spec",
+    "http://example.test/tracks/track%2F1/artifacts/plan",
+    "http://example.test/tracks/track%2F1/artifacts/tasks",
+  ]);
 });
 
 test("SpecRailTerminalApiClient surfaces API validation details for execution actions", async () => {
@@ -677,26 +687,33 @@ test("runTerminalCommand exports planning message templates to a file", async ()
   }
 });
 
-test("SpecRailTerminalApiClient submits artifact revision proposals", async () => {
+test("SpecRailTerminalApiClient submits artifact revision proposals and approval decisions", async () => {
+  const requests: Array<{ url: string; method?: string; body?: string }> = [];
   const client = new SpecRailTerminalApiClient("http://example.test", async (input, init) => {
     const url = String(input);
+    requests.push({ url, method: init?.method, body: init?.body?.toString() });
 
-    if (url.endsWith("/tracks/track-1/artifacts/plan") && init?.method === "POST") {
+    if (url === "http://example.test/tracks/track%2F1/artifacts/plan" && init?.method === "POST") {
       assert.equal(init.body?.toString(), JSON.stringify({ content: "# Plan v2", summary: "Tighten milestones", createdBy: "user" }));
       return new Response(
         JSON.stringify({
-          revision: { id: "rev-2", trackId: "track-1", artifact: "plan", version: 2, createdBy: "user", content: "# Plan v2", createdAt: "2026-04-13T11:00:00.000Z" },
-          approvalRequest: { id: "approval-2", trackId: "track-1", artifact: "plan", revisionId: "rev-2", status: "pending", requestedBy: "user", createdAt: "2026-04-13T11:00:01.000Z" },
+          revision: { id: "rev-2", trackId: "track/1", artifact: "plan", version: 2, createdBy: "user", content: "# Plan v2", createdAt: "2026-04-13T11:00:00.000Z" },
+          approvalRequest: { id: "approval/2", trackId: "track/1", artifact: "plan", revisionId: "rev-2", status: "pending", requestedBy: "user", createdAt: "2026-04-13T11:00:01.000Z" },
         }),
         { status: 201 },
       );
+    }
+
+    if (url === "http://example.test/approval-requests/approval%2F2/approve" && init?.method === "POST") {
+      assert.equal(init.body?.toString(), JSON.stringify({ decidedBy: "terminal" }));
+      return new Response(JSON.stringify({ approvalRequest: { id: "approval/2" } }), { status: 200 });
     }
 
     throw new Error(`Unexpected request: ${url}`);
   });
 
   const result = await client.proposeArtifactRevision({
-    trackId: "track-1",
+    trackId: "track/1",
     artifact: "plan",
     content: "# Plan v2",
     summary: "Tighten milestones",
@@ -704,7 +721,12 @@ test("SpecRailTerminalApiClient submits artifact revision proposals", async () =
   });
 
   assert.equal(result.revision.id, "rev-2");
-  assert.equal(result.approvalRequest.id, "approval-2");
+  assert.equal(result.approvalRequest.id, "approval/2");
+  await client.decideApprovalRequest("approval/2", "approve");
+  assert.deepEqual(requests, [
+    { url: "http://example.test/tracks/track%2F1/artifacts/plan", method: "POST", body: JSON.stringify({ content: "# Plan v2", summary: "Tighten milestones", createdBy: "user" }) },
+    { url: "http://example.test/approval-requests/approval%2F2/approve", method: "POST", body: JSON.stringify({ decidedBy: "terminal" }) },
+  ]);
 });
 
 test("SpecRailTerminalApiClient appends planning messages", async () => {
