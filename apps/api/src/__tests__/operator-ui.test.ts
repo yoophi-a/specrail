@@ -440,6 +440,52 @@ test("operator UI client harness submits selected-run detail actions", async () 
   });
 });
 
+test("operator UI client harness encodes opaque selected-run action paths", async () => {
+  const { calls, detail, eventSources, loadInitialState, requestCleanupConfirmation, requestCleanupPreview } = createHostedUiClientHarness({
+    search: "?runId=run%2Fopaque",
+  });
+  await loadInitialState();
+  await flushClientPromises();
+
+  assert.ok(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Fopaque"));
+  assert.ok(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Fopaque/events"));
+  assert.equal(eventSources.at(-1)?.url, "/runs/run%2Fopaque/events/stream");
+
+  detail.querySelector("#run-resume-prompt").value = "Resume opaque run.";
+  await detail.querySelector("[data-run-resume]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Fopaque/resume")?.body, {
+    prompt: "Resume opaque run.",
+  });
+  assert.equal(eventSources.at(-1)?.url, "/runs/run%2Fopaque/events/stream");
+
+  detail.querySelector("#run-cancel-confirmation").value = "cancel";
+  await detail.querySelector("[data-run-cancel]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Fopaque/cancel")?.body, {});
+
+  await requestCleanupPreview();
+
+  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Fopaque/workspace-cleanup/preview"), true);
+
+  await requestCleanupConfirmation();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Fopaque/workspace-cleanup/apply" && (call.body as { confirm?: string }).confirm === "")?.body, {
+    confirm: "",
+  });
+  assert.equal(detail.querySelector("#cleanup-expected-confirmation").textContent, "APPLY CLEANUP run/opaque");
+
+  detail.querySelector("#cleanup-confirmation").value = "APPLY CLEANUP run/opaque";
+  await detail.querySelector("[data-cleanup-apply]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Fopaque/workspace-cleanup/apply" && (call.body as { confirm?: string }).confirm === "APPLY CLEANUP run/opaque")?.body, {
+    confirm: "APPLY CLEANUP run/opaque",
+  });
+});
+
 test("operator UI client harness blocks invalid run lifecycle submissions", async () => {
   const { calls, createTrack, detail, elements, loadInitialState, startRun } = createHostedUiClientHarness();
   await loadInitialState();

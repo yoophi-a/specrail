@@ -293,7 +293,8 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
       return { ok: true, json: async () => ({ execution: { id: runId, workspacePath: run?.workspacePath ?? `/workspace/${runId}` }, session: { sessionRef: `${runId}-codex` }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ timestamp: "2026-04-09T03:00:00.000Z", summary: "Run started" }], reportPath }) };
     }
     if (/^\/runs\/[^/]+\/resume$/.test(path) && method === "POST") {
-      return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "running", ...(body as Record<string, unknown>) } }) };
+      const runId = decodeURIComponent(path.split("/")[2] ?? "");
+      return { ok: true, json: async () => ({ run: { id: runId, status: "running", ...(body as Record<string, unknown>) } }) };
     }
     if (/^\/runs\/[^/]+\/fork$/.test(path) && method === "POST") {
       const sourceRunId = decodeURIComponent(path.split("/")[2] ?? "");
@@ -302,14 +303,16 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
       return { ok: true, json: async () => ({ run }) };
     }
     if (/^\/runs\/[^/]+\/cancel$/.test(path) && method === "POST") {
-      return { ok: true, json: async () => ({ run: { id: path.split("/")[2], status: "cancelled" } }) };
+      const runId = decodeURIComponent(path.split("/")[2] ?? "");
+      return { ok: true, json: async () => ({ run: { id: runId, status: "cancelled" } }) };
     }
     if (/^\/runs\/[^/]+\/workspace-cleanup\/preview$/.test(path) && method === "GET") {
       return { ok: true, json: async () => ({ cleanupPlan: { eligible: true, operations: [{ kind: "delete", path: "/tmp/specrail-worktree" }], refusalReasons: [] } }) };
     }
     if (/^\/runs\/[^/]+\/workspace-cleanup\/apply$/.test(path) && method === "POST") {
+      const runId = decodeURIComponent(path.split("/")[2] ?? "");
       if ((body as { confirm?: string }).confirm === "") {
-        return { ok: true, json: async () => ({ expectedConfirmation: "APPLY CLEANUP run-1" }) };
+        return { ok: true, json: async () => ({ expectedConfirmation: `APPLY CLEANUP ${runId}` }) };
       }
       return { ok: true, json: async () => ({ cleanupResult: { status: "completed", failures: [] } }) };
     }
