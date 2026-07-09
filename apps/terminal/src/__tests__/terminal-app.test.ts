@@ -213,17 +213,17 @@ test("SpecRailTerminalApiClient supports folder session discovery, preview, and 
 test("runTerminalCommand writes report command output to stdout", async () => {
   const writes: string[] = [];
   const handled = await runTerminalCommand({
-    argv: ["report", "run-1"],
-    env: { SPECRAIL_API_BASE_URL: "http://example.test" },
+    argv: ["report", "run/1"],
+    env: { SPECRAIL_API_BASE_URL: "http://example.test/specrail" },
     stdout: { write: (chunk) => writes.push(chunk) },
     fetchImpl: async (input) => {
-      assert.equal(String(input), "http://example.test/runs/run-1/report.md");
-      return new Response("# Run Report — run-1", { status: 200 });
+      assert.equal(String(input), "http://example.test/specrail/runs/run%2F1/report.md");
+      return new Response("# Run Report — run/1", { status: 200 });
     },
   });
 
   assert.equal(handled, true);
-  assert.deepEqual(writes, ["# Run Report — run-1\n"]);
+  assert.deepEqual(writes, ["# Run Report — run/1\n"]);
 });
 
 test("runTerminalCommand prints command help", async () => {
