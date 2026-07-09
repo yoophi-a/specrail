@@ -246,28 +246,33 @@ test("SpecRailTerminalApiClient supports folder session discovery, preview, and 
     requests.push({ url, method: init?.method, body: init?.body?.toString() });
 
     if (url === "http://example.test/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Fapp") {
-      return new Response(JSON.stringify({ runs: [{ id: "run-folder", trackId: "track-1", status: "completed", workspacePath: "/workspace/app", backend: "codex" }] }), { status: 200 });
+      return new Response(JSON.stringify({ runs: [{ id: "run/folder", trackId: "track-1", status: "completed", workspacePath: "/workspace/app", backend: "codex" }] }), { status: 200 });
     }
 
-    if (url === "http://example.test/runs/run-folder/session-preview?eventLimit=5") {
-      return new Response(JSON.stringify({ execution: { id: "run-folder", trackId: "track-1", status: "completed" }, session: { sessionRef: "run-folder-codex" }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ id: "evt-1", executionId: "run-folder", type: "summary", timestamp: "2026-04-10T12:00:00.000Z", source: "codex", summary: "Run completed" }], reportPath: "/runs/run-folder/report.md" }), { status: 200 });
+    if (url === "http://example.test/runs/run%2Ffolder/session-preview?eventLimit=5") {
+      return new Response(JSON.stringify({ execution: { id: "run/folder", trackId: "track-1", status: "completed" }, session: { sessionRef: "run-folder-codex" }, capabilities: { supportsResume: true, supportsProviderFork: false, supportsContextCopyFork: true }, events: [{ id: "evt-1", executionId: "run/folder", type: "summary", timestamp: "2026-04-10T12:00:00.000Z", source: "codex", summary: "Run completed" }], reportPath: "/runs/run%2Ffolder/report.md" }), { status: 200 });
     }
 
-    if (url === "http://example.test/runs/run-folder/fork" && init?.method === "POST") {
+    if (url === "http://example.test/runs/run%2Ffolder/fork" && init?.method === "POST") {
       assert.equal(init.body?.toString(), JSON.stringify({ prompt: "Continue from folder", backend: "codex", profile: "default" }));
-      return new Response(JSON.stringify({ run: { id: "run-fork", trackId: "track-1", status: "running", parentExecutionId: "run-folder", backend: "codex" } }), { status: 201 });
+      return new Response(JSON.stringify({ run: { id: "run-fork", trackId: "track-1", status: "running", parentExecutionId: "run/folder", backend: "codex" } }), { status: 201 });
     }
 
     throw new Error(`Unexpected request: ${url}`);
   });
 
   const runs = await client.listRunsByWorkspacePath("/workspace/app");
-  assert.equal(runs[0]?.id, "run-folder");
-  const preview = await client.loadRunSessionPreview("run-folder");
+  assert.equal(runs[0]?.id, "run/folder");
+  const preview = await client.loadRunSessionPreview("run/folder");
   assert.equal(preview.session?.sessionRef, "run-folder-codex");
-  const fork = await client.forkRun({ runId: "run-folder", prompt: "Continue from folder", backend: "codex", profile: "default" });
+  assert.equal(preview.reportPath, "/runs/run%2Ffolder/report.md");
+  const fork = await client.forkRun({ runId: "run/folder", prompt: "Continue from folder", backend: "codex", profile: "default" });
   assert.equal(fork.run.id, "run-fork");
-  assert.equal(requests.length, 3);
+  assert.deepEqual(requests.map((request) => request.url), [
+    "http://example.test/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Fapp",
+    "http://example.test/runs/run%2Ffolder/session-preview?eventLimit=5",
+    "http://example.test/runs/run%2Ffolder/fork",
+  ]);
 });
 
 test("runTerminalCommand writes report command output to stdout", async () => {
