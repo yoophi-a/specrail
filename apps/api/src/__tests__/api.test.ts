@@ -926,20 +926,57 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     });
     assert.equal(bindResponse.status, 201);
     const bindPayload = (await bindResponse.json()) as {
-      binding: { id: string; channelType: string; externalChatId: string; externalThreadId?: string; externalUserId?: string; planningSessionId?: string };
+      binding: {
+        id: string;
+        projectId: string;
+        channelType: string;
+        externalChatId: string;
+        externalThreadId?: string;
+        externalUserId?: string;
+        trackId?: string;
+        planningSessionId?: string;
+        createdAt?: string;
+        updatedAt?: string;
+      };
     };
+    assert.equal(bindPayload.binding.projectId, "project-default");
     assert.equal(bindPayload.binding.channelType, "telegram");
     assert.equal(bindPayload.binding.externalChatId, "chat-1");
     assert.equal(bindPayload.binding.externalThreadId, "thread-1");
     assert.equal(bindPayload.binding.externalUserId, "user-1");
+    assert.equal(bindPayload.binding.trackId, trackPayload.track.id);
     assert.equal(bindPayload.binding.planningSessionId, planningSessionPayload.planningSession.id);
+    assert.ok(bindPayload.binding.createdAt);
+    assert.equal(bindPayload.binding.updatedAt, bindPayload.binding.createdAt);
 
     const getBindingResponse = await fetch(
       `${baseUrl}/channel-bindings?channelType=Telegram&externalChatId=chat-1&externalThreadId=thread-1`,
     );
     assert.equal(getBindingResponse.status, 200);
-    const getBindingPayload = (await getBindingResponse.json()) as { binding: { id: string } };
+    const getBindingPayload = (await getBindingResponse.json()) as {
+      binding: {
+        id: string;
+        projectId: string;
+        channelType: string;
+        externalChatId: string;
+        externalThreadId?: string;
+        externalUserId?: string;
+        trackId?: string;
+        planningSessionId?: string;
+        createdAt?: string;
+        updatedAt?: string;
+      };
+    };
     assert.equal(getBindingPayload.binding.id, bindPayload.binding.id);
+    assert.equal(getBindingPayload.binding.projectId, "project-default");
+    assert.equal(getBindingPayload.binding.channelType, "telegram");
+    assert.equal(getBindingPayload.binding.externalChatId, "chat-1");
+    assert.equal(getBindingPayload.binding.externalThreadId, "thread-1");
+    assert.equal(getBindingPayload.binding.externalUserId, "user-1");
+    assert.equal(getBindingPayload.binding.trackId, trackPayload.track.id);
+    assert.equal(getBindingPayload.binding.planningSessionId, planningSessionPayload.planningSession.id);
+    assert.equal(getBindingPayload.binding.createdAt, bindPayload.binding.createdAt);
+    assert.equal(getBindingPayload.binding.updatedAt, bindPayload.binding.updatedAt);
 
     const reboundResponse = await fetch(`${baseUrl}/channel-bindings`, {
       method: "POST",
@@ -955,11 +992,23 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     });
     assert.equal(reboundResponse.status, 201);
     const reboundPayload = (await reboundResponse.json()) as {
-      binding: { id: string; externalUserId?: string; planningSessionId?: string };
+      binding: {
+        id: string;
+        projectId: string;
+        externalUserId?: string;
+        trackId?: string;
+        planningSessionId?: string;
+        createdAt?: string;
+        updatedAt?: string;
+      };
     };
     assert.equal(reboundPayload.binding.id, bindPayload.binding.id);
+    assert.equal(reboundPayload.binding.projectId, "project-default");
     assert.equal(reboundPayload.binding.externalUserId, "user-2");
+    assert.equal(reboundPayload.binding.trackId, undefined);
     assert.equal(reboundPayload.binding.planningSessionId, planningSessionPayload.planningSession.id);
+    assert.equal(reboundPayload.binding.createdAt, bindPayload.binding.createdAt);
+    assert.ok(reboundPayload.binding.updatedAt);
 
     const githubBindResponse = await fetch(`${baseUrl}/channel-bindings`, {
       method: "POST",
@@ -996,12 +1045,52 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       }),
     });
     assert.equal(noThreadBindResponse.status, 201);
-    const noThreadBindPayload = (await noThreadBindResponse.json()) as { binding: { id: string } };
+    const noThreadBindPayload = (await noThreadBindResponse.json()) as {
+      binding: {
+        id: string;
+        projectId: string;
+        channelType: string;
+        externalChatId: string;
+        externalThreadId?: string;
+        externalUserId?: string;
+        trackId?: string;
+        createdAt?: string;
+        updatedAt?: string;
+      };
+    };
+    assert.equal(noThreadBindPayload.binding.projectId, "project-default");
+    assert.equal(noThreadBindPayload.binding.channelType, "telegram");
+    assert.equal(noThreadBindPayload.binding.externalChatId, "chat-without-thread");
+    assert.equal(noThreadBindPayload.binding.externalThreadId, undefined);
+    assert.equal(noThreadBindPayload.binding.externalUserId, "user-without-thread");
+    assert.equal(noThreadBindPayload.binding.trackId, trackPayload.track.id);
+    assert.ok(noThreadBindPayload.binding.createdAt);
+    assert.equal(noThreadBindPayload.binding.updatedAt, noThreadBindPayload.binding.createdAt);
 
     const getNoThreadBindingResponse = await fetch(`${baseUrl}/channel-bindings?channelType=Telegram&externalChatId=chat-without-thread`);
     assert.equal(getNoThreadBindingResponse.status, 200);
-    const getNoThreadBindingPayload = (await getNoThreadBindingResponse.json()) as { binding: { id: string } };
+    const getNoThreadBindingPayload = (await getNoThreadBindingResponse.json()) as {
+      binding: {
+        id: string;
+        projectId: string;
+        channelType: string;
+        externalChatId: string;
+        externalThreadId?: string;
+        externalUserId?: string;
+        trackId?: string;
+        createdAt?: string;
+        updatedAt?: string;
+      };
+    };
     assert.equal(getNoThreadBindingPayload.binding.id, noThreadBindPayload.binding.id);
+    assert.equal(getNoThreadBindingPayload.binding.projectId, "project-default");
+    assert.equal(getNoThreadBindingPayload.binding.channelType, "telegram");
+    assert.equal(getNoThreadBindingPayload.binding.externalChatId, "chat-without-thread");
+    assert.equal(getNoThreadBindingPayload.binding.externalThreadId, undefined);
+    assert.equal(getNoThreadBindingPayload.binding.externalUserId, "user-without-thread");
+    assert.equal(getNoThreadBindingPayload.binding.trackId, trackPayload.track.id);
+    assert.equal(getNoThreadBindingPayload.binding.createdAt, noThreadBindPayload.binding.createdAt);
+    assert.equal(getNoThreadBindingPayload.binding.updatedAt, noThreadBindPayload.binding.updatedAt);
 
     const refreshedNoThreadBindResponse = await fetch(`${baseUrl}/channel-bindings`, {
       method: "POST",
@@ -1016,11 +1105,23 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     });
     assert.equal(refreshedNoThreadBindResponse.status, 201);
     const refreshedNoThreadBindPayload = (await refreshedNoThreadBindResponse.json()) as {
-      binding: { id: string; externalUserId?: string; planningSessionId?: string };
+      binding: {
+        id: string;
+        projectId: string;
+        externalUserId?: string;
+        trackId?: string;
+        planningSessionId?: string;
+        createdAt?: string;
+        updatedAt?: string;
+      };
     };
     assert.equal(refreshedNoThreadBindPayload.binding.id, noThreadBindPayload.binding.id);
+    assert.equal(refreshedNoThreadBindPayload.binding.projectId, "project-default");
     assert.equal(refreshedNoThreadBindPayload.binding.externalUserId, "user-without-thread-2");
+    assert.equal(refreshedNoThreadBindPayload.binding.trackId, undefined);
     assert.equal(refreshedNoThreadBindPayload.binding.planningSessionId, planningSessionPayload.planningSession.id);
+    assert.equal(refreshedNoThreadBindPayload.binding.createdAt, noThreadBindPayload.binding.createdAt);
+    assert.ok(refreshedNoThreadBindPayload.binding.updatedAt);
 
     const missingBindingResponse = await fetch(`${baseUrl}/channel-bindings?channelType=Telegram&externalChatId=missing-chat`);
     assert.equal(missingBindingResponse.status, 404);
