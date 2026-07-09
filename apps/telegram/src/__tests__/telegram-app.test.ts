@@ -438,7 +438,7 @@ test("handleTelegramUpdate adds report links only to terminal run notifications"
           return { attachment: { id: "attachment-1" } };
         },
         async startRun() {
-          return { run: { id: "run-2", status: "running" } };
+          return { run: { id: "run/2", status: "running" } };
         },
         async *streamRunEvents() {
           yield { type: "task_status_changed", summary: "Run started" };
@@ -450,15 +450,15 @@ test("handleTelegramUpdate adds report links only to terminal run notifications"
           telegramMessages.push(input.text);
         },
       },
-      runReportBaseUrl: "http://127.0.0.1:4000",
+      runReportBaseUrl: "http://127.0.0.1:4000/specrail",
     },
   );
 
   assert.deepEqual(telegramMessages, [
     "Using existing SpecRail track track-9. Starting a new run.",
-    "Run run-2 is running.",
-    "[run-2] Run started",
-    "[run-2] Run failed\nReport: http://127.0.0.1:4000/runs/run-2/report.md",
+    "Run run/2 is running.",
+    "[run/2] Run started",
+    "[run/2] Run failed\nReport: http://127.0.0.1:4000/specrail/runs/run%2F2/report.md",
   ]);
 });
 
