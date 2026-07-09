@@ -16,8 +16,10 @@ import {
   operatorUiRunCancelPath,
   operatorUiRunCreatePath,
   operatorUiRunEventStreamPath,
+  operatorUiRunForkPath,
   operatorUiRunReportPath,
   operatorUiRunResumePath,
+  operatorUiRunSessionPath,
   operatorUiTrackCreatePath,
   operatorUiTrackUpdatePath,
   renderOperatorUiClientScript,
@@ -55,6 +57,8 @@ test("operator UI helpers build encoded action URLs", () => {
   assert.equal(operatorUiCleanupApplyPath("run/1"), "/runs/run%2F1/workspace-cleanup/apply");
   assert.equal(operatorUiRunEventStreamPath("run/1"), "/runs/run%2F1/events/stream");
   assert.equal(operatorUiRunReportPath("run/1"), "/runs/run%2F1/report.md");
+  assert.equal(operatorUiRunSessionPath("run/1"), "/runs/run%2F1/session");
+  assert.equal(operatorUiRunForkPath("run/1"), "/runs/run%2F1/fork");
 });
 
 test("operator UI renderer exposes style and client script helpers", () => {
