@@ -327,7 +327,9 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
         cwd: "/tmp/specrail",
         _meta: {
           specrail: {
+            projectId: " project-default ",
             trackId: "track-1",
+            planningSessionId: " plan-acp ",
             backend: "codex",
             profile: "default",
           },
@@ -364,6 +366,11 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   assert.ok(
     notifications.some((payload) => JSON.stringify(payload).includes("Completed run-1")),
   );
+  assert.ok(JSON.stringify(notifications).includes('"projectId":"project-default"'));
+  assert.ok(JSON.stringify(notifications).includes('"trackId":"track-1"'));
+  assert.ok(JSON.stringify(notifications).includes('"planningSessionId":"plan-acp"'));
+  assert.ok(JSON.stringify(notifications).includes('"backend":"codex"'));
+  assert.ok(JSON.stringify(notifications).includes('"profile":"default"'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"task_status_changed","status":"running"}'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"tool_call","toolName":"shell","toolUseId":"tool-call-run-1"}'));
   assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"tool_result","toolName":"shell","toolUseId":"tool-call-run-1","exitCode":0,"status":"completed"}'));
@@ -381,8 +388,18 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
     { jsonrpc: "2.0", id: 4, method: "session/list", params: { cwd: " /tmp/specrail " } },
     () => {},
   );
-  const listPayload = listResponse?.result as { sessions: Array<{ sessionId: string; _meta: { specrail: { runId: string } } }> };
+  const listPayload = listResponse?.result as {
+    sessions: Array<{
+      sessionId: string;
+      _meta: { specrail: { projectId?: string; trackId?: string; planningSessionId?: string; backend?: string; profile?: string; runId: string } };
+    }>;
+  };
   assert.equal(listPayload.sessions[0]?.sessionId, sessionId);
+  assert.equal(listPayload.sessions[0]?._meta.specrail.projectId, "project-default");
+  assert.equal(listPayload.sessions[0]?._meta.specrail.trackId, "track-1");
+  assert.equal(listPayload.sessions[0]?._meta.specrail.planningSessionId, "plan-acp");
+  assert.equal(listPayload.sessions[0]?._meta.specrail.backend, "codex");
+  assert.equal(listPayload.sessions[0]?._meta.specrail.profile, "default");
   assert.equal(listPayload.sessions[0]?._meta.specrail.runId, "run-1");
 
   const loadNotifications: unknown[] = [];
