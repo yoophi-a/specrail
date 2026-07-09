@@ -472,11 +472,17 @@ test("handleTelegramUpdate reuses an existing bound track", async () => {
         message_id: 200,
         text: "Follow-up change",
         chat: { id: 88, type: "private" },
+        document: { file_id: "follow-up-file", file_name: "follow-up.md", mime_type: "text/markdown" },
       },
     },
     {
       specRail: {
-        async findChannelBinding() {
+        async findChannelBinding(input) {
+          assert.deepEqual(input, {
+            channelType: "telegram",
+            externalChatId: "88",
+            externalThreadId: undefined,
+          });
           return { id: "binding-1", trackId: "track-9", planningSessionId: "plan-2" };
         },
         async createTrack() {
@@ -485,12 +491,25 @@ test("handleTelegramUpdate reuses an existing bound track", async () => {
         async bindChannel() {
           throw new Error("should not rebind");
         },
-        async registerAttachment() {
-          calls.push("registerAttachment");
+        async registerAttachment(input) {
+          calls.push(`registerAttachment:${input.externalFileId}:${input.trackId}:${input.planningSessionId}`);
+          assert.deepEqual(input, {
+            sourceType: "telegram",
+            externalFileId: "follow-up-file",
+            fileName: "follow-up.md",
+            mimeType: "text/markdown",
+            trackId: "track-9",
+            planningSessionId: "plan-2",
+          });
           return { attachment: { id: "attachment-1" } };
         },
         async startRun(input) {
           calls.push(`startRun:${input.trackId}:${input.planningSessionId}`);
+          assert.deepEqual(input, {
+            trackId: "track-9",
+            prompt: "Follow-up change",
+            planningSessionId: "plan-2",
+          });
           return { run: { id: "run-2", status: "running" } };
         },
         async *streamRunEvents() {
@@ -507,6 +526,7 @@ test("handleTelegramUpdate reuses an existing bound track", async () => {
 
   assert.deepEqual(calls, [
     "sendMessage:Using existing SpecRail track track-9. Starting a new run.",
+    "registerAttachment:follow-up-file:track-9:plan-2",
     "startRun:track-9:plan-2",
     "sendMessage:Run run-2 is running.",
     "sendMessage:[run-2] Run completed",
