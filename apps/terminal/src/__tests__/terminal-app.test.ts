@@ -740,7 +740,7 @@ test("SpecRailTerminalApiClient appends planning messages", async () => {
     const url = String(input);
     requests.push({ url, method: init?.method, body: init?.body?.toString() });
 
-    if (url.endsWith("/planning-sessions/plan-1/messages") && init?.method === "POST") {
+    if (url.endsWith("/planning-sessions/plan%2F1/messages") && init?.method === "POST") {
       assert.equal(init.body?.toString(), JSON.stringify({
         authorType: "user",
         kind: "decision",
@@ -751,7 +751,7 @@ test("SpecRailTerminalApiClient appends planning messages", async () => {
         JSON.stringify({
           message: {
             id: "msg-2",
-            planningSessionId: "plan-1",
+            planningSessionId: "plan/1",
             authorType: "user",
             kind: "decision",
             relatedArtifact: "plan",
@@ -763,7 +763,7 @@ test("SpecRailTerminalApiClient appends planning messages", async () => {
       );
     }
 
-    if (url.endsWith("/planning-sessions/plan-2/messages") && init?.method === "POST") {
+    if (url.endsWith("/planning-sessions/plan%2F2/messages") && init?.method === "POST") {
       assert.equal(init.body?.toString(), JSON.stringify({
         authorType: "agent",
         kind: "note",
@@ -773,7 +773,7 @@ test("SpecRailTerminalApiClient appends planning messages", async () => {
         JSON.stringify({
           message: {
             id: "msg-3",
-            planningSessionId: "plan-2",
+            planningSessionId: "plan/2",
             authorType: "agent",
             kind: "note",
             body: "No artifact focus yet.",
@@ -788,7 +788,7 @@ test("SpecRailTerminalApiClient appends planning messages", async () => {
   });
 
   const message = await client.appendPlanningMessage({
-    planningSessionId: "plan-1",
+    planningSessionId: "plan/1",
     authorType: "user",
     kind: "decision",
     body: "Proceed with the approved plan.",
@@ -796,7 +796,7 @@ test("SpecRailTerminalApiClient appends planning messages", async () => {
   });
 
   const note = await client.appendPlanningMessage({
-    planningSessionId: "plan-2",
+    planningSessionId: "plan/2",
     authorType: "agent",
     kind: "note",
     body: "No artifact focus yet.",
@@ -806,7 +806,8 @@ test("SpecRailTerminalApiClient appends planning messages", async () => {
   assert.equal(message.relatedArtifact, "plan");
   assert.equal(note.id, "msg-3");
   assert.equal(note.relatedArtifact, undefined);
-  assert.equal(requests[0]?.url, "http://example.test/planning-sessions/plan-1/messages");
+  assert.equal(requests[0]?.url, "http://example.test/planning-sessions/plan%2F1/messages");
+  assert.equal(requests[1]?.url, "http://example.test/planning-sessions/plan%2F2/messages");
   assert.equal(requests[1]?.body?.includes("relatedArtifact"), false);
 });
 
@@ -816,18 +817,18 @@ test("SpecRailTerminalApiClient updates planning session status", async () => {
     const url = String(input);
     requests.push({ url, method: init?.method, body: init?.body?.toString() });
 
-    if (url.endsWith("/planning-sessions/plan-1") && init?.method === "PATCH") {
+    if (url.endsWith("/planning-sessions/plan%2F1") && init?.method === "PATCH") {
       assert.equal(init.body?.toString(), JSON.stringify({ status: "waiting_agent" }));
-      return new Response(JSON.stringify({ planningSession: { id: "plan-1", trackId: "track-1", status: "waiting_agent" } }), { status: 200 });
+      return new Response(JSON.stringify({ planningSession: { id: "plan/1", trackId: "track-1", status: "waiting_agent" } }), { status: 200 });
     }
 
     throw new Error(`Unexpected request: ${url}`);
   });
 
-  const planningSession = await client.updatePlanningSession("plan-1", "waiting_agent");
+  const planningSession = await client.updatePlanningSession("plan/1", "waiting_agent");
 
   assert.equal(planningSession.status, "waiting_agent");
-  assert.equal(requests[0]?.url, "http://example.test/planning-sessions/plan-1");
+  assert.equal(requests[0]?.url, "http://example.test/planning-sessions/plan%2F1");
   assert.equal(requests[0]?.method, "PATCH");
 });
 
