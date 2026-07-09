@@ -151,7 +151,9 @@ export class FakeEventSource {
   }
 }
 
-export function createHostedUiClientHarness(input: { search?: string } = {}) {
+type HarnessApprovalRequests = Record<"spec" | "plan" | "tasks", Array<{ id: string; status: string }>>;
+
+export function createHostedUiClientHarness(input: { search?: string; trackIds?: string[]; planningSessionIds?: string[]; artifactApprovalRequests?: HarnessApprovalRequests } = {}) {
   const selectors = [
     "#project-scope",
     "#status",
@@ -180,11 +182,12 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
     { id: "project-1", name: "Project One", repoUrl: "https://example.com/one", localRepoPath: "/repo/one", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" },
     { id: "project-2", name: "Project Two", repoUrl: "https://example.com/two", localRepoPath: "/repo/two", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" },
   ];
-  const artifactApprovalRequests = {
+  const defaultArtifactApprovalRequests: HarnessApprovalRequests = {
     spec: [{ id: "approval-spec-1", status: "pending" }],
     plan: [{ id: "approval-plan-1", status: "pending" }],
     tasks: [],
   };
+  const artifactApprovalRequests = input.artifactApprovalRequests ?? defaultArtifactApprovalRequests;
   const tracks: Array<Record<string, unknown>> = [];
   const runs: Array<Record<string, unknown>> = [];
   const calls: HostedUiFetchCall[] = [];
@@ -236,7 +239,7 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
       return { ok: true, json: async () => ({ tracks: filteredTracks }) };
     }
     if (path === "/tracks" && method === "POST") {
-      const track = { id: `track-${trackCounter++}`, status: "new", ...(body as Record<string, unknown>) };
+      const track = { id: input.trackIds?.shift() ?? `track-${trackCounter++}`, status: "new", ...(body as Record<string, unknown>) };
       tracks.push(track);
       return { ok: true, json: async () => ({ track }) };
     }
@@ -251,7 +254,7 @@ export function createHostedUiClientHarness(input: { search?: string } = {}) {
       return { ok: true, json: async () => ({ track }) };
     }
     if (/^\/tracks\/[^/]+\/planning-sessions$/.test(path) && method === "POST") {
-      planningSessionId = "planning-1";
+      planningSessionId = input.planningSessionIds?.shift() ?? "planning-1";
       return { ok: true, json: async () => ({ planningSession: { id: planningSessionId, ...(body as Record<string, unknown>) } }) };
     }
     if (/^\/planning-sessions\/[^/]+\/messages$/.test(path) && method === "POST") {

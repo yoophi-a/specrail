@@ -361,6 +361,76 @@ test("operator UI client harness submits selected-track detail actions", async (
   });
 });
 
+test("operator UI client harness encodes opaque selected-track action paths", async () => {
+  const { calls, createTrack, detail, loadInitialState } = createHostedUiClientHarness({
+    trackIds: ["track/opaque"],
+    planningSessionIds: ["planning/session-1"],
+    artifactApprovalRequests: {
+      spec: [{ id: "approval/spec-1", status: "pending" }],
+      plan: [],
+      tasks: [],
+    },
+  });
+  await loadInitialState();
+
+  await createTrack({ title: "Opaque Selected Track", description: "Exercise opaque selected-track controls" });
+
+  detail.querySelector("#track-workflow-status").value = "review";
+  detail.querySelector("#track-workflow-spec-status").value = "approved";
+  detail.querySelector("#track-workflow-plan-status").value = "pending";
+  await detail.querySelector("[data-track-update]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "PATCH" && call.path === "/tracks/track%2Fopaque")?.body, {
+    status: "review",
+    specStatus: "approved",
+    planStatus: "pending",
+  });
+
+  detail.querySelector("#planning-session-status").value = "waiting_agent";
+  await detail.querySelector("[data-planning-session-create]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/tracks/track%2Fopaque/planning-sessions")?.body, {
+    status: "waiting_agent",
+  });
+
+  detail.querySelector("#planning-message-author").value = "agent";
+  detail.querySelector("#planning-message-kind").value = "decision";
+  detail.querySelector("#planning-message-artifact").value = "spec";
+  detail.querySelector("#planning-message-body").value = "Proceed with opaque planning context.";
+  await detail.querySelector("[data-planning-message-append]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/planning-sessions/planning%2Fsession-1/messages")?.body, {
+    authorType: "agent",
+    kind: "decision",
+    body: "Proceed with opaque planning context.",
+    relatedArtifact: "spec",
+  });
+
+  detail.querySelector("#artifact-proposal-kind").value = "spec";
+  detail.querySelector("#artifact-proposal-summary").value = "Spec update";
+  detail.querySelector("#artifact-proposal-content").value = "Updated spec content";
+  await detail.querySelector("[data-artifact-proposal]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/tracks/track%2Fopaque/artifacts/spec")?.body, {
+    content: "Updated spec content",
+    summary: "Spec update",
+    createdBy: "user",
+  });
+
+  const [approveButton] = detail.querySelectorAll("[data-approval-id]");
+  await approveButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/approval-requests/approval%2Fspec-1/approve")?.body, {
+    decidedBy: "user",
+    comment: "decided from hosted operator UI",
+  });
+});
+
 test("operator UI client harness renders unsafe folder-session report paths as text", async () => {
   const { createTrack, detail, loadInitialState, runs, setSessionPreviewReportPath } = createHostedUiClientHarness();
   await loadInitialState();
