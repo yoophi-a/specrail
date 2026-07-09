@@ -260,8 +260,13 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
     },
     {
       specRail: {
-        async findChannelBinding() {
+        async findChannelBinding(input) {
           calls.push("findChannelBinding");
+          assert.deepEqual(input, {
+            channelType: "telegram",
+            externalChatId: "55",
+            externalThreadId: "7",
+          });
           return null;
         },
         async createTrack(input) {
@@ -271,16 +276,36 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
         },
         async bindChannel(input) {
           calls.push(`bindChannel:${input.trackId}:${input.projectId}`);
-          assert.equal(input.externalThreadId, "7");
+          assert.deepEqual(input, {
+            projectId: "project-non-default",
+            channelType: "telegram",
+            externalChatId: "55",
+            externalThreadId: "7",
+            externalUserId: "99",
+            trackId: "track-1",
+            planningSessionId: undefined,
+          });
           return { binding: { id: "binding-1", trackId: "track-1" } };
         },
         async registerAttachment(input) {
           calls.push(`registerAttachment:${input.externalFileId}:${input.trackId}`);
+          assert.deepEqual(input, {
+            sourceType: "telegram",
+            externalFileId: "file-1",
+            fileName: "brief.md",
+            mimeType: "text/markdown",
+            trackId: "track-1",
+            planningSessionId: undefined,
+          });
           return { attachment: { id: "attachment-1" } };
         },
         async startRun(input) {
           calls.push(`startRun:${input.trackId}`);
-          assert.equal(input.prompt, "Build Telegram frontend\nNeed thin adapter app");
+          assert.deepEqual(input, {
+            trackId: "track-1",
+            prompt: "Build Telegram frontend\nNeed thin adapter app",
+            planningSessionId: undefined,
+          });
           return { run: { id: "run-1", status: "running" } };
         },
         async *streamRunEvents() {
