@@ -201,6 +201,7 @@ test("channel binding and attachment repositories persist thin-frontend referenc
     channelType: "telegram",
     externalChatId: "chat-1",
     externalThreadId: "thread-1",
+    externalUserId: "user-1",
     trackId: "track-1",
     planningSessionId: "planning-1",
     createdAt: "2026-04-10T10:00:00.000Z",
@@ -212,19 +213,28 @@ test("channel binding and attachment repositories persist thin-frontend referenc
     externalFileId: "file-1",
     fileName: "spec.pdf",
     mimeType: "application/pdf",
+    localPath: "/tmp/specrail/spec.pdf",
     trackId: "track-1",
     planningSessionId: "planning-1",
     uploadedAt: "2026-04-10T10:05:00.000Z",
   });
 
-  assert.equal(
-    (await channelBindingRepository.findByExternalRef({
-      channelType: "telegram",
-      externalChatId: "chat-1",
-      externalThreadId: "thread-1",
-    }))?.id,
-    "binding-1",
-  );
+  assert.deepEqual(await channelBindingRepository.findByExternalRef({
+    channelType: "telegram",
+    externalChatId: "chat-1",
+    externalThreadId: "thread-1",
+  }), {
+    id: "binding-1",
+    projectId: "project-1",
+    channelType: "telegram",
+    externalChatId: "chat-1",
+    externalThreadId: "thread-1",
+    externalUserId: "user-1",
+    trackId: "track-1",
+    planningSessionId: "planning-1",
+    createdAt: "2026-04-10T10:00:00.000Z",
+    updatedAt: "2026-04-10T10:00:00.000Z",
+  });
 
   await channelBindingRepository.create({
     id: "binding-github-1",
@@ -237,16 +247,32 @@ test("channel binding and attachment repositories persist thin-frontend referenc
     createdAt: "2026-04-10T10:10:00.000Z",
     updatedAt: "2026-04-10T10:10:00.000Z",
   });
-  assert.equal(
-    (await channelBindingRepository.findByExternalRef({
-      channelType: "github",
-      externalChatId: "yoophi-a/specrail",
-      externalThreadId: "123",
-    }))?.id,
-    "binding-github-1",
-  );
-  assert.deepEqual(
-    (await attachmentReferenceRepository.listByTarget({ planningSessionId: "planning-1" })).map((attachment) => attachment.id),
-    ["attachment-1"],
-  );
+  assert.deepEqual(await channelBindingRepository.findByExternalRef({
+    channelType: "github",
+    externalChatId: "yoophi-a/specrail",
+    externalThreadId: "123",
+  }), {
+    id: "binding-github-1",
+    projectId: "project-1",
+    channelType: "github",
+    externalChatId: "yoophi-a/specrail",
+    externalThreadId: "123",
+    externalUserId: "octocat",
+    trackId: "track-1",
+    createdAt: "2026-04-10T10:10:00.000Z",
+    updatedAt: "2026-04-10T10:10:00.000Z",
+  });
+  assert.deepEqual(await attachmentReferenceRepository.listByTarget({ planningSessionId: "planning-1" }), [
+    {
+      id: "attachment-1",
+      sourceType: "telegram",
+      externalFileId: "file-1",
+      fileName: "spec.pdf",
+      mimeType: "application/pdf",
+      localPath: "/tmp/specrail/spec.pdf",
+      trackId: "track-1",
+      planningSessionId: "planning-1",
+      uploadedAt: "2026-04-10T10:05:00.000Z",
+    },
+  ]);
 });
