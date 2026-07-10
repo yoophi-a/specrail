@@ -364,15 +364,20 @@ function signedWebhookInit(body: string, signature = buildGitHubSignature256(sec
 }
 
 test("GitHub webhook HTTP app accepts run commands and invokes orchestration", async () => {
-  const { port, calls } = createSpecRailPort();
+  const { port, calls } = createSpecRailPort({
+    async startRun(input) {
+      calls.push({ name: "startRun", input });
+      return { run: { id: "run/created", status: "running" } };
+    },
+  });
   await withGitHubWebhookServer(port, async (baseUrl) => {
     const body = JSON.stringify(payload("/specrail run from http"));
     const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
     assert.equal(response.status, 202);
     const responseBody = (await response.json()) as { accepted: boolean; outcome: { runId: string; reportUrl: string } };
     assert.equal(responseBody.accepted, true);
-    assert.equal(responseBody.outcome.runId, "run-created");
-    assert.equal(responseBody.outcome.reportUrl, "https://specrail.example.test/runs/run-created/report.md");
+    assert.equal(responseBody.outcome.runId, "run/created");
+    assert.equal(responseBody.outcome.reportUrl, "https://specrail.example.test/runs/run%2Fcreated/report.md");
     assert.deepEqual(calls.map((call) => call.name), ["findChannelBinding", "createTrack", "bindChannel", "startRun"]);
   });
 });
