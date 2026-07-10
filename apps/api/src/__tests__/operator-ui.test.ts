@@ -506,6 +506,42 @@ test("operator UI client harness surfaces folder-session preview failures", asyn
   assert.equal(previewButton.disabled, false);
 });
 
+test("operator UI client harness surfaces folder-session action failures", async () => {
+  const { calls, createTrack, detail, elements, failPath, loadInitialState, runs } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Folder Action Failure Track" });
+  runs.push({ id: "run/folder-failure", trackId: "track-1", status: "running", workspacePath: "/workspace/run-folder-failure/app", backend: "codex", continuityMode: "fresh" });
+
+  detail.querySelector("#folder-session-path").value = "/workspace/run-folder-failure";
+  await detail.querySelector("[data-folder-session-search]").click();
+  await flushClientPromises();
+
+  failPath("/runs/run%2Ffolder-failure/resume", "folder resume refused", "POST");
+  detail.querySelector("#run-start-prompt").value = "Resume folder failure.";
+  const resumeButton = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-resume]")[0]!;
+  await resumeButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Ffolder-failure/resume")?.body, {
+    prompt: "Resume folder failure.",
+  });
+  assert.equal(elements.get("#status")!.textContent, "folder resume refused");
+  assert.equal(resumeButton.disabled, false);
+
+  failPath("/runs/run%2Ffolder-failure/fork", "folder fork refused", "POST");
+  detail.querySelector("#run-start-prompt").value = "Fork folder failure.";
+  const forkButton = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-fork]")[0]!;
+  await forkButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Ffolder-failure/fork")?.body, {
+    prompt: "Fork folder failure.",
+  });
+  assert.equal(elements.get("#status")!.textContent, "folder fork refused");
+  assert.equal(forkButton.disabled, false);
+});
+
 test("operator UI client harness encodes opaque folder-session fork paths", async () => {
   const { calls, createTrack, detail, eventSources, loadInitialState, runs } = createHostedUiClientHarness();
   await loadInitialState();
