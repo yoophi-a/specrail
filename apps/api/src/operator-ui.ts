@@ -292,15 +292,17 @@ export function renderOperatorUiClientScript(): string {
           const runId = button.getAttribute('data-folder-run-preview');
           const panel = Array.from(results.querySelectorAll('[data-folder-run-preview-panel]')).find((node) => node.getAttribute('data-folder-run-preview-panel') === runId);
           if (!runId || !panel) return;
-          const previewPayload = await api('/runs/' + encodeURIComponent(runId) + '/session-preview?eventLimit=5');
-          const recentEvents = (previewPayload.events ?? []).map((event) => '- ' + event.timestamp + ' ' + event.summary).join('\\n') || 'none';
-          const reportPath = previewPayload.reportPath;
-          panel.hidden = false;
-          panel.innerHTML = '<p><strong>Session:</strong> ' + escapeHtml(previewPayload.session?.sessionRef) + '</p>'
-            + '<p><strong>Workspace:</strong> ' + escapeHtml(previewPayload.execution?.workspacePath) + '</p>'
-            + '<p><strong>Report:</strong> ' + renderReportPath(reportPath) + '</p>'
-            + '<p><strong>Capabilities:</strong> resume=' + escapeHtml(previewPayload.capabilities?.supportsResume) + ', providerFork=' + escapeHtml(previewPayload.capabilities?.supportsProviderFork) + ', contextCopyFork=' + escapeHtml(previewPayload.capabilities?.supportsContextCopyFork) + '</p>'
-            + '<p><strong>Recent events:</strong></p><pre>' + escapeHtml(recentEvents) + '</pre>';
+          await withAction(button, 'Loading session preview for ' + runId + '…', async () => {
+            const previewPayload = await api('/runs/' + encodeURIComponent(runId) + '/session-preview?eventLimit=5');
+            const recentEvents = (previewPayload.events ?? []).map((event) => '- ' + event.timestamp + ' ' + event.summary).join('\\n') || 'none';
+            const reportPath = previewPayload.reportPath;
+            panel.hidden = false;
+            panel.innerHTML = '<p><strong>Session:</strong> ' + escapeHtml(previewPayload.session?.sessionRef) + '</p>'
+              + '<p><strong>Workspace:</strong> ' + escapeHtml(previewPayload.execution?.workspacePath) + '</p>'
+              + '<p><strong>Report:</strong> ' + renderReportPath(reportPath) + '</p>'
+              + '<p><strong>Capabilities:</strong> resume=' + escapeHtml(previewPayload.capabilities?.supportsResume) + ', providerFork=' + escapeHtml(previewPayload.capabilities?.supportsProviderFork) + ', contextCopyFork=' + escapeHtml(previewPayload.capabilities?.supportsContextCopyFork) + '</p>'
+              + '<p><strong>Recent events:</strong></p><pre>' + escapeHtml(recentEvents) + '</pre>';
+          }, 'Loaded session preview for ' + runId + '.');
         });
       });
       results.querySelectorAll('[data-folder-run-resume]').forEach((button) => {

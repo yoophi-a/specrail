@@ -485,6 +485,27 @@ test("operator UI client harness encodes opaque folder-session preview and resum
   assert.equal(eventSources.at(-1)?.url, "/runs/run%2Ffolder/events/stream");
 });
 
+test("operator UI client harness surfaces folder-session preview failures", async () => {
+  const { calls, createTrack, detail, elements, failPath, loadInitialState, runs } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Folder Preview Failure Track" });
+  runs.push({ id: "run/preview-failure", trackId: "track-1", status: "running", workspacePath: "/workspace/run-preview-failure/app", backend: "codex", continuityMode: "fresh" });
+
+  detail.querySelector("#folder-session-path").value = "/workspace/run-preview-failure";
+  await detail.querySelector("[data-folder-session-search]").click();
+  await flushClientPromises();
+
+  failPath("/runs/run%2Fpreview-failure/session-preview?eventLimit=5", "session preview refused");
+  const previewButton = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview]")[0]!;
+  await previewButton.click();
+  await flushClientPromises();
+
+  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Fpreview-failure/session-preview?eventLimit=5"), true);
+  assert.equal(elements.get("#status")!.textContent, "session preview refused");
+  assert.equal(previewButton.disabled, false);
+});
+
 test("operator UI client harness encodes opaque folder-session fork paths", async () => {
   const { calls, createTrack, detail, eventSources, loadInitialState, runs } = createHostedUiClientHarness();
   await loadInitialState();
