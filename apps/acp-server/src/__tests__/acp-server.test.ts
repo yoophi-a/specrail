@@ -556,7 +556,7 @@ test("ACP server creates a project-scoped track when session/new omits trackId",
         cwd: "/tmp/specrail",
         _meta: {
           specrail: {
-            projectId: "project-non-default",
+            projectId: " project/non-default ",
             title: "Non-default ACP work",
             backend: "codex",
           },
@@ -583,14 +583,14 @@ test("ACP server creates a project-scoped track when session/new omits trackId",
   );
 
   assert.deepEqual(promptResponse?.result, { stopReason: "end_turn" });
-  assert.ok(JSON.stringify(notifications).includes('"projectId":"project-non-default"'));
+  assert.ok(JSON.stringify(notifications).includes('"projectId":"project/non-default"'));
   assert.ok(JSON.stringify(notifications).includes('"trackId":"track-2"'));
 
   const listResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 3, method: "session/list", params: { cwd: "/tmp/specrail" } },
     () => {},
   );
-  assert.ok(JSON.stringify(listResponse?.result).includes('"projectId":"project-non-default"'));
+  assert.ok(JSON.stringify(listResponse?.result).includes('"projectId":"project/non-default"'));
   assert.ok(JSON.stringify(listResponse?.result).includes('"trackId":"track-2"'));
 });
 
