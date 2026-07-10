@@ -75,14 +75,14 @@ test("loadTelegramAppConfig normalizes bot token environment values", () => {
 });
 
 test("loadTelegramAppConfig normalizes project id environment values", () => {
-  assert.equal(loadTelegramAppConfig({ SPECRAIL_PROJECT_ID: " shared-project " }).projectId, "shared-project");
+  assert.equal(loadTelegramAppConfig({ SPECRAIL_PROJECT_ID: " shared/project " }).projectId, "shared/project");
   assert.equal(
-    loadTelegramAppConfig({ SPECRAIL_TELEGRAM_PROJECT_ID: " telegram-project ", SPECRAIL_PROJECT_ID: "shared-project" }).projectId,
-    "telegram-project",
+    loadTelegramAppConfig({ SPECRAIL_TELEGRAM_PROJECT_ID: " telegram/project ", SPECRAIL_PROJECT_ID: "shared/project" }).projectId,
+    "telegram/project",
   );
   assert.equal(
-    loadTelegramAppConfig({ SPECRAIL_TELEGRAM_PROJECT_ID: " ", SPECRAIL_PROJECT_ID: " shared-project " }).projectId,
-    "shared-project",
+    loadTelegramAppConfig({ SPECRAIL_TELEGRAM_PROJECT_ID: " ", SPECRAIL_PROJECT_ID: " shared/project " }).projectId,
+    "shared/project",
   );
   assert.equal(loadTelegramAppConfig({ SPECRAIL_TELEGRAM_PROJECT_ID: "", SPECRAIL_PROJECT_ID: "" }).projectId, undefined);
 });
@@ -272,12 +272,12 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
         async createTrack(input) {
           calls.push(`createTrack:${input.title}:${input.projectId}`);
           assert.equal(input.description, "Build Telegram frontend\nNeed thin adapter app");
-          return { track: { id: "track-1", projectId: "project-non-default", title: input.title } };
+          return { track: { id: "track-1", projectId: "project/non-default", title: input.title } };
         },
         async bindChannel(input) {
           calls.push(`bindChannel:${input.trackId}:${input.projectId}`);
           assert.deepEqual(input, {
-            projectId: "project-non-default",
+            projectId: "project/non-default",
             channelType: "telegram",
             externalChatId: "55",
             externalThreadId: "7",
@@ -318,15 +318,15 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
           telegramMessages.push(`${input.messageThreadId}:${input.text}`);
         },
       },
-      projectId: "project-non-default",
+      projectId: "project/non-default",
       runReportBaseUrl: "http://127.0.0.1:4000/specrail",
     },
   );
 
   assert.deepEqual(calls, [
     "findChannelBinding",
-    "createTrack:Build Telegram frontend:project-non-default",
-    "bindChannel:track-1:project-non-default",
+    "createTrack:Build Telegram frontend:project/non-default",
+    "bindChannel:track-1:project/non-default",
     "registerAttachment:file-1:track-1",
     "startRun:track-1",
   ]);
