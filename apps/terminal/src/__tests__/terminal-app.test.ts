@@ -1012,12 +1012,12 @@ test("terminal preferences load and save local UI defaults", async () => {
   try {
     assert.deepEqual(await loadTerminalPreferences(path), {});
 
-    await saveTerminalPreferences(path, { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
-    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
-    assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project-1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
+    await saveTerminalPreferences(path, { selectedProjectId: "project/1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { selectedProjectId: "project/1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
+    assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project/1", runFilter: "terminal", liveTailPaused: true, showRunEventDetail: true, refreshIntervalMs: 15000 });
 
-    await writeFile(path, JSON.stringify({ selectedProjectId: " project-2 ", runFilter: " ALL ", refreshIntervalMs: 999.4 }), "utf8");
-    assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project-2", runFilter: "all", refreshIntervalMs: 999 });
+    await writeFile(path, JSON.stringify({ selectedProjectId: " project/2 ", runFilter: " ALL ", refreshIntervalMs: 999.4 }), "utf8");
+    assert.deepEqual(await loadTerminalPreferences(path), { selectedProjectId: "project/2", runFilter: "all", refreshIntervalMs: 999 });
 
     await writeFile(path, "{not json", "utf8");
     assert.deepEqual(await loadTerminalPreferences(path), {});
@@ -1032,13 +1032,13 @@ test("bootstrapTerminalState initializes detail selections for tracks and runs",
       apiBaseUrl: "http://127.0.0.1:4000",
       refreshIntervalMs: 5000,
       initialScreen: "home",
-      initialProjectId: "project-1",
+      initialProjectId: "project/1",
       initialRunFilter: "active",
       preferencePath: null,
     },
     {
       async loadSummary(projectId) {
-        assert.equal(projectId, "project-1");
+        assert.equal(projectId, "project/1");
         return {
           tracks: [{ id: "track-1", title: "Terminal shell", status: "ready", priority: "high" }],
           runs: [{ id: "run-1", trackId: "track-1", status: "running", backend: "codex" }],
@@ -1062,7 +1062,7 @@ test("bootstrapTerminalState initializes detail selections for tracks and runs",
 
   assert.equal(state.screen, "home");
   assert.match(state.statusLine, /Loaded 1 tracks and 1 runs/);
-  assert.equal(state.selectedProjectId, "project-1");
+  assert.equal(state.selectedProjectId, "project/1");
   assert.equal(state.tracks.selectedId, "track-1");
   assert.equal(state.runs.selectedId, "run-1");
   assert.equal(state.runFilter, "active");
