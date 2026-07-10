@@ -306,7 +306,7 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
             prompt: "Build Telegram frontend\nNeed thin adapter app",
             planningSessionId: undefined,
           });
-          return { run: { id: "run-1", status: "running" } };
+          return { run: { id: "run/created", status: "running" } };
         },
         async *streamRunEvents() {
           yield { type: "task_status_changed", summary: "Run started" };
@@ -319,6 +319,7 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
         },
       },
       projectId: "project-non-default",
+      runReportBaseUrl: "http://127.0.0.1:4000/specrail",
     },
   );
 
@@ -331,9 +332,9 @@ test("handleTelegramUpdate creates a track, binds the chat, registers attachment
   ]);
   assert.deepEqual(telegramMessages, [
     "7:Created SpecRail track track-1 and starting a run.",
-    "7:Run run-1 is running.",
-    "7:[run-1] Run started",
-    "7:[run-1] Run completed",
+    "7:Run run/created is running.",
+    "7:[run/created] Run started",
+    "7:[run/created] Run completed\nReport: http://127.0.0.1:4000/specrail/runs/run%2Fcreated/report.md",
   ]);
 });
 
