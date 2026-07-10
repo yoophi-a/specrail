@@ -247,6 +247,7 @@ test("operator UI client harness blocks invalid form submissions", async () => {
 test("operator UI client harness surfaces failed mutating actions", async () => {
   const { createTrack, detail, elements, failPath, loadInitialState, selectProject } = createHostedUiClientHarness({
     projectIds: ["project/1", "project/2"],
+    trackIds: ["track/1"],
   });
   await loadInitialState();
 
@@ -261,7 +262,7 @@ test("operator UI client harness surfaces failed mutating actions", async () => 
 
   await createTrack({ title: "Action Failure Track" });
   detail.querySelector("#track-workflow-status").value = "review";
-  failPath("/tracks/track-1", "track update refused", "PATCH");
+  failPath("/tracks/track%2F1", "track update refused", "PATCH");
   const trackUpdateButton = detail.querySelector("[data-track-update]");
   await trackUpdateButton.click();
   await flushClientPromises();
