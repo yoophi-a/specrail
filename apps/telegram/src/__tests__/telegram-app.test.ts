@@ -484,7 +484,7 @@ test("handleTelegramUpdate reuses an existing bound track", async () => {
             externalChatId: "88",
             externalThreadId: undefined,
           });
-          return { id: "binding-1", trackId: "track-9", planningSessionId: "plan-2" };
+          return { id: "binding-1", trackId: "track/9", planningSessionId: "plan/2" };
         },
         async createTrack() {
           throw new Error("should not create a new track");
@@ -499,17 +499,17 @@ test("handleTelegramUpdate reuses an existing bound track", async () => {
             externalFileId: "follow-up-file",
             fileName: "follow-up.md",
             mimeType: "text/markdown",
-            trackId: "track-9",
-            planningSessionId: "plan-2",
+            trackId: "track/9",
+            planningSessionId: "plan/2",
           });
           return { attachment: { id: "attachment-1" } };
         },
         async startRun(input) {
           calls.push(`startRun:${input.trackId}:${input.planningSessionId}`);
           assert.deepEqual(input, {
-            trackId: "track-9",
+            trackId: "track/9",
             prompt: "Follow-up change",
-            planningSessionId: "plan-2",
+            planningSessionId: "plan/2",
           });
           return { run: { id: "run-2", status: "running" } };
         },
@@ -526,9 +526,9 @@ test("handleTelegramUpdate reuses an existing bound track", async () => {
   );
 
   assert.deepEqual(calls, [
-    "sendMessage:Using existing SpecRail track track-9. Starting a new run.",
-    "registerAttachment:follow-up-file:track-9:plan-2",
-    "startRun:track-9:plan-2",
+    "sendMessage:Using existing SpecRail track track/9. Starting a new run.",
+    "registerAttachment:follow-up-file:track/9:plan/2",
+    "startRun:track/9:plan/2",
     "sendMessage:Run run-2 is running.",
     "sendMessage:[run-2] Run completed",
   ]);
