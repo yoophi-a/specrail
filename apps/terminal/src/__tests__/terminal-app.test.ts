@@ -78,8 +78,8 @@ test("SpecRailTerminalApiClient loads a summary snapshot", async () => {
 test("resolveTrackDefaultWorkspacePath prefers the selected project's local repo path", () => {
   assert.equal(
     resolveTrackDefaultWorkspacePath({
-      track: { projectId: "project-1" },
-      projects: [{ id: "project-1", name: "SpecRail", localRepoPath: "/workspace/specrail" }],
+      track: { projectId: "project/1" },
+      projects: [{ id: "project/1", name: "SpecRail", localRepoPath: "/workspace/specrail" }],
       fallbackPath: "/tmp/current-shell",
     }),
     "/workspace/specrail",
@@ -87,8 +87,8 @@ test("resolveTrackDefaultWorkspacePath prefers the selected project's local repo
 
   assert.equal(
     resolveTrackDefaultWorkspacePath({
-      track: { projectId: "project-2" },
-      projects: [{ id: "project-1", name: "SpecRail", localRepoPath: "/workspace/specrail" }],
+      track: { projectId: "project/2" },
+      projects: [{ id: "project/1", name: "SpecRail", localRepoPath: "/workspace/specrail" }],
       fallbackPath: "/tmp/current-shell",
     }),
     "/tmp/current-shell",
