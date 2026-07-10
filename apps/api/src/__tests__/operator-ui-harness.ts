@@ -225,7 +225,7 @@ export function createHostedUiClientHarness(input: { search?: string; projectIds
       return { ok: true, json: async () => ({ projects }) };
     }
     if (path === "/projects" && method === "POST") {
-      const project = { id: `project-${projectCounter++}`, ...(body as Record<string, unknown>) };
+      const project = { id: `project/${projectCounter++}`, ...(body as Record<string, unknown>) };
       projects.push(project as typeof projects[number]);
       return { ok: true, json: async () => ({ project }) };
     }

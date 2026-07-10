@@ -121,7 +121,7 @@ test("operator UI client harness submits top-level project and track actions", a
   await elements.get("#project-update")!.click();
   await flushClientPromises();
 
-  assert.deepEqual(calls.find((call) => call.method === "PATCH" && call.path === "/projects/project-3")?.body, {
+  assert.deepEqual(calls.find((call) => call.method === "PATCH" && call.path === "/projects/project%2F3")?.body, {
     name: "Project Two Updated",
     repoUrl: null,
     localRepoPath: "/repo/two-updated",
