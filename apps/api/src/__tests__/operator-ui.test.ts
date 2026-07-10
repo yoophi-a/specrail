@@ -621,6 +621,48 @@ test("operator UI client harness encodes opaque selected-run action paths", asyn
   assert.equal(eventSources.at(-1)?.url, "/runs/run-1/events/stream");
 });
 
+test("operator UI client harness surfaces selected-run lifecycle failures", async () => {
+  const { calls, detail, elements, failPath, loadInitialState } = createHostedUiClientHarness({
+    search: "?runId=run%2Ffailure",
+  });
+  await loadInitialState();
+  await flushClientPromises();
+
+  failPath("/runs/run%2Ffailure/resume", "resume refused", "POST");
+  detail.querySelector("#run-resume-prompt").value = "Resume failure path.";
+  const resumeButton = detail.querySelector("[data-run-resume]");
+  await resumeButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Ffailure/resume")?.body, {
+    prompt: "Resume failure path.",
+  });
+  assert.equal(elements.get("#status")!.textContent, "resume refused");
+  assert.equal(resumeButton.disabled, false);
+
+  failPath("/runs/run%2Ffailure/fork", "fork refused", "POST");
+  detail.querySelector("#run-fork-prompt").value = "Fork failure path.";
+  const forkButton = detail.querySelector("[data-run-fork]");
+  await forkButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Ffailure/fork")?.body, {
+    prompt: "Fork failure path.",
+  });
+  assert.equal(elements.get("#status")!.textContent, "fork refused");
+  assert.equal(forkButton.disabled, false);
+
+  failPath("/runs/run%2Ffailure/cancel", "cancel refused", "POST");
+  detail.querySelector("#run-cancel-confirmation").value = "cancel";
+  const cancelButton = detail.querySelector("[data-run-cancel]");
+  await cancelButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Ffailure/cancel")?.body, {});
+  assert.equal(elements.get("#status")!.textContent, "cancel refused");
+  assert.equal(cancelButton.disabled, false);
+});
+
 test("operator UI client harness blocks invalid run lifecycle submissions", async () => {
   const { calls, createTrack, detail, elements, loadInitialState, startRun } = createHostedUiClientHarness();
   await loadInitialState();
