@@ -142,25 +142,27 @@ test("operator UI client harness submits top-level project and track actions", a
 });
 
 test("operator UI client harness filters tracks by project scope", async () => {
-  const { calls, createTrack, elements, loadInitialState, selectProject } = createHostedUiClientHarness();
+  const { calls, createTrack, elements, loadInitialState, selectProject } = createHostedUiClientHarness({
+    projectIds: ["project/1", "project/2"],
+  });
   await loadInitialState();
 
-  await selectProject("project-1");
+  await selectProject("project/1");
   await createTrack({ title: "Project One Track" });
 
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/tracks")?.body, {
-    projectId: "project-1",
+    projectId: "project/1",
     title: "Project One Track",
     description: "",
     priority: "medium",
   });
 
-  await selectProject("project-2");
+  await selectProject("project/2");
   await createTrack({ title: "Project Two Track" });
 
   const scopedTrackLoads = calls.filter((call) => call.method === "GET" && call.path.startsWith("/tracks?page=1&pageSize=20"));
-  assert.ok(scopedTrackLoads.some((call) => call.path === "/tracks?page=1&pageSize=20&projectId=project-1"));
-  assert.ok(scopedTrackLoads.some((call) => call.path === "/tracks?page=1&pageSize=20&projectId=project-2"));
+  assert.ok(scopedTrackLoads.some((call) => call.path === "/tracks?page=1&pageSize=20&projectId=project%2F1"));
+  assert.ok(scopedTrackLoads.some((call) => call.path === "/tracks?page=1&pageSize=20&projectId=project%2F2"));
   assert.equal(elements.get("#tracks")?.children.length, 1);
 
   await selectProject("");

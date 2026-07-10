@@ -153,7 +153,7 @@ export class FakeEventSource {
 
 type HarnessApprovalRequests = Record<"spec" | "plan" | "tasks", Array<{ id: string; status: string }>>;
 
-export function createHostedUiClientHarness(input: { search?: string; trackIds?: string[]; planningSessionIds?: string[]; artifactApprovalRequests?: HarnessApprovalRequests } = {}) {
+export function createHostedUiClientHarness(input: { search?: string; projectIds?: string[]; trackIds?: string[]; planningSessionIds?: string[]; artifactApprovalRequests?: HarnessApprovalRequests } = {}) {
   const selectors = [
     "#project-scope",
     "#status",
@@ -178,9 +178,10 @@ export function createHostedUiClientHarness(input: { search?: string; trackIds?:
   const trackPriority = elements.get("#track-priority")!;
   trackPriority.value = "medium";
 
+  const projectIds = input.projectIds ?? ["project-1", "project-2"];
   const projects = [
-    { id: "project-1", name: "Project One", repoUrl: "https://example.com/one", localRepoPath: "/repo/one", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" },
-    { id: "project-2", name: "Project Two", repoUrl: "https://example.com/two", localRepoPath: "/repo/two", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" },
+    { id: projectIds[0] ?? "project-1", name: "Project One", repoUrl: "https://example.com/one", localRepoPath: "/repo/one", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" },
+    { id: projectIds[1] ?? "project-2", name: "Project Two", repoUrl: "https://example.com/two", localRepoPath: "/repo/two", defaultWorkflowPolicy: "standard", defaultPlanningSystem: "native" },
   ];
   const defaultArtifactApprovalRequests: HarnessApprovalRequests = {
     spec: [{ id: "approval-spec-1", status: "pending" }],
