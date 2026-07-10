@@ -436,6 +436,28 @@ test("operator UI client harness encodes opaque selected-track action paths", as
   });
 });
 
+test("operator UI client harness surfaces selected-track run start failures", async () => {
+  const { calls, createTrack, detail, elements, failPath, loadInitialState } = createHostedUiClientHarness({
+    trackIds: ["track/run-start"],
+  });
+  await loadInitialState();
+
+  await createTrack({ title: "Run Start Failure Track" });
+
+  failPath("/runs", "run start refused", "POST");
+  detail.querySelector("#run-start-prompt").value = "Start opaque track.";
+  const runStartButton = detail.querySelector("[data-run-start]");
+  await runStartButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs")?.body, {
+    trackId: "track/run-start",
+    prompt: "Start opaque track.",
+  });
+  assert.equal(elements.get("#status")!.textContent, "run start refused");
+  assert.equal(runStartButton.disabled, false);
+});
+
 test("operator UI client harness renders unsafe folder-session report paths as text", async () => {
   const { createTrack, detail, loadInitialState, runs, setSessionPreviewReportPath } = createHostedUiClientHarness();
   await loadInitialState();
