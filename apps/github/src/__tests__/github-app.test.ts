@@ -910,9 +910,9 @@ test("GitHub webhook HTTP app surfaces terminal relay enqueue failures", async (
 test("loadGitHubAppConfig parses repository project mappings and actor allowlists", () => {
   const config = loadGitHubAppConfig({
     SPECRAIL_API_BASE_URL: " https://specrail.example.test ",
-    SPECRAIL_GITHUB_PROJECT_ID: "project-default",
+    SPECRAIL_GITHUB_PROJECT_ID: "project/default",
     GITHUB_WEBHOOK_SECRET: "secret",
-    SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "Yoophi-A/SpecRail=project-specrail, other/repo = project-other",
+    SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "Yoophi-A/SpecRail=project/specrail, other/repo = project/other",
     GITHUB_ALLOWED_ACTORS: "OctoCat,@Hubot",
     GITHUB_ALLOWED_ORGS: " Yoophi-A ",
     GITHUB_ALLOWED_TEAMS: " Other/Maintainers ",
@@ -921,7 +921,7 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
     GITHUB_RELAY_QUEUE_DIR: "/var/lib/specrail/github-relay-queue",
   });
 
-  assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project-specrail", "other/repo": "project-other" });
+  assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project/specrail", "other/repo": "project/other" });
   assert.deepEqual(config.allowedActors, ["octocat", "hubot"]);
   assert.deepEqual(config.allowedOrganizations, ["yoophi-a"]);
   assert.deepEqual(config.allowedTeams, ["other/maintainers"]);
@@ -929,8 +929,8 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
   assert.equal(config.operatorBaseUrl, "https://operator.example.test");
   assert.equal(config.githubApiBaseUrl, "https://github.example.test/api/v3");
   assert.equal(config.githubRelayQueueDir, "/var/lib/specrail/github-relay-queue");
-  assert.equal(resolveGitHubProjectId(config, "yoophi-a/specrail"), "project-specrail");
-  assert.equal(resolveGitHubProjectId(config, "YOOPHI-A/SPECRAIL"), "project-specrail");
+  assert.equal(resolveGitHubProjectId(config, "yoophi-a/specrail"), "project/specrail");
+  assert.equal(resolveGitHubProjectId(config, "YOOPHI-A/SPECRAIL"), "project/specrail");
   assert.equal(resolveGitHubProjectId(config, "missing/repo"), undefined);
   assert.equal(isGitHubActorAuthorized(config, "octocat"), true);
   assert.equal(isGitHubActorAuthorized(config, "hubot"), true);
@@ -995,12 +995,12 @@ test("loadGitHubAppConfig falls back for blank URL environment values", () => {
 
 test("loadGitHubAppConfig normalizes project id environment values", () => {
   assert.equal(loadGitHubAppConfig({}).projectId, "project-default");
-  assert.equal(loadGitHubAppConfig({ SPECRAIL_PROJECT_ID: " shared-project " }).projectId, "shared-project");
+  assert.equal(loadGitHubAppConfig({ SPECRAIL_PROJECT_ID: " shared/project " }).projectId, "shared/project");
   assert.equal(
-    loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: " github-project ", SPECRAIL_PROJECT_ID: "shared-project" }).projectId,
-    "github-project",
+    loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: " github/project ", SPECRAIL_PROJECT_ID: "shared/project" }).projectId,
+    "github/project",
   );
-  assert.equal(loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: " ", SPECRAIL_PROJECT_ID: " shared-project " }).projectId, "shared-project");
+  assert.equal(loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: " ", SPECRAIL_PROJECT_ID: " shared/project " }).projectId, "shared/project");
   assert.equal(loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: "", SPECRAIL_PROJECT_ID: "" }).projectId, "project-default");
 });
 
