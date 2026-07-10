@@ -245,12 +245,14 @@ test("operator UI client harness blocks invalid form submissions", async () => {
 });
 
 test("operator UI client harness surfaces failed mutating actions", async () => {
-  const { createTrack, detail, elements, failPath, loadInitialState, selectProject } = createHostedUiClientHarness();
+  const { createTrack, detail, elements, failPath, loadInitialState, selectProject } = createHostedUiClientHarness({
+    projectIds: ["project/1", "project/2"],
+  });
   await loadInitialState();
 
-  await selectProject("project-1");
+  await selectProject("project/1");
   elements.get("#project-name")!.value = "Project One Update";
-  failPath("/projects/project-1", "project update refused", "PATCH");
+  failPath("/projects/project%2F1", "project update refused", "PATCH");
   await elements.get("#project-update")!.click();
   await flushClientPromises();
 
