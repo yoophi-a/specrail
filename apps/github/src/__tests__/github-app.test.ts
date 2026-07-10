@@ -188,7 +188,7 @@ test("executeGitHubRunCommand creates a track and binding when none exists", asy
   const { port, calls } = createSpecRailPort();
 
   const outcome = await executeGitHubRunCommand({
-    projectId: "project-default",
+    projectId: "project/default",
     context: acceptedContext({ command: { kind: "run" }, isPullRequest: true }),
     specRail: port,
   });
@@ -199,13 +199,13 @@ test("executeGitHubRunCommand creates a track and binding when none exists", asy
   assert.equal(outcome.runId, "run-created");
   assert.deepEqual(calls.map((call) => call.name), ["findChannelBinding", "createTrack", "bindChannel", "startRun"]);
   assert.deepEqual(calls[1]?.input, {
-    projectId: "project-default",
+    projectId: "project/default",
     title: "GitHub PR #123: Implement GitHub entrypoint",
     description: "Created from GitHub pull request yoophi-a/specrail#123 by @octocat.",
     priority: "medium",
   });
   assert.deepEqual(calls[2]?.input, {
-    projectId: "project-default",
+    projectId: "project/default",
     channelType: "github",
     externalChatId: "yoophi-a/specrail",
     externalThreadId: "123",
