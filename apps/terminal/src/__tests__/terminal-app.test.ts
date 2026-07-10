@@ -48,11 +48,11 @@ test("SpecRailTerminalApiClient loads a summary snapshot", async () => {
     requests.push(url);
 
     if (url === "http://example.test/specrail/projects") {
-      return new Response(JSON.stringify({ projects: [{ id: "project-1", name: "SpecRail" }] }), { status: 200 });
+      return new Response(JSON.stringify({ projects: [{ id: "project/1", name: "SpecRail" }] }), { status: 200 });
     }
 
-    if (url === "http://example.test/specrail/tracks?page=1&pageSize=20&projectId=project-1") {
-      return new Response(JSON.stringify({ tracks: [{ id: "track-1", projectId: "project-1", title: "Terminal shell", status: "ready" }] }), { status: 200 });
+    if (url === "http://example.test/specrail/tracks?page=1&pageSize=20&projectId=project%2F1") {
+      return new Response(JSON.stringify({ tracks: [{ id: "track-1", projectId: "project/1", title: "Terminal shell", status: "ready" }] }), { status: 200 });
     }
 
     if (url === "http://example.test/specrail/runs?page=1&pageSize=20") {
@@ -64,13 +64,13 @@ test("SpecRailTerminalApiClient loads a summary snapshot", async () => {
     throw new Error(`Unexpected request: ${url}`);
   });
 
-  const summary = await client.loadSummary("project-1");
-  assert.equal(summary.projects?.[0]?.id, "project-1");
+  const summary = await client.loadSummary("project/1");
+  assert.equal(summary.projects?.[0]?.id, "project/1");
   assert.equal(summary.tracks[0]?.id, "track-1");
   assert.equal(summary.runs[0]?.id, "run-1");
   assert.deepEqual(requests, [
     "http://example.test/specrail/projects",
-    "http://example.test/specrail/tracks?page=1&pageSize=20&projectId=project-1",
+    "http://example.test/specrail/tracks?page=1&pageSize=20&projectId=project%2F1",
     "http://example.test/specrail/runs?page=1&pageSize=20",
   ]);
 });
