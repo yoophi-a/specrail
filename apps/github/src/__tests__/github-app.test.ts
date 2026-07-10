@@ -1609,11 +1609,16 @@ test("processGitHubRelayQueue retries when no terminal outcome is posted", async
 });
 
 test("GitHub webhook HTTP app enqueues durable terminal relay jobs", async () => {
-  const { port } = createSpecRailPort();
+  const { port } = createSpecRailPort({
+    async startRun() {
+      return { run: { id: "run/created", status: "running" } };
+    },
+  });
   const queue = new JsonFileGitHubRelayJobQueue(path.join(await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-")), "queue.json"));
   const server = createGitHubWebhookHttpServer({
     config: {
       apiBaseUrl: "https://specrail.example.test",
+      operatorBaseUrl: "https://operator.example.test/specrail",
       port: 0,
       webhookPath: "/github/webhook",
       webhookSecret: secret,
@@ -1642,7 +1647,10 @@ test("GitHub webhook HTTP app enqueues durable terminal relay jobs", async () =>
     const response = await fetch(`http://127.0.0.1:${address.port}/github/webhook`, signedWebhookInit(body));
     assert.equal(response.status, 202);
     assert.deepEqual(((await response.json()) as { relay: { scheduled: boolean } }).relay, { scheduled: true });
-    assert.equal((await queue.list())[0]?.runId, "run-created");
+    const [job] = await queue.list();
+    assert.equal(job?.runId, "run/created");
+    assert.equal(job?.reportUrl, "https://specrail.example.test/runs/run%2Fcreated/report.md");
+    assert.equal(job?.operatorUrl, "https://operator.example.test/specrail/operator?runId=run%2Fcreated");
   } finally {
     server.close();
     await once(server, "close");
