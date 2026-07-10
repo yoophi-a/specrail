@@ -610,6 +610,15 @@ test("operator UI client harness encodes opaque selected-run action paths", asyn
   assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Fopaque/workspace-cleanup/apply" && (call.body as { confirm?: string }).confirm === "APPLY CLEANUP run/opaque")?.body, {
     confirm: "APPLY CLEANUP run/opaque",
   });
+
+  detail.querySelector("#run-fork-prompt").value = "Fork opaque run.";
+  await detail.querySelector("[data-run-fork]").click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run%2Fopaque/fork")?.body, {
+    prompt: "Fork opaque run.",
+  });
+  assert.equal(eventSources.at(-1)?.url, "/runs/run-1/events/stream");
 });
 
 test("operator UI client harness blocks invalid run lifecycle submissions", async () => {
