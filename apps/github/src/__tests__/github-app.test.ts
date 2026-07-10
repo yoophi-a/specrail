@@ -1137,10 +1137,10 @@ test("GitHub webhook HTTP app uses mapped repository project ids", async () => {
     const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
     assert.equal(response.status, 202);
     assert.equal(((await response.json()) as { accepted: boolean }).accepted, true);
-  }, { repositoryProjects: { "yoophi-a/specrail": "project-mapped" } });
+  }, { repositoryProjects: { "yoophi-a/specrail": "project/mapped" } });
 
   assert.deepEqual(calls[1]?.input, {
-    projectId: "project-mapped",
+    projectId: "project/mapped",
     title: "GitHub issue #123: Implement GitHub entrypoint",
     description: "Created from GitHub issue yoophi-a/specrail#123 by @octocat.",
     priority: "medium",
