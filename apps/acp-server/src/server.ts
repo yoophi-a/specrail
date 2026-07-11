@@ -396,7 +396,13 @@ export class SpecRailAcpServer {
       pending.cancelled = true;
     }
     if (session.runId) {
-      await this.options.service.cancelRun({ runId: session.runId });
+      const execution = await this.options.service.cancelRun({ runId: session.runId });
+      await this.writeSession({
+        ...session,
+        status: execution.status,
+        pendingPermissionRequest: undefined,
+        updatedAt: this.now(),
+      });
     }
   }
 

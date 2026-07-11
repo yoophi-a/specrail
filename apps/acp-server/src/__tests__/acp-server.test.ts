@@ -994,3 +994,66 @@ test("ACP server rejects permission resolutions before starting unlinked runs", 
   assert.match(response?.error?.message ?? "", /permissionResolution provided but there is no linked run/);
   assert.equal(startRunCalls, 0);
 });
+
+test("ACP server clears pending permission state on cancel", async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
+  const server = new SpecRailAcpServer({
+    service: createFakeService() as unknown as SpecRailService,
+    stateDir,
+    now: () => "2026-04-13T12:00:00.000Z",
+    pollIntervalMs: 1,
+  });
+
+  const newResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: {
+        cwd: "/tmp/specrail",
+        _meta: {
+          specrail: {
+            trackId: "track-1",
+            backend: "claude_code",
+            profile: "sonnet",
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  const sessionId = (newResponse?.result as { sessionId: string }).sessionId;
+  await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Run with approval gate" }],
+      },
+    },
+    () => {},
+  );
+
+  const cancelResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 3, method: "session/cancel", params: { sessionId } },
+    () => {},
+  );
+  assert.equal(cancelResponse?.error, undefined);
+
+  const loadNotifications: Array<Record<string, unknown>> = [];
+  const loadResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 4, method: "session/load", params: { sessionId, cwd: "/tmp/specrail" } },
+    (payload) => {
+      loadNotifications.push(payload as Record<string, unknown>);
+    },
+  );
+
+  assert.equal(loadResponse?.error, undefined);
+  const sessionInfoUpdate = loadNotifications.find((payload) => JSON.stringify(payload).includes("session_info_update"));
+  const serializedSessionInfo = JSON.stringify(sessionInfoUpdate);
+  assert.ok(serializedSessionInfo.includes('"status":"cancelled"'));
+  assert.ok(!serializedSessionInfo.includes("pendingPermissionRequest"));
+});
