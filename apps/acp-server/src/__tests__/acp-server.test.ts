@@ -555,6 +555,52 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   assert.equal(absolutePathResponse?.error?.data && (absolutePathResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
 });
 
+test("ACP server marks workspace cleanup blocked while the linked run is active", async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-workspace-"));
+  const server = new SpecRailAcpServer({
+    service: createFakeService({ workspaceRoot }) as unknown as SpecRailService,
+    stateDir,
+    now: () => "2026-04-13T12:00:00.000Z",
+    pollIntervalMs: 1,
+  });
+
+  const newResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: { cwd: "/tmp/specrail", _meta: { specrail: { trackId: "track-1" } } },
+    },
+    () => {},
+  );
+  const sessionId = (newResponse?.result as { sessionId: string }).sessionId;
+  await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/prompt",
+      params: { sessionId, prompt: [{ type: "text", text: "Start workspace read test with approval" }] },
+    },
+    () => {},
+  );
+
+  const runWorkspace = path.join(workspaceRoot, "run-1");
+  await mkdir(runWorkspace, { recursive: true });
+  await writeFile(path.join(runWorkspace, "status.txt"), "waiting\n");
+
+  const fileResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 3, method: "specrail/workspace/read", params: { sessionId, path: "status.txt" } },
+    () => {},
+  );
+
+  assert.equal(fileResponse?.error, undefined);
+  const capability = (fileResponse?.result as {
+    _meta: { specrail: { workspaceCapability: { cleanupBlocked: boolean } } };
+  })._meta.specrail.workspaceCapability;
+  assert.equal(capability.cleanupBlocked, true);
+});
+
 test("ACP server creates a project-scoped track when session/new omits trackId", async () => {
   const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
   const server = new SpecRailAcpServer({
