@@ -475,6 +475,11 @@ export function renderOperatorUiClientScript(): string {
       detail.querySelector('[data-folder-session-search]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
         const workspacePath = detail.querySelector('#folder-session-path')?.value.trim();
+        if (!workspacePath) {
+          await loadFolderSessions(track, workspacePath);
+          status.textContent = 'Folder path is required before previewing sessions for ' + track.id + '.';
+          return;
+        }
         await withAction(button, 'Loading folder sessions…', async () => {
           await loadFolderSessions(track, workspacePath);
         }, 'Loaded folder session preview.');

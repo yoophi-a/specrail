@@ -615,6 +615,21 @@ test("operator UI client harness renders unsafe folder-session report paths as t
   assert.match(previewPanel?.innerHTML ?? "", /javascript:alert\(1\)/);
 });
 
+test("operator UI client harness blocks blank folder-session searches", async () => {
+  const { calls, createTrack, detail, elements, loadInitialState } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Folder Search Validation Track" });
+  detail.querySelector("#folder-session-path").value = "   ";
+  const callsBeforeSearch = calls.length;
+  await detail.querySelector("[data-folder-session-search]").click();
+  await flushClientPromises();
+
+  assert.equal(calls.length, callsBeforeSearch);
+  assert.equal(elements.get("#status")!.textContent, "Folder path is required before previewing sessions for track-1.");
+  assert.match(detail.querySelector("#folder-session-results").innerHTML, /Select or enter a folder path before looking up related sessions\./);
+});
+
 test("operator UI client harness encodes opaque folder-session preview and resume paths", async () => {
   const { calls, createTrack, detail, eventSources, loadInitialState, runs } = createHostedUiClientHarness();
   await loadInitialState();
