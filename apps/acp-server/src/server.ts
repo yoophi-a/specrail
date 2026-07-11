@@ -259,6 +259,8 @@ export class SpecRailAcpServer {
             backend: session.backend,
             profile: session.profile,
             runId: session.runId,
+            status: session.status,
+            pendingPermissionRequest: session.pendingPermissionRequest,
           },
         },
       })),

@@ -391,7 +391,18 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   const listPayload = listResponse?.result as {
     sessions: Array<{
       sessionId: string;
-      _meta: { specrail: { projectId?: string; trackId?: string; planningSessionId?: string; backend?: string; profile?: string; runId: string } };
+      _meta: {
+        specrail: {
+          projectId?: string;
+          trackId?: string;
+          planningSessionId?: string;
+          backend?: string;
+          profile?: string;
+          runId: string;
+          status?: string;
+          pendingPermissionRequest?: unknown;
+        };
+      };
     }>;
   };
   assert.equal(listPayload.sessions[0]?.sessionId, sessionId);
@@ -401,6 +412,8 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   assert.equal(listPayload.sessions[0]?._meta.specrail.backend, "codex");
   assert.equal(listPayload.sessions[0]?._meta.specrail.profile, "default");
   assert.equal(listPayload.sessions[0]?._meta.specrail.runId, "run-1");
+  assert.equal(listPayload.sessions[0]?._meta.specrail.status, "completed");
+  assert.equal(listPayload.sessions[0]?._meta.specrail.pendingPermissionRequest, undefined);
 
   const loadNotifications: unknown[] = [];
   const loadResponse = await server.handleMessage(
@@ -1056,4 +1069,14 @@ test("ACP server clears pending permission state on cancel", async () => {
   const serializedSessionInfo = JSON.stringify(sessionInfoUpdate);
   assert.ok(serializedSessionInfo.includes('"status":"cancelled"'));
   assert.ok(!serializedSessionInfo.includes("pendingPermissionRequest"));
+
+  const listResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 5, method: "session/list", params: { cwd: "/tmp/specrail" } },
+    () => {},
+  );
+  const listPayload = listResponse?.result as {
+    sessions: Array<{ _meta: { specrail: { status?: string; pendingPermissionRequest?: unknown } } }>;
+  };
+  assert.equal(listPayload.sessions[0]?._meta.specrail.status, "cancelled");
+  assert.equal(listPayload.sessions[0]?._meta.specrail.pendingPermissionRequest, undefined);
 });
