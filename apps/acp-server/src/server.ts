@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -440,6 +440,16 @@ export class SpecRailAcpServer {
       targetStat = await stat(targetPath);
     } catch {
       throw this.workspaceRefusal("workspace path was not found", { reason: "path_not_found", runId: run.id, path: relativePath || "." });
+    }
+
+    const realWorkspaceRoot = await realpath(workspaceRoot);
+    const realTargetPath = await realpath(targetPath);
+    const realRelativePath = path.relative(realWorkspaceRoot, realTargetPath);
+    if (realRelativePath.startsWith("..") || realRelativePath === ".." || path.isAbsolute(realRelativePath)) {
+      throw this.workspaceRefusal("workspace read path must stay inside the run workspace", {
+        reason: "path_outside_workspace",
+        runId: run.id,
+      });
     }
 
     const capability = {

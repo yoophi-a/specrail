@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -505,6 +505,9 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   await mkdir(path.join(runWorkspace, "notes"), { recursive: true });
   await writeFile(path.join(runWorkspace, "notes", "summary.md"), "# Summary\nDone.\n");
   await writeFile(path.join(runWorkspace, "notes", "long.txt"), "x".repeat(64_005));
+  const outsideFile = path.join(workspaceRoot, "outside-secret.txt");
+  await writeFile(outsideFile, "outside\n");
+  await symlink(outsideFile, path.join(runWorkspace, "notes", "outside-link.txt"));
   await mkdir(path.join(runWorkspace, "many"), { recursive: true });
   for (let index = 0; index < 101; index += 1) {
     await writeFile(path.join(runWorkspace, "many", `${index.toString().padStart(3, "0")}.txt`), `${index}\n`);
@@ -579,6 +582,12 @@ test("ACP server reads linked run workspace paths through scoped capability", as
     () => {},
   );
   assert.equal(absolutePathResponse?.error?.data && (absolutePathResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
+
+  const symlinkEscapeResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 11, method: "specrail/workspace/read", params: { sessionId, path: "notes/outside-link.txt" } },
+    () => {},
+  );
+  assert.equal(symlinkEscapeResponse?.error?.data && (symlinkEscapeResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
 });
 
 test("ACP server marks workspace cleanup blocked while the linked run is active", async () => {
