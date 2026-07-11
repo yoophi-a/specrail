@@ -518,6 +518,27 @@ test("operator UI client harness surfaces selected-track detail action failures"
   assert.equal(approvalButton.disabled, false);
 });
 
+test("operator UI client harness surfaces planning-session create failures", async () => {
+  const { calls, createTrack, detail, elements, failPath, loadInitialState } = createHostedUiClientHarness({
+    trackIds: ["track/planning-create"],
+  });
+  await loadInitialState();
+
+  await createTrack({ title: "Planning Create Failure Track" });
+
+  failPath("/tracks/track%2Fplanning-create/planning-sessions", "planning session create refused", "POST");
+  detail.querySelector("#planning-session-status").value = "waiting_agent";
+  const planningSessionButton = detail.querySelector("[data-planning-session-create]");
+  await planningSessionButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/tracks/track%2Fplanning-create/planning-sessions")?.body, {
+    status: "waiting_agent",
+  });
+  assert.equal(elements.get("#status")!.textContent, "planning session create refused");
+  assert.equal(planningSessionButton.disabled, false);
+});
+
 test("operator UI client harness renders unsafe folder-session report paths as text", async () => {
   const { createTrack, detail, loadInitialState, runs, setSessionPreviewReportPath } = createHostedUiClientHarness();
   await loadInitialState();
