@@ -498,7 +498,24 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   assert.deepEqual((fileResponse?.result as { kind: string; path: string; content: string }).kind, "file");
   assert.equal((fileResponse?.result as { path: string }).path, "notes/summary.md");
   assert.match((fileResponse?.result as { content: string }).content, /# Summary/);
-  assert.ok(JSON.stringify(fileResponse?.result).includes('"workspaceCapability"'));
+  const fileCapability = (fileResponse?.result as {
+    _meta: {
+      specrail: {
+        workspaceCapability: {
+          runId: string;
+          workspacePath: string;
+          allowedOperations: string[];
+          cleanupBlocked: boolean;
+        };
+      };
+    };
+  })._meta.specrail.workspaceCapability;
+  assert.deepEqual(fileCapability, {
+    runId: "run-1",
+    workspacePath: runWorkspace,
+    allowedOperations: ["read"],
+    cleanupBlocked: false,
+  });
 
   const directoryResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 4, method: "specrail/workspace/read", params: { sessionId, path: "notes" } },
