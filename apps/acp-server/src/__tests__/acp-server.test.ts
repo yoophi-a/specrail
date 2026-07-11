@@ -953,6 +953,31 @@ test("ACP server rejects invalid permission resolution payloads", async () => {
 
   assert.equal(invalidOutcomeResponse?.error?.code, -32602);
   assert.match(invalidOutcomeResponse?.error?.message ?? "", /permissionResolution\.outcome must be approved or rejected/);
+
+  const invalidDecidedByResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 5,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Permission decision with invalid actor" }],
+        _meta: {
+          specrail: {
+            permissionResolution: {
+              requestId: "run-1-approval-request",
+              outcome: "approved",
+              decidedBy: "admin",
+            },
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  assert.equal(invalidDecidedByResponse?.error?.code, -32602);
+  assert.match(invalidDecidedByResponse?.error?.message ?? "", /permissionResolution\.decidedBy must be user, agent, or system/);
 });
 
 test("ACP server rejects permission resolutions before starting unlinked runs", async () => {
