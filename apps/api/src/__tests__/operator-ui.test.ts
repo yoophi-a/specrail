@@ -458,6 +458,66 @@ test("operator UI client harness surfaces selected-track run start failures", as
   assert.equal(runStartButton.disabled, false);
 });
 
+test("operator UI client harness surfaces selected-track detail action failures", async () => {
+  const { calls, createTrack, detail, elements, failPath, loadInitialState } = createHostedUiClientHarness({
+    trackIds: ["track/detail-failure"],
+    planningSessionIds: ["planning/detail-failure"],
+    artifactApprovalRequests: {
+      spec: [{ id: "approval/detail-failure", status: "pending" }],
+      plan: [],
+      tasks: [],
+    },
+  });
+  await loadInitialState();
+
+  await createTrack({ title: "Detail Failure Track" });
+
+  await detail.querySelector("[data-planning-session-create]").click();
+  await flushClientPromises();
+
+  failPath("/planning-sessions/planning%2Fdetail-failure/messages", "planning message refused", "POST");
+  detail.querySelector("#planning-message-body").value = "Append failure path.";
+  const planningMessageButton = detail.querySelector("[data-planning-message-append]");
+  await planningMessageButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/planning-sessions/planning%2Fdetail-failure/messages")?.body, {
+    authorType: "user",
+    kind: "message",
+    body: "Append failure path.",
+  });
+  assert.equal(elements.get("#status")!.textContent, "planning message refused");
+  assert.equal(planningMessageButton.disabled, false);
+
+  failPath("/tracks/track%2Fdetail-failure/artifacts/spec", "artifact proposal refused", "POST");
+  detail.querySelector("#artifact-proposal-kind").value = "spec";
+  detail.querySelector("#artifact-proposal-summary").value = "Failure proposal";
+  detail.querySelector("#artifact-proposal-content").value = "Artifact failure path.";
+  const artifactProposalButton = detail.querySelector("[data-artifact-proposal]");
+  await artifactProposalButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/tracks/track%2Fdetail-failure/artifacts/spec")?.body, {
+    content: "Artifact failure path.",
+    summary: "Failure proposal",
+    createdBy: "user",
+  });
+  assert.equal(elements.get("#status")!.textContent, "artifact proposal refused");
+  assert.equal(artifactProposalButton.disabled, false);
+
+  failPath("/approval-requests/approval%2Fdetail-failure/approve", "approval decision refused", "POST");
+  const [approvalButton] = detail.querySelectorAll("[data-approval-id]");
+  await approvalButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/approval-requests/approval%2Fdetail-failure/approve")?.body, {
+    decidedBy: "user",
+    comment: "decided from hosted operator UI",
+  });
+  assert.equal(elements.get("#status")!.textContent, "approval decision refused");
+  assert.equal(approvalButton.disabled, false);
+});
+
 test("operator UI client harness renders unsafe folder-session report paths as text", async () => {
   const { createTrack, detail, loadInitialState, runs, setSessionPreviewReportPath } = createHostedUiClientHarness();
   await loadInitialState();
