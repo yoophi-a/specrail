@@ -747,3 +747,84 @@ test("ACP server emits richer permission request and resolution updates", async 
   assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes('"status":"running"')));
   assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes('"status":"completed"')));
 });
+
+test("ACP server projects rejected permission resolutions without resuming", async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
+  const service = createFakeService();
+  const resumeRun = service.resumeRun;
+  let resumeRunCalls = 0;
+  service.resumeRun = async (input) => {
+    resumeRunCalls += 1;
+    return resumeRun(input);
+  };
+  const server = new SpecRailAcpServer({
+    service: service as unknown as SpecRailService,
+    stateDir,
+    now: () => "2026-04-13T12:00:00.000Z",
+    pollIntervalMs: 1,
+  });
+
+  const newResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: {
+        cwd: "/tmp/specrail",
+        _meta: {
+          specrail: {
+            trackId: "track-1",
+            backend: "claude_code",
+            profile: "sonnet",
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  const sessionId = (newResponse?.result as { sessionId: string }).sessionId;
+  await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Run with approval gate" }],
+      },
+    },
+    () => {},
+  );
+
+  const rejectNotifications: Array<Record<string, unknown>> = [];
+  const rejectResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Permission rejected, stop" }],
+        _meta: {
+          specrail: {
+            permissionResolution: {
+              requestId: "run-1-approval-request",
+              outcome: "rejected",
+              decidedBy: "user",
+              comment: "not allowed",
+            },
+          },
+        },
+      },
+    },
+    (payload) => {
+      rejectNotifications.push(payload as Record<string, unknown>);
+    },
+  );
+
+  assert.deepEqual(rejectResponse?.result, { stopReason: "cancelled" });
+  assert.ok(JSON.stringify(rejectNotifications).includes('"eventProjection":{"kind":"approval_resolved","requestId":"run-1-approval-request","outcome":"rejected","decidedBy":"user"}'));
+  assert.ok(rejectNotifications.some((payload) => JSON.stringify(payload).includes('"status":"cancelled"')));
+  assert.equal(resumeRunCalls, 0);
+});
