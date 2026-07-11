@@ -183,6 +183,47 @@ test("operator UI client harness surfaces top-level refresh failures", async () 
   assert.equal(elements.get("#refresh")!.disabled, false);
 });
 
+test("operator UI client harness surfaces top-level create failures", async () => {
+  const { calls, elements, failPath, loadInitialState, selectProject } = createHostedUiClientHarness({
+    projectIds: ["project/1", "project/2"],
+  });
+  await loadInitialState();
+
+  failPath("/projects", "project create refused", "POST");
+  elements.get("#project-name")!.value = "Project Failure";
+  elements.get("#project-repo-url")!.value = "https://example.com/failure";
+  elements.get("#project-local-repo-path")!.value = "/repo/failure";
+  const projectCreateButton = elements.get("#project-create")!;
+  await projectCreateButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/projects")?.body, {
+    name: "Project Failure",
+    repoUrl: "https://example.com/failure",
+    localRepoPath: "/repo/failure",
+  });
+  assert.equal(elements.get("#status")!.textContent, "project create refused");
+  assert.equal(projectCreateButton.disabled, false);
+
+  await selectProject("project/1");
+  failPath("/tracks", "track create refused", "POST");
+  elements.get("#track-title")!.value = "Track Failure";
+  elements.get("#track-description")!.value = "Track failure description";
+  elements.get("#track-priority")!.value = "high";
+  const trackCreateButton = elements.get("#track-create")!;
+  await trackCreateButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/tracks")?.body, {
+    projectId: "project/1",
+    title: "Track Failure",
+    description: "Track failure description",
+    priority: "high",
+  });
+  assert.equal(elements.get("#status")!.textContent, "track create refused");
+  assert.equal(trackCreateButton.disabled, false);
+});
+
 test("operator UI client harness surfaces selected-detail load failures", async () => {
   const { detail, elements, createTrack, failPath, loadInitialState, startRun } = createHostedUiClientHarness();
   await loadInitialState();
