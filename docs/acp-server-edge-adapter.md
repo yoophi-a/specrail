@@ -87,6 +87,8 @@ Runtime approval decisions now use the same domain service/API path as non-ACP c
 4. The adapter calls `SpecRailService.resolveRuntimeApprovalRequest(...)` to record the canonical `approval_resolved` event and deliver the decision to executor callbacks when supported.
 5. If an approved decision is not handled by an executor callback, the adapter falls back to resuming the linked SpecRail run. Rejected decisions stay resolved without a resume fallback.
 
+Permission resolution payloads are validated before any new run can be started. A resolution is accepted only when the ACP session already has a linked `runId` and a pending permission request whose `requestId` matches the payload. Invalid outcomes, mismatched request ids, and resolution payloads on fresh sessions return JSON-RPC validation errors; they do not create a track or start a run as a side effect.
+
 Example client payload:
 
 ```json
@@ -137,6 +139,7 @@ Current `specrail/workspace/read` responses are intentionally bounded:
 - directory reads return up to 100 entries and a `truncated` flag
 - file reads return UTF-8 content up to 64,000 characters and a `truncated` flag
 - refusals use structured non-sensitive `error.data.reason` values such as `missing_run`, `workspace_unavailable`, `path_outside_workspace`, `path_not_found`, or `operation_not_allowed`
+- successful responses include `_meta.specrail.workspaceCapability`, which identifies the linked run, workspace root, currently allowed operations, and whether active execution blocks cleanup
 
 ## Planning and admin boundary
 
