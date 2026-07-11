@@ -318,6 +318,19 @@ test("operator UI client harness blocks planning messages without a session", as
   assert.equal(calls.some((call) => call.method === "POST" && call.path === "/planning-sessions/unknown/messages"), false);
 });
 
+test("operator UI client harness preserves empty editable control values", async () => {
+  const { createTrack, detail, loadInitialState } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Empty Form Value Track" });
+
+  assert.match(detail.innerHTML, /id="folder-session-path"[^>]*value=""/);
+  assert.match(detail.innerHTML, /<textarea id="planning-message-body"><\/textarea>/);
+  assert.match(detail.innerHTML, /<textarea id="artifact-proposal-content"><\/textarea>/);
+  assert.doesNotMatch(detail.innerHTML, /id="folder-session-path"[^>]*value="unknown"/);
+  assert.doesNotMatch(detail.innerHTML, /<textarea id="(?:planning-message-body|artifact-proposal-content)">unknown<\/textarea>/);
+});
+
 test("operator UI client harness surfaces failed mutating actions", async () => {
   const { createTrack, detail, elements, failPath, loadInitialState, selectProject } = createHostedUiClientHarness({
     projectIds: ["project/1", "project/2"],

@@ -219,6 +219,19 @@ export function renderOperatorUiClientScript(): string {
         .replaceAll("'", '&#39;');
     }
 
+    function formValue(value) {
+      return value === undefined || value === null ? '' : String(value);
+    }
+
+    function escapeFormValue(value) {
+      return formValue(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
     function metadata(fields) {
       return '<dl>' + fields.map(([key, value]) => '<dt>' + escapeHtml(key) + '</dt><dd>' + escapeHtml(value) + '</dd>').join('') + '</dl>';
     }
@@ -251,7 +264,7 @@ export function renderOperatorUiClientScript(): string {
     }
 
     function promptInput(label, textareaId, defaultValue, actionHtml, hint) {
-      return '<label class="pk-prompt-input">' + escapeHtml(label) + '<textarea id="' + escapeHtml(textareaId) + '">' + escapeHtml(defaultValue ?? '') + '</textarea><span class="pk-prompt-actions"><span class="muted">' + escapeHtml(hint ?? 'Prompt is sent unchanged to the selected SpecRail API action.') + '</span><span class="pk-action-row">' + actionHtml + '</span></span></label>';
+      return '<label class="pk-prompt-input">' + escapeHtml(label) + '<textarea id="' + escapeHtml(textareaId) + '">' + escapeFormValue(defaultValue) + '</textarea><span class="pk-prompt-actions"><span class="muted">' + escapeHtml(hint ?? 'Prompt is sent unchanged to the selected SpecRail API action.') + '</span><span class="pk-action-row">' + actionHtml + '</span></span></label>';
     }
 
     function renderPlanningContextMessages(planning) {
@@ -334,7 +347,7 @@ export function renderOperatorUiClientScript(): string {
     }
 
     function option(value, label, selectedValue) {
-      return '<option value="' + escapeHtml(value) + '"' + (value === selectedValue ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+      return '<option value="' + escapeFormValue(value) + '"' + (value === selectedValue ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
     }
 
     function optionalInputValue(input) {
@@ -395,7 +408,7 @@ export function renderOperatorUiClientScript(): string {
         + '<h3>Track workflow</h3><div class="form-grid" data-control-group="track-workflow"><label>Status <select id="track-workflow-status">' + ['new', 'planned', 'ready', 'in_progress', 'blocked', 'review', 'done', 'failed'].map((value) => option(value, value, track.status ?? 'new')).join('') + '</select></label><label>Spec approval <select id="track-workflow-spec-status">' + ['draft', 'pending', 'approved', 'rejected'].map((value) => option(value, value, track.specStatus ?? 'draft')).join('') + '</select></label><label>Plan approval <select id="track-workflow-plan-status">' + ['draft', 'pending', 'approved', 'rejected'].map((value) => option(value, value, track.planStatus ?? 'draft')).join('') + '</select></label><p><button data-track-update="workflow">Update track workflow</button></p></div>'
         + '<h3>Planning</h3><div class="form-grid" data-control-group="track-planning"><label>Session status <select id="planning-session-status"><option value="active">active</option><option value="waiting_user">waiting_user</option><option value="waiting_agent">waiting_agent</option><option value="approved">approved</option><option value="archived">archived</option></select></label><p><button data-planning-session-create="' + escapeHtml(track.id) + '">Create planning session</button></p><label>Author <select id="planning-message-author"><option value="user">user</option><option value="agent">agent</option><option value="system">system</option></select></label><label>Kind <select id="planning-message-kind"><option value="message">message</option><option value="question">question</option><option value="decision">decision</option><option value="note">note</option></select></label><label>Related artifact <select id="planning-message-artifact"><option value="">none</option><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label>' + promptInput('Message', 'planning-message-body', '', '<button data-planning-message-append="' + (planning.planningSessionId ? escapeHtml(planning.planningSessionId) : '') + '">Append planning message</button>', 'Prompt-kit-inspired message composer for planning handoff notes.') + '</div>'
         + '<h3>Artifact proposals</h3><div class="form-grid" data-control-group="artifact-proposal"><label>Artifact <select id="artifact-proposal-kind"><option value="spec">spec</option><option value="plan">plan</option><option value="tasks">tasks</option></select></label><label>Summary <input id="artifact-proposal-summary" value="Proposed from hosted operator UI" /></label>' + promptInput('Content', 'artifact-proposal-content', '', '<button data-artifact-proposal="inline">Propose artifact</button>', 'Use this as a structured proposal payload; approval remains explicit.') + '</div>'
-        + '<h3>Run lifecycle</h3><div data-control-group="track-run-start"><label>Folder path <input id="folder-session-path" autocomplete="off" value="' + escapeHtml(defaultFolderPath) + '" placeholder="/path/to/repo-or-workspace" /></label><p><button data-folder-session-search="' + escapeHtml(track.id) + '">Preview folder sessions</button></p><div id="folder-session-results" class="detail-grid"></div>' + promptInput('Run prompt', 'run-start-prompt', 'Implement the selected track.', '<button data-run-start="' + escapeHtml(track.id) + '">Start fresh</button>', 'Preview folder sessions first when you want to resume or fork existing context; Start fresh creates a new coding-agent session for this track.') + '</div>'
+        + '<h3>Run lifecycle</h3><div data-control-group="track-run-start"><label>Folder path <input id="folder-session-path" autocomplete="off" value="' + escapeFormValue(defaultFolderPath) + '" placeholder="/path/to/repo-or-workspace" /></label><p><button data-folder-session-search="' + escapeHtml(track.id) + '">Preview folder sessions</button></p><div id="folder-session-results" class="detail-grid"></div>' + promptInput('Run prompt', 'run-start-prompt', 'Implement the selected track.', '<button data-run-start="' + escapeHtml(track.id) + '">Start fresh</button>', 'Preview folder sessions first when you want to resume or fork existing context; Start fresh creates a new coding-agent session for this track.') + '</div>'
         + artifactApprovalActions(artifactPayloads)
         + preview('Spec preview', payload.artifacts?.spec)
         + preview('Plan preview', payload.artifacts?.plan)
