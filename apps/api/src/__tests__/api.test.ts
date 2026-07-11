@@ -1652,7 +1652,7 @@ test("API serves completed run Markdown reports without mutating artifacts or ev
     });
     const runPayload = (await createRunResponse.json()) as { run: { id: string } };
 
-    await waitForRunEvent(baseUrl, runPayload.run.id, (event) => event.type === "message" && /STDOUT/.test(event.summary));
+    await waitForRunEvent(baseUrl, runPayload.run.id, (event) => event.type === "shell_command" && /Spawned Codex session/.test(event.summary));
 
     const eventsBefore = await readRunEventsText(baseUrl, runPayload.run.id);
     const specPath = path.join(paths.repoArtifactDir, "tracks", trackPayload.track.id, "spec.md");
