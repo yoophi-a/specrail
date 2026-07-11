@@ -118,15 +118,16 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - hosted UI selected-run detail appends live SSE event updates while a run is selected
 - hosted UI selected-run detail can request cleanup preview/apply through the existing explicit confirmation flow
 - hosted UI selected-run detail links to the derived Markdown report endpoint for selected runs
-- hosted UI action controls use shared in-flight/error handling and preserve cleanup apply results if post-apply refresh fails
+- hosted UI action controls use shared in-flight/error handling, surface folder-session and cleanup preview failures, and preserve cleanup apply results if post-apply refresh fails
 - hosted UI shell rendering composes separately testable style and client script helpers without adding a new frontend build pipeline
 - hosted UI top-level project and track actions use inline form controls while preserving the same HTTP API calls
 - hosted UI selected-track planning and artifact proposal actions use inline controls for session/message/proposal fields
 - hosted UI selected-detail workflow and run lifecycle actions use inline controls for status and prompt fields
+- hosted UI editable controls preserve empty form values separately from display-only `unknown` metadata fallbacks
 - hosted UI destructive run cancel and workspace cleanup apply flows use in-page confirmation controls
 - hosted UI tests guard against reintroducing browser-native prompt/confirm dialogs and group shell coverage by action area without adding a frontend build pipeline
 - hosted UI markup exposes stable `data-control-group` selectors for major action areas
-- hosted UI client action harness exercises top-level project/track, project-scope filtering, refresh failure states, form validation guardrails, run lifecycle guardrails, cleanup confirmation guardrails, action failure states, cleanup failure states, selected-detail failure states, selected-track, artifact approval, selected-run click handlers, and live event stream lifecycle without a browser dependency
+- hosted UI client action harness exercises top-level project/track, project-scope filtering, refresh failure states, form validation guardrails, folder-session guardrails and failures, run lifecycle guardrails, cleanup confirmation guardrails, action failure states, cleanup failure states, selected-detail failure states, selected-track, artifact approval, selected-run click handlers, and live event stream lifecycle without a browser dependency
 - hosted UI fake DOM/fetch harness is isolated in a focused API test helper with named setup-flow methods
 - keep HTTP/SSE as the system of record for new clients
 - reuse existing approval, event, and listing APIs rather than inventing parallel workflows

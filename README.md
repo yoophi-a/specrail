@@ -94,15 +94,16 @@ Current endpoints in `apps/api/src/index.ts`:
   - selected runs can resume or cancel through the existing `POST /runs/:runId/resume` and `POST /runs/:runId/cancel` endpoints
   - selected runs stay live with incremental updates from `GET /runs/:runId/events/stream` while selected
   - selected runs can request workspace cleanup preview/apply through the existing guarded confirmation flow
-  - shared action-state handling disables buttons while requests are in flight and preserves cleanup apply results if post-apply refresh fails
+  - shared action-state handling disables buttons while requests are in flight, surfaces folder-session and cleanup preview failures, and preserves cleanup apply results if post-apply refresh fails
   - HTML shell rendering composes separately testable hosted UI style and client script helpers while keeping `GET /operator` as a single served page
   - top-level project and track actions use inline form controls while preserving the same HTTP API calls
   - selected-track planning and artifact proposal actions use inline controls for session/message/proposal fields
   - selected-detail workflow and run lifecycle actions use inline controls for status and prompt fields
+  - editable hosted UI controls preserve empty form values separately from display-only `unknown` metadata fallbacks
   - destructive run cancel and workspace cleanup apply flows use in-page confirmation controls
   - hosted UI tests guard against reintroducing browser-native prompt/confirm dialogs and group shell coverage by action area
   - hosted UI markup exposes stable `data-control-group` selectors for major action areas
-  - hosted UI client action harness exercises top-level project/track, project-scope filtering, refresh failure states, form validation guardrails, run lifecycle guardrails, cleanup confirmation guardrails, action failure states, cleanup failure states, selected-detail failure states, selected-track, artifact approval, selected-run click handlers, and live event stream lifecycle without a browser dependency
+  - hosted UI client action harness exercises top-level project/track, project-scope filtering, refresh failure states, form validation guardrails, folder-session guardrails and failures, run lifecycle guardrails, cleanup confirmation guardrails, action failure states, cleanup failure states, selected-detail failure states, selected-track, artifact approval, selected-run click handlers, and live event stream lifecycle without a browser dependency
   - hosted UI fake DOM/fetch harness is isolated in a focused API test helper with named setup-flow methods
 
 ### Projects
