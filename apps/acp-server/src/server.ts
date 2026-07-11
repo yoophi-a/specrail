@@ -461,10 +461,11 @@ export class SpecRailAcpServer {
 
     if (targetStat.isDirectory()) {
       const entries = await readdir(targetPath, { withFileTypes: true });
+      const sortedEntries = [...entries].sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
       return {
         kind: "directory",
         path: relativePath || ".",
-        entries: entries.slice(0, 100).map((entry) => ({
+        entries: sortedEntries.slice(0, 100).map((entry) => ({
           name: entry.name,
           kind: entry.isDirectory() ? "directory" : "file",
         })),

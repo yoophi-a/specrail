@@ -508,8 +508,12 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   const outsideFile = path.join(workspaceRoot, "outside-secret.txt");
   await writeFile(outsideFile, "outside\n");
   await symlink(outsideFile, path.join(runWorkspace, "notes", "outside-link.txt"));
+  await mkdir(path.join(runWorkspace, "unsorted"), { recursive: true });
+  await writeFile(path.join(runWorkspace, "unsorted", "beta.txt"), "beta\n");
+  await writeFile(path.join(runWorkspace, "unsorted", "alpha.txt"), "alpha\n");
+  await writeFile(path.join(runWorkspace, "unsorted", "charlie.txt"), "charlie\n");
   await mkdir(path.join(runWorkspace, "many"), { recursive: true });
-  for (let index = 0; index < 101; index += 1) {
+  for (let index = 100; index >= 0; index -= 1) {
     await writeFile(path.join(runWorkspace, "many", `${index.toString().padStart(3, "0")}.txt`), `${index}\n`);
   }
 
@@ -547,13 +551,26 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   assert.equal(directoryResponse?.error, undefined);
   assert.ok(JSON.stringify(directoryResponse?.result).includes('"summary.md"'));
 
+  const sortedDirectoryResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 12, method: "specrail/workspace/read", params: { sessionId, path: "unsorted" } },
+    () => {},
+  );
+  assert.equal(sortedDirectoryResponse?.error, undefined);
+  const sortedDirectory = sortedDirectoryResponse?.result as { entries: Array<{ name: string }> };
+  assert.deepEqual(
+    sortedDirectory.entries.map((entry) => entry.name),
+    ["alpha.txt", "beta.txt", "charlie.txt"],
+  );
+
   const truncatedDirectoryResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 6, method: "specrail/workspace/read", params: { sessionId, path: "many" } },
     () => {},
   );
   assert.equal(truncatedDirectoryResponse?.error, undefined);
-  const truncatedDirectory = truncatedDirectoryResponse?.result as { entries: unknown[]; truncated: boolean };
+  const truncatedDirectory = truncatedDirectoryResponse?.result as { entries: Array<{ name: string }>; truncated: boolean };
   assert.equal(truncatedDirectory.entries.length, 100);
+  assert.equal(truncatedDirectory.entries[0]?.name, "000.txt");
+  assert.equal(truncatedDirectory.entries.at(-1)?.name, "099.txt");
   assert.equal(truncatedDirectory.truncated, true);
 
   const truncatedFileResponse = await server.handleMessage(
