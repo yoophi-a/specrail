@@ -471,10 +471,17 @@ test("ACP server reads linked run workspace paths through scoped capability", as
     () => {},
   );
   const sessionId = (newResponse?.result as { sessionId: string }).sessionId;
+
+  const missingRunResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 2, method: "specrail/workspace/read", params: { sessionId, path: "." } },
+    () => {},
+  );
+  assert.equal(missingRunResponse?.error?.data && (missingRunResponse.error.data as { reason?: string }).reason, "missing_run");
+
   await server.handleMessage(
     {
       jsonrpc: "2.0",
-      id: 2,
+      id: 3,
       method: "session/prompt",
       params: { sessionId, prompt: [{ type: "text", text: "Start workspace read test" }] },
     },
@@ -491,7 +498,7 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   }
 
   const fileResponse = await server.handleMessage(
-    { jsonrpc: "2.0", id: 3, method: "specrail/workspace/read", params: { sessionId, path: "notes/summary.md" } },
+    { jsonrpc: "2.0", id: 4, method: "specrail/workspace/read", params: { sessionId, path: "notes/summary.md" } },
     () => {},
   );
   assert.equal(fileResponse?.error, undefined);
@@ -518,14 +525,14 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   });
 
   const directoryResponse = await server.handleMessage(
-    { jsonrpc: "2.0", id: 4, method: "specrail/workspace/read", params: { sessionId, path: "notes" } },
+    { jsonrpc: "2.0", id: 5, method: "specrail/workspace/read", params: { sessionId, path: "notes" } },
     () => {},
   );
   assert.equal(directoryResponse?.error, undefined);
   assert.ok(JSON.stringify(directoryResponse?.result).includes('"summary.md"'));
 
   const truncatedDirectoryResponse = await server.handleMessage(
-    { jsonrpc: "2.0", id: 5, method: "specrail/workspace/read", params: { sessionId, path: "many" } },
+    { jsonrpc: "2.0", id: 6, method: "specrail/workspace/read", params: { sessionId, path: "many" } },
     () => {},
   );
   assert.equal(truncatedDirectoryResponse?.error, undefined);
@@ -534,7 +541,7 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   assert.equal(truncatedDirectory.truncated, true);
 
   const truncatedFileResponse = await server.handleMessage(
-    { jsonrpc: "2.0", id: 6, method: "specrail/workspace/read", params: { sessionId, path: "notes/long.txt" } },
+    { jsonrpc: "2.0", id: 7, method: "specrail/workspace/read", params: { sessionId, path: "notes/long.txt" } },
     () => {},
   );
   assert.equal(truncatedFileResponse?.error, undefined);
@@ -542,14 +549,20 @@ test("ACP server reads linked run workspace paths through scoped capability", as
   assert.equal(truncatedFile.content.length, 64_000);
   assert.equal(truncatedFile.truncated, true);
 
+  const missingPathResponse = await server.handleMessage(
+    { jsonrpc: "2.0", id: 8, method: "specrail/workspace/read", params: { sessionId, path: "notes/missing.md" } },
+    () => {},
+  );
+  assert.equal(missingPathResponse?.error?.data && (missingPathResponse.error.data as { reason?: string }).reason, "path_not_found");
+
   const outsideResponse = await server.handleMessage(
-    { jsonrpc: "2.0", id: 7, method: "specrail/workspace/read", params: { sessionId, path: "../secret.txt" } },
+    { jsonrpc: "2.0", id: 9, method: "specrail/workspace/read", params: { sessionId, path: "../secret.txt" } },
     () => {},
   );
   assert.equal(outsideResponse?.error?.data && (outsideResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
 
   const absolutePathResponse = await server.handleMessage(
-    { jsonrpc: "2.0", id: 8, method: "specrail/workspace/read", params: { sessionId, path: path.join(runWorkspace, "notes", "summary.md") } },
+    { jsonrpc: "2.0", id: 10, method: "specrail/workspace/read", params: { sessionId, path: path.join(runWorkspace, "notes", "summary.md") } },
     () => {},
   );
   assert.equal(absolutePathResponse?.error?.data && (absolutePathResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
