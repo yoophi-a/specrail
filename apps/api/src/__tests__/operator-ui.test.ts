@@ -246,7 +246,7 @@ test("operator UI client harness surfaces selected-detail load failures", async 
 });
 
 test("operator UI client harness blocks invalid form submissions", async () => {
-  const { calls, createTrack, detail, elements, loadInitialState, runs } = createHostedUiClientHarness();
+  const { calls, createTrack, detail, elements, loadInitialState, runs, selectProject } = createHostedUiClientHarness();
   await loadInitialState();
 
   await elements.get("#project-create")!.click();
@@ -260,6 +260,22 @@ test("operator UI client harness blocks invalid form submissions", async () => {
 
   assert.equal(elements.get("#status")!.textContent, "Track title is required.");
   assert.equal(calls.some((call) => call.method === "POST" && call.path === "/tracks"), false);
+
+  const callsBeforeMissingProjectUpdate = calls.length;
+  await elements.get("#project-update")!.click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Select a project before updating it.");
+  assert.equal(calls.length, callsBeforeMissingProjectUpdate);
+
+  await selectProject("project-1");
+  elements.get("#project-name")!.value = "";
+  const callsBeforeBlankProjectUpdate = calls.length;
+  await elements.get("#project-update")!.click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Project name is required before updating project-1.");
+  assert.equal(calls.length, callsBeforeBlankProjectUpdate);
 
   await createTrack({ title: "Validation Track" });
   const callsBeforeSelectedDetailValidation = calls.length;
