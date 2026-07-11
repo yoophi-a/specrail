@@ -984,7 +984,7 @@ test("operator UI client harness surfaces cleanup failure states", async () => {
   const previewButton = detail.querySelector("[data-cleanup-preview]");
   await requestCleanupPreview();
 
-  assert.equal(elements.get("#status")!.textContent, "Cleanup preview refreshed for run-1.");
+  assert.equal(elements.get("#status")!.textContent, "Cleanup preview unavailable for run-1: cleanup preview refused");
   assert.match(detail.innerHTML, /cleanup preview refused/);
   assert.equal(previewButton.disabled, false);
 

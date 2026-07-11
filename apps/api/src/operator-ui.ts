@@ -628,8 +628,10 @@ export function renderOperatorUiClientScript(): string {
       detail.querySelector('[data-cleanup-preview]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
         await withAction(button, 'Loading cleanup preview for ' + run.id + '…', async () => {
-          await loadRunDetail(run.id, true);
-        }, 'Cleanup preview refreshed for ' + run.id + '.');
+          return loadRunDetail(run.id, true);
+        }, (cleanupPayload) => cleanupPayload?.cleanupPreviewError
+          ? 'Cleanup preview unavailable for ' + run.id + ': ' + cleanupPayload.cleanupPreviewError
+          : 'Cleanup preview refreshed for ' + run.id + '.');
       });
       startRunEventStream(run.id);
       detail.querySelector('[data-cleanup-request]')?.addEventListener('click', async (event) => {
@@ -681,9 +683,13 @@ export function renderOperatorUiClientScript(): string {
       const [runPayload, eventsPayload, cleanupPayload] = await Promise.all([
         api('/runs/' + encodeURIComponent(runId)),
         api('/runs/' + encodeURIComponent(runId) + '/events'),
-        includeCleanupPreview ? api('/runs/' + encodeURIComponent(runId) + '/workspace-cleanup/preview').catch((error) => ({ cleanupPlan: { eligible: false, operations: [], refusalReasons: [error instanceof Error ? error.message : String(error)] } })) : Promise.resolve(null),
+        includeCleanupPreview ? api('/runs/' + encodeURIComponent(runId) + '/workspace-cleanup/preview').catch((error) => {
+          const message = errorMessage(error);
+          return { cleanupPreviewError: message, cleanupPlan: { eligible: false, operations: [], refusalReasons: [message] } };
+        }) : Promise.resolve(null),
       ]);
       renderRunDetail(runPayload, eventsPayload, cleanupPayload);
+      return cleanupPayload;
     }
 
     async function load() {
