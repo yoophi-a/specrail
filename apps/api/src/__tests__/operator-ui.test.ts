@@ -878,6 +878,13 @@ test("operator UI client harness blocks invalid run lifecycle submissions", asyn
   assert.equal(elements.get("#status")!.textContent, "Run resume prompt is required for run-1.");
   assert.equal(calls.some((call) => call.method === "POST" && call.path === "/runs/run-1/resume"), false);
 
+  detail.querySelector("#run-fork-prompt").value = "   ";
+  await detail.querySelector("[data-run-fork]").click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Run fork prompt is required for run-1.");
+  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/runs/run-1/fork"), false);
+
   detail.querySelector("#run-cancel-confirmation").value = "nope";
   await detail.querySelector("[data-run-cancel]").click();
   await flushClientPromises();
