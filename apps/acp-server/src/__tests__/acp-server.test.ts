@@ -841,3 +841,94 @@ test("ACP server projects rejected permission resolutions without resuming", asy
   assert.ok(rejectNotifications.some((payload) => JSON.stringify(payload).includes('"status":"cancelled"')));
   assert.equal(resumeRunCalls, 0);
 });
+
+test("ACP server rejects invalid permission resolution payloads", async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
+  const server = new SpecRailAcpServer({
+    service: createFakeService() as unknown as SpecRailService,
+    stateDir,
+    now: () => "2026-04-13T12:00:00.000Z",
+    pollIntervalMs: 1,
+  });
+
+  const newResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: {
+        cwd: "/tmp/specrail",
+        _meta: {
+          specrail: {
+            trackId: "track-1",
+            backend: "claude_code",
+            profile: "sonnet",
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  const sessionId = (newResponse?.result as { sessionId: string }).sessionId;
+  await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Run with approval gate" }],
+      },
+    },
+    () => {},
+  );
+
+  const mismatchResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Permission decision with mismatch" }],
+        _meta: {
+          specrail: {
+            permissionResolution: {
+              requestId: "different-request",
+              outcome: "approved",
+            },
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  assert.equal(mismatchResponse?.error?.code, -32602);
+  assert.match(mismatchResponse?.error?.message ?? "", /permissionResolution\.requestId does not match pending request/);
+
+  const invalidOutcomeResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Permission decision with invalid outcome" }],
+        _meta: {
+          specrail: {
+            permissionResolution: {
+              requestId: "run-1-approval-request",
+              outcome: "maybe",
+            },
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  assert.equal(invalidOutcomeResponse?.error?.code, -32602);
+  assert.match(invalidOutcomeResponse?.error?.message ?? "", /permissionResolution\.outcome must be approved or rejected/);
+});
