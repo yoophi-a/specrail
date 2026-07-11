@@ -82,11 +82,13 @@ async function waitForRunEvent(
   matches: (event: { type: string; summary: string }) => boolean,
 ): Promise<void> {
   const deadline = Date.now() + 5000;
+  let lastEvents: Array<{ type: string; summary: string }> = [];
 
   while (Date.now() < deadline) {
     const eventsResponse = await fetch(`${baseUrl}/runs/${runId}/events`);
     assert.equal(eventsResponse.status, 200);
     const eventsPayload = (await eventsResponse.json()) as { events: Array<{ type: string; summary: string }> };
+    lastEvents = eventsPayload.events;
 
     if (eventsPayload.events.some(matches)) {
       return;
@@ -95,7 +97,13 @@ async function waitForRunEvent(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 
-  throw new Error(`timed out waiting for run event on ${runId}`);
+  const recentEvents = lastEvents
+    .slice(-5)
+    .map((event) => `${event.type}: ${event.summary}`)
+    .join(" | ");
+  throw new Error(
+    `timed out waiting for run event on ${runId}; observed ${lastEvents.length} event(s)${recentEvents ? `; recent: ${recentEvents}` : ""}`,
+  );
 }
 
 async function readRunEventsText(baseUrl: string, runId: string): Promise<string> {
