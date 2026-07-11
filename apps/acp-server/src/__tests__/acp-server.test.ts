@@ -932,3 +932,65 @@ test("ACP server rejects invalid permission resolution payloads", async () => {
   assert.equal(invalidOutcomeResponse?.error?.code, -32602);
   assert.match(invalidOutcomeResponse?.error?.message ?? "", /permissionResolution\.outcome must be approved or rejected/);
 });
+
+test("ACP server rejects permission resolutions before starting unlinked runs", async () => {
+  const stateDir = await mkdtemp(path.join(os.tmpdir(), "specrail-acp-state-"));
+  const service = createFakeService();
+  const startRun = service.startRun;
+  let startRunCalls = 0;
+  service.startRun = async (input) => {
+    startRunCalls += 1;
+    return startRun(input);
+  };
+  const server = new SpecRailAcpServer({
+    service: service as unknown as SpecRailService,
+    stateDir,
+    now: () => "2026-04-13T12:00:00.000Z",
+    pollIntervalMs: 1,
+  });
+
+  const newResponse = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: {
+        cwd: "/tmp/specrail",
+        _meta: {
+          specrail: {
+            trackId: "track-1",
+            backend: "claude_code",
+            profile: "sonnet",
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  const sessionId = (newResponse?.result as { sessionId: string }).sessionId;
+  const response = await server.handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Permission decision before a run exists" }],
+        _meta: {
+          specrail: {
+            permissionResolution: {
+              requestId: "run-1-approval-request",
+              outcome: "approved",
+            },
+          },
+        },
+      },
+    },
+    () => {},
+  );
+
+  assert.equal(response?.error?.code, -32602);
+  assert.match(response?.error?.message ?? "", /permissionResolution provided but there is no linked run/);
+  assert.equal(startRunCalls, 0);
+});

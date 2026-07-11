@@ -286,6 +286,9 @@ export class SpecRailAcpServer {
       let startingEventCount = 0;
 
       const permissionResolution = body._meta?.specrail?.permissionResolution;
+      if (permissionResolution && !session.runId) {
+        throw new ValidationError("permissionResolution provided but there is no linked run");
+      }
 
       if (session.runId && permissionResolution) {
         execution = await this.requireRun(session.runId);
