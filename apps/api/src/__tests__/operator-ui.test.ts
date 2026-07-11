@@ -929,6 +929,28 @@ test("operator UI client harness surfaces cleanup failure states", async () => {
   assert.equal(requestButton.disabled, false);
 });
 
+test("operator UI client harness preserves cleanup apply results when refresh fails", async () => {
+  const { calls, createTrack, detail, elements, failPath, loadInitialState, requestCleanupConfirmation, requestCleanupPreview, startRun } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Cleanup Refresh Failure Track" });
+  await startRun("Start run before cleanup refresh failure.");
+  await requestCleanupPreview();
+  await requestCleanupConfirmation();
+
+  detail.querySelector("#cleanup-confirmation").value = "APPLY CLEANUP run-1";
+  failPath("/runs/run-1", "run refresh refused");
+  const cleanupApplyButton = detail.querySelector("[data-cleanup-apply]");
+  await cleanupApplyButton.click();
+  await flushClientPromises();
+
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path === "/runs/run-1/workspace-cleanup/apply" && (call.body as { confirm?: string }).confirm === "APPLY CLEANUP run-1")?.body, {
+    confirm: "APPLY CLEANUP run-1",
+  });
+  assert.equal(elements.get("#status")!.textContent, "Workspace cleanup completed for run-1. Refresh failed: run refresh refused");
+  assert.equal(cleanupApplyButton.disabled, false);
+});
+
 test("operator UI shell keeps hosted action and stream wiring", () => {
   const body = renderOperatorUiHtml();
 
