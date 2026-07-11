@@ -72,7 +72,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 - client permission decisions can round-trip back through `session/prompt` via `_meta.specrail.permissionResolution`
 - permission decisions are accepted only for linked runs with pending requests; invalid or mismatched decisions fail validation before any run-start side effect
 - rejected permission decisions resolve the request without a resume fallback, while approved decisions still fall back to resume when executor-native callback delivery is unavailable
-- `specrail/workspace/read` exposes scoped linked-run workspace reads with structured refusal reasons and cleanup-block metadata
+- `specrail/workspace/read` exposes scoped linked-run workspace reads with sorted directory entries, structured refusal reasons, and cleanup-block metadata
 - full original execution events still ride along in `_meta.specrail.executionEvent`
 
 Current limitation: runtime approval resolution is still adapter-mediated, not a backend-native approval broker.

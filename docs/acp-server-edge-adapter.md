@@ -138,7 +138,7 @@ Filesystem and terminal ACP capabilities stay narrow. The current spike exposes 
 This shape preserves the workspace ownership rules while leaving room for ACP-native clients to inspect and interact with a run workspace in a controlled way.
 
 Current `specrail/workspace/read` responses are intentionally bounded:
-- directory reads return up to 100 entries and a `truncated` flag
+- directory reads return entries sorted by name, apply the 100-entry limit after sorting, and include a `truncated` flag
 - file reads return UTF-8 content up to 64,000 characters and a `truncated` flag
 - refusals use structured non-sensitive `error.data.reason` values such as `missing_run`, `workspace_unavailable`, `path_outside_workspace`, `path_not_found`, or `operation_not_allowed`
 - successful responses include `_meta.specrail.workspaceCapability`, which identifies the linked run, workspace root, currently allowed operations, and whether active execution blocks cleanup
