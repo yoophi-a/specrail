@@ -660,6 +660,22 @@ test("operator UI client harness blocks blank folder-session searches", async ()
   assert.match(detail.querySelector("#folder-session-results").innerHTML, /Select or enter a folder path before looking up related sessions\./);
 });
 
+test("operator UI client harness surfaces folder-session search failures", async () => {
+  const { calls, createTrack, detail, elements, failPath, loadInitialState } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Folder Search Failure Track" });
+  const searchButton = detail.querySelector("[data-folder-session-search]");
+  detail.querySelector("#folder-session-path").value = "/workspace/search-failure";
+  failPath("/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Fsearch-failure", "folder session search refused");
+  await searchButton.click();
+  await flushClientPromises();
+
+  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Fsearch-failure"), true);
+  assert.equal(elements.get("#status")!.textContent, "folder session search refused");
+  assert.equal(searchButton.disabled, false);
+});
+
 test("operator UI client harness encodes opaque folder-session preview and resume paths", async () => {
   const { calls, createTrack, detail, eventSources, loadInitialState, runs } = createHostedUiClientHarness();
   await loadInitialState();
