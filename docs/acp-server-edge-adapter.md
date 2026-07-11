@@ -29,6 +29,7 @@ The initial adapter keeps the ACP surface intentionally narrow.
   - replays persisted SpecRail run events as ACP `session/update` notifications
 - ACP `session/list`
   - lists ACP session records and their linked SpecRail run ids when present
+  - includes `_meta.specrail.status` and `_meta.specrail.pendingPermissionRequest` so clients can triage completed, waiting-approval, and cancelled sessions without loading each one
 - `specrail/workspace/read`
   - reads an explicit file or directory under the linked run workspace
   - rejects absolute paths and traversal outside the SpecRail-managed workspace root
@@ -39,6 +40,7 @@ The initial adapter keeps the ACP surface intentionally narrow.
 - ACP `sessionId` is an adapter-level handle persisted under `state/acp-sessions/`
 - SpecRail `Execution.id` remains the canonical durable run id
 - ACP session metadata stores the linked `runId` once a run has been started
+- ACP `session/list` returns the session's latest stored SpecRail status and pending permission marker in `_meta.specrail`, matching the state surfaced by `session_info_update`
 - provider session ids remain secondary adapter/backend metadata, unchanged from the current run model
 
 ## Event mapping

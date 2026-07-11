@@ -67,6 +67,7 @@ SpecRail remembers what the AI did, whether it succeeded or failed, and lets you
 `apps/acp-server` now projects SpecRail runs into richer ACP session updates:
 - `_meta.specrail.trackId` can target an existing track, while `_meta.specrail.projectId` lets the first prompt create a new track in a non-default project
 - task status changes refresh ACP `session_info_update` metadata
+- `session/list` exposes linked run status and pending permission metadata so clients can triage sessions without loading each one
 - runtime `approval_requested` events emit ACP `session/request_permission`
 - client permission decisions can round-trip back through `session/prompt` via `_meta.specrail.permissionResolution`
 - permission decisions are accepted only for linked runs with pending requests; invalid or mismatched decisions fail validation before any run-start side effect
