@@ -278,6 +278,8 @@ test("operator UI client harness blocks invalid form submissions", async () => {
   assert.equal(calls.length, callsBeforeBlankProjectUpdate);
 
   await createTrack({ title: "Validation Track" });
+  await detail.querySelector("[data-planning-session-create]").click();
+  await flushClientPromises();
   const callsBeforeSelectedDetailValidation = calls.length;
 
   await detail.querySelector("[data-planning-message-append]").click();
@@ -299,6 +301,21 @@ test("operator UI client harness blocks invalid form submissions", async () => {
 
   assert.equal(elements.get("#status")!.textContent, "Artifact proposal content is required for spec.");
   assert.equal(calls.some((call) => call.method === "POST" && call.path === "/tracks/track-1/artifacts/spec"), false);
+});
+
+test("operator UI client harness blocks planning messages without a session", async () => {
+  const { calls, createTrack, detail, elements, loadInitialState } = createHostedUiClientHarness();
+  await loadInitialState();
+
+  await createTrack({ title: "Planning Message Validation Track" });
+  detail.querySelector("#planning-message-body").value = "Capture this planning note.";
+  const callsBeforeAppend = calls.length;
+  await detail.querySelector("[data-planning-message-append]").click();
+  await flushClientPromises();
+
+  assert.equal(elements.get("#status")!.textContent, "Create a planning session before appending a message for track-1.");
+  assert.equal(calls.length, callsBeforeAppend);
+  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/planning-sessions/unknown/messages"), false);
 });
 
 test("operator UI client harness surfaces failed mutating actions", async () => {
