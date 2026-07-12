@@ -139,6 +139,17 @@ function assertRunEventsContain(
   );
 }
 
+function assertRunListIncludes(
+  runs: Array<{ id?: string; status?: string; workspacePath?: string }>,
+  expectedRunId: string,
+  label: string,
+): void {
+  const snapshot = runs
+    .map((run, index) => `${index}: ${run.id ?? "<missing>"} ${run.status ?? "unknown"} ${run.workspacePath ?? ""}`)
+    .join("\n");
+  assert.ok(runs.some((run) => run.id === expectedRunId), `${label} missing run ${expectedRunId}.\nObserved runs:\n${snapshot || "<none>"}`);
+}
+
 async function readRunEventsText(baseUrl: string, runId: string): Promise<string> {
   const deadline = Date.now() + 5000;
   let lastStatus = 0;
@@ -1867,22 +1878,22 @@ test("API supports resuming and cancelling a run", async () => {
     const folderRunsResponse = await fetch(`${baseUrl}/runs?workspacePath=${encodeURIComponent(runPayload.run.workspacePath)}`);
     await assertJsonResponseStatus(folderRunsResponse, 200);
     const folderRunsPayload = (await folderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
-    assert.ok(folderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
+    assertRunListIncludes(folderRunsPayload.runs, runPayload.run.id, "API workspace run filter");
 
     const paddedFolderRunsResponse = await fetch(`${baseUrl}/runs?workspacePath=${encodeURIComponent(` ${runPayload.run.workspacePath} `)}`);
     await assertJsonResponseStatus(paddedFolderRunsResponse, 200);
     const paddedFolderRunsPayload = (await paddedFolderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
-    assert.ok(paddedFolderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
+    assertRunListIncludes(paddedFolderRunsPayload.runs, runPayload.run.id, "API padded workspace run filter");
 
     const parentFolderRunsResponse = await fetch(`${baseUrl}/runs?workspacePath=${encodeURIComponent(path.dirname(runPayload.run.workspacePath))}`);
     await assertJsonResponseStatus(parentFolderRunsResponse, 200);
     const parentFolderRunsPayload = (await parentFolderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
-    assert.ok(parentFolderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
+    assertRunListIncludes(parentFolderRunsPayload.runs, runPayload.run.id, "API parent workspace run filter");
 
     const childFolderRunsResponse = await fetch(`${baseUrl}/runs?workspacePath=${encodeURIComponent(path.join(runPayload.run.workspacePath, "src"))}`);
     await assertJsonResponseStatus(childFolderRunsResponse, 200);
     const childFolderRunsPayload = (await childFolderRunsResponse.json()) as { runs: Array<{ id: string; workspacePath: string }> };
-    assert.ok(childFolderRunsPayload.runs.some((run) => run.id === runPayload.run.id));
+    assertRunListIncludes(childFolderRunsPayload.runs, runPayload.run.id, "API child workspace run filter");
 
     const sessionPreviewResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/session-preview?eventLimit=%202%20`);
     await assertJsonResponseStatus(sessionPreviewResponse, 200);
