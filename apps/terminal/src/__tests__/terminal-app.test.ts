@@ -1364,16 +1364,22 @@ test("renderAppShell renders planning message composer state", () => {
     summary: { fetchedAt: "2026-04-10T12:00:00.000Z", tracks: [], runs: [] },
   });
 
-  assert.match(rendered, /Planning message action: session plan-1 for track track-1/);
-  assert.match(rendered, /author: agent \(press g to cycle\)/);
-  assert.match(rendered, /kind: note \(press y to cycle\)/);
-  assert.match(rendered, /related artifact: tasks \(press h\/l to cycle\)/);
-  assert.match(rendered, /template: question \(press Ctrl\+T to apply\/cycle\)/);
-  assert.match(rendered, /- body:/);
-  assert.match(rendered, /  Capture handoff context\./);
-  assert.match(rendered, /  Include next action\./);
-  assert.match(rendered, /newline: Ctrl\+N, editor: Ctrl\+E/);
-  assert.match(rendered, /Help: planning message composer.*Ctrl\+E opens \$EDITOR/);
+  assertTextMatchesAll(
+    rendered,
+    [
+      /Planning message action: session plan-1 for track track-1/,
+      /author: agent \(press g to cycle\)/,
+      /kind: note \(press y to cycle\)/,
+      /related artifact: tasks \(press h\/l to cycle\)/,
+      /template: question \(press Ctrl\+T to apply\/cycle\)/,
+      /- body:/,
+      /  Capture handoff context\./,
+      /  Include next action\./,
+      /newline: Ctrl\+N, editor: Ctrl\+E/,
+      /Help: planning message composer.*Ctrl\+E opens \$EDITOR/,
+    ],
+    "terminal planning message composer render",
+  );
 });
 
 test("renderAppShell renders run event monitor details", () => {
