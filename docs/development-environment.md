@@ -29,13 +29,13 @@ For docs-only or repository metadata-only changes, run `pnpm check:links` plus `
 
 ## Provider-dependent smoke tests
 
-Claude Code smoke tests are opt-in because they require a local/provider environment:
+The real Claude Code CLI smoke path is opt-in because it requires a local/provider environment:
 
 ```bash
 SPECRAIL_RUN_CLAUDE_SMOKE=1 pnpm test:claude-smoke
 ```
 
-Do not fold provider-dependent smoke tests into the default validation path unless CI and local credential behavior are explicitly handled.
+Deterministic Claude smoke helper and diagnostic tests that use fake metadata can stay in the default suite because they do not require Claude credentials. Do not fold the real provider-dependent smoke run into the default validation path unless CI and local credential behavior are explicitly handled.
 
 ## Local services
 
