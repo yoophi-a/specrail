@@ -148,6 +148,23 @@ function parseSseEvents(buffer: string): Array<{ id: string; summary: string }> 
     .map((line) => JSON.parse(line.slice("data: ".length)) as { id: string; summary: string });
 }
 
+function formatSseWaitDiagnostics(buffer: string, options: { includeTail?: boolean } = {}): string {
+  const tail = options.includeTail ? `; buffer tail ${JSON.stringify(buffer.slice(-200))}` : "";
+
+  try {
+    const events = parseSseEvents(buffer);
+    const recentEvents = events
+      .slice(-5)
+      .map((event) => `${event.id}: ${event.summary}`)
+      .join(" | ");
+
+    return `observed ${events.length} event(s)${recentEvents ? `; recent: ${recentEvents}` : ""}; buffer length ${buffer.length}${tail}`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `failed to parse SSE buffer: ${message}; buffer length ${buffer.length}${tail}`;
+  }
+}
+
 async function openSseStream(url: string): Promise<{
   statusCode: number;
   headers: http.IncomingHttpHeaders;
@@ -177,7 +194,7 @@ async function openSseStream(url: string): Promise<{
             return await new Promise((innerResolve, innerReject) => {
               const timeout = setTimeout(() => {
                 cleanup();
-                innerReject(new Error(`timed out waiting for ${expectedCount} SSE events`));
+                innerReject(new Error(`timed out waiting for ${expectedCount} SSE events; ${formatSseWaitDiagnostics(buffer)}`));
               }, 5000);
 
               const onData = (): void => {
@@ -212,7 +229,7 @@ async function openSseStream(url: string): Promise<{
             return await new Promise((innerResolve, innerReject) => {
               const timeout = setTimeout(() => {
                 cleanup();
-                innerReject(new Error("timed out waiting for matching SSE event"));
+                innerReject(new Error(`timed out waiting for matching SSE event; ${formatSseWaitDiagnostics(buffer, { includeTail: true })}`));
               }, 10000);
 
               const onData = (): void => {
