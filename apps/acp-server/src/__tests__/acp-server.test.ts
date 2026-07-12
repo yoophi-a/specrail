@@ -17,6 +17,15 @@ function assertJsonIncludes(value: unknown, expected: string, label: string): vo
   );
 }
 
+function assertJsonExcludes(value: unknown, unexpected: string, label: string): void {
+  const serialized = JSON.stringify(value) ?? "undefined";
+  const snapshot = serialized.length > 4_000 ? `${serialized.slice(0, 4_000)}...<truncated>` : serialized;
+  assert.ok(
+    !serialized.includes(unexpected),
+    `${label} contained unexpected JSON fragment:\n${unexpected}\n\nActual ${label} snapshot:\n${snapshot}`,
+  );
+}
+
 function assertAcpError(
   response: unknown,
   expected: { code?: number; message?: RegExp; reason?: string },
@@ -1154,9 +1163,8 @@ test("ACP server clears pending permission state on cancel", async () => {
 
   assert.equal(loadResponse?.error, undefined);
   const sessionInfoUpdate = loadNotifications.find((payload) => JSON.stringify(payload).includes("session_info_update"));
-  const serializedSessionInfo = JSON.stringify(sessionInfoUpdate);
-  assert.ok(serializedSessionInfo.includes('"status":"cancelled"'));
-  assert.ok(!serializedSessionInfo.includes("pendingPermissionRequest"));
+  assertJsonIncludes(sessionInfoUpdate, '"status":"cancelled"', "ACP cancel session info update");
+  assertJsonExcludes(sessionInfoUpdate, "pendingPermissionRequest", "ACP cancel session info update");
 
   const listResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 5, method: "session/list", params: { cwd: "/tmp/specrail" } },
