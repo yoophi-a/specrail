@@ -64,6 +64,10 @@ note ""
 
 note "## Running smoke test"
 note ""
-pnpm test:claude-smoke
+if ! pnpm test:claude-smoke; then
+  note ""
+  note "Claude smoke failed. Inspect the test output above for readiness, metadata, event subtype, or raw-output diagnostics."
+  exit 1
+fi
 note ""
 note "Claude smoke passed."
