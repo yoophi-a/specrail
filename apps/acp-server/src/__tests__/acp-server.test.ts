@@ -17,6 +17,26 @@ function assertJsonIncludes(value: unknown, expected: string, label: string): vo
   );
 }
 
+function assertAcpError(
+  response: unknown,
+  expected: { code?: number; message?: RegExp; reason?: string },
+  label: string,
+): void {
+  const payload = response as { error?: { code?: number; message?: string; data?: { reason?: string } } } | null | undefined;
+  const snapshot = JSON.stringify(response) ?? "undefined";
+  const error = payload?.error;
+  assert.ok(error, `${label} missing JSON-RPC error. Actual response:\n${snapshot}`);
+  if (expected.code !== undefined) {
+    assert.equal(error.code, expected.code, `${label} error code mismatch. Actual response:\n${snapshot}`);
+  }
+  if (expected.message !== undefined) {
+    assert.match(error.message ?? "", expected.message, `${label} error message mismatch. Actual response:\n${snapshot}`);
+  }
+  if (expected.reason !== undefined) {
+    assert.equal(error.data?.reason, expected.reason, `${label} error reason mismatch. Actual response:\n${snapshot}`);
+  }
+}
+
 function createFakeService(options: { workspaceRoot?: string; trackId?: string; projectId?: string } = {}) {
   const track: Track = {
     id: options.trackId ?? "track-1",
@@ -494,7 +514,7 @@ test("ACP server reads linked run workspace paths through scoped capability", as
     { jsonrpc: "2.0", id: 2, method: "specrail/workspace/read", params: { sessionId, path: "." } },
     () => {},
   );
-  assert.equal(missingRunResponse?.error?.data && (missingRunResponse.error.data as { reason?: string }).reason, "missing_run");
+  assertAcpError(missingRunResponse, { reason: "missing_run" }, "ACP workspace read before run");
 
   await server.handleMessage(
     {
@@ -591,25 +611,25 @@ test("ACP server reads linked run workspace paths through scoped capability", as
     { jsonrpc: "2.0", id: 8, method: "specrail/workspace/read", params: { sessionId, path: "notes/missing.md" } },
     () => {},
   );
-  assert.equal(missingPathResponse?.error?.data && (missingPathResponse.error.data as { reason?: string }).reason, "path_not_found");
+  assertAcpError(missingPathResponse, { reason: "path_not_found" }, "ACP workspace read missing path");
 
   const outsideResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 9, method: "specrail/workspace/read", params: { sessionId, path: "../secret.txt" } },
     () => {},
   );
-  assert.equal(outsideResponse?.error?.data && (outsideResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
+  assertAcpError(outsideResponse, { reason: "path_outside_workspace" }, "ACP workspace read parent escape");
 
   const absolutePathResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 10, method: "specrail/workspace/read", params: { sessionId, path: path.join(runWorkspace, "notes", "summary.md") } },
     () => {},
   );
-  assert.equal(absolutePathResponse?.error?.data && (absolutePathResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
+  assertAcpError(absolutePathResponse, { reason: "path_outside_workspace" }, "ACP workspace read absolute path");
 
   const symlinkEscapeResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 11, method: "specrail/workspace/read", params: { sessionId, path: "notes/outside-link.txt" } },
     () => {},
   );
-  assert.equal(symlinkEscapeResponse?.error?.data && (symlinkEscapeResponse.error.data as { reason?: string }).reason, "path_outside_workspace");
+  assertAcpError(symlinkEscapeResponse, { reason: "path_outside_workspace" }, "ACP workspace read symlink escape");
 });
 
 test("ACP server marks workspace cleanup blocked while the linked run is active", async () => {
@@ -949,8 +969,11 @@ test("ACP server rejects invalid permission resolution payloads", async () => {
     () => {},
   );
 
-  assert.equal(mismatchResponse?.error?.code, -32602);
-  assert.match(mismatchResponse?.error?.message ?? "", /permissionResolution\.requestId does not match pending request/);
+  assertAcpError(
+    mismatchResponse,
+    { code: -32602, message: /permissionResolution\.requestId does not match pending request/ },
+    "ACP mismatched permission resolution",
+  );
 
   const invalidOutcomeResponse = await server.handleMessage(
     {
@@ -973,8 +996,11 @@ test("ACP server rejects invalid permission resolution payloads", async () => {
     () => {},
   );
 
-  assert.equal(invalidOutcomeResponse?.error?.code, -32602);
-  assert.match(invalidOutcomeResponse?.error?.message ?? "", /permissionResolution\.outcome must be approved or rejected/);
+  assertAcpError(
+    invalidOutcomeResponse,
+    { code: -32602, message: /permissionResolution\.outcome must be approved or rejected/ },
+    "ACP invalid permission outcome",
+  );
 
   const invalidDecidedByResponse = await server.handleMessage(
     {
@@ -998,8 +1024,11 @@ test("ACP server rejects invalid permission resolution payloads", async () => {
     () => {},
   );
 
-  assert.equal(invalidDecidedByResponse?.error?.code, -32602);
-  assert.match(invalidDecidedByResponse?.error?.message ?? "", /permissionResolution\.decidedBy must be user, agent, or system/);
+  assertAcpError(
+    invalidDecidedByResponse,
+    { code: -32602, message: /permissionResolution\.decidedBy must be user, agent, or system/ },
+    "ACP invalid permission actor",
+  );
 });
 
 test("ACP server rejects permission resolutions before starting unlinked runs", async () => {
@@ -1059,8 +1088,11 @@ test("ACP server rejects permission resolutions before starting unlinked runs", 
     () => {},
   );
 
-  assert.equal(response?.error?.code, -32602);
-  assert.match(response?.error?.message ?? "", /permissionResolution provided but there is no linked run/);
+  assertAcpError(
+    response,
+    { code: -32602, message: /permissionResolution provided but there is no linked run/ },
+    "ACP unlinked permission resolution",
+  );
   assert.equal(startRunCalls, 0);
 });
 
