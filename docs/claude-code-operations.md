@@ -250,7 +250,7 @@ How the workflow stays non-brittle by default:
 - the helper script can emit a clear skip reason when smoke mode is not requested, while strict CI mode can still fail intentionally when the dedicated smoke workflow is enabled
 
 How smoke results should surface:
-- success or skip reasons are written to the job log and `GITHUB_STEP_SUMMARY`
+- success, skip reasons, and failure inspection hints are written to the job log and `GITHUB_STEP_SUMMARY`
 - failures happen only inside the dedicated smoke workflow/job, not in the default repository validation path
 - failure-time artifacts can be uploaded from temp/session directories for debugging when the runner supports them
 
