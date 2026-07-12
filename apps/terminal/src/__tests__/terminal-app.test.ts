@@ -34,6 +34,20 @@ import {
   type TerminalAppState,
 } from "../index.js";
 
+function formatTextSnapshot(value: string): string {
+  const compact = value.replace(/\s+/gu, " ").trim();
+  return compact.length > 2_000 ? `${compact.slice(0, 2_000)}...<truncated>` : compact;
+}
+
+function assertTextMatchesAll(value: string, patterns: RegExp[], label: string): void {
+  const missingPatterns = patterns.filter((pattern) => !pattern.test(value));
+  assert.deepEqual(
+    missingPatterns,
+    [],
+    `${label} missing expected output pattern(s): ${missingPatterns.map(String).join(", ")}\nOutput snapshot:\n${formatTextSnapshot(value)}`,
+  );
+}
+
 test("isTerminalEntrypoint compares argv paths through file URLs", () => {
   const pathWithSpecialCharacters = "/tmp/specrail #terminal/index.js";
   assert.equal(isTerminalEntrypoint(pathToFileURL(pathWithSpecialCharacters).href, pathWithSpecialCharacters), true);
@@ -303,11 +317,17 @@ test("runTerminalCommand prints command help", async () => {
   );
 
   const output = writes.join("");
-  assert.match(output, /Usage: specrail-terminal \[command\]/);
-  assert.match(output, /report <runId> \[--output <file>\|-o <file>\]/);
-  assert.match(output, /diff-exports \[--json\] \[--limit <n>\] \[--track <trackId>\] \[--artifact <kind>\]/);
-  assert.match(output, /diff-export <index> \[--track <trackId>\] \[--artifact <kind>\] \[--output <file>\|-o <file>\]/);
-  assert.match(output, /message-templates \[--json\] \[--output <file>\|-o <file>\]/);
+  assertTextMatchesAll(
+    output,
+    [
+      /Usage: specrail-terminal \[command\]/,
+      /report <runId> \[--output <file>\|-o <file>\]/,
+      /diff-exports \[--json\] \[--limit <n>\] \[--track <trackId>\] \[--artifact <kind>\]/,
+      /diff-export <index> \[--track <trackId>\] \[--artifact <kind>\] \[--output <file>\|-o <file>\]/,
+      /message-templates \[--json\] \[--output <file>\|-o <file>\]/,
+    ],
+    "terminal command help",
+  );
 });
 
 test("runTerminalCommand writes report command output to an explicit file", async () => {
