@@ -1881,7 +1881,7 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
     stdin.key("\r", "return");
     await waitForOutput(stdout, "Workspace cleanup applied for run-cleanup-a; detail and events refreshed.");
     assert.deepEqual(applyBodies[1], { confirm: "apply workspace cleanup for run-cleanup-a" });
-    assert(stdout.output.includes("Workspace cleanup applied for execution run-cleanup-a"));
+    assertStdoutIncludes(stdout, "Workspace cleanup applied for execution run-cleanup-a");
     assert(requests.includes("GET /runs/run-cleanup-a/events"));
   } finally {
     stdin.key("q");
@@ -1987,7 +1987,7 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
     await waitForOutput(stdout, "track-msg");
     stdin.key("M");
     await waitForOutput(stdout, "Planning session chooser");
-    assert.match(stdout.output, /> 1\. plan-msg .* current/);
+    assertStdoutMatches(stdout, /> 1\. plan-msg .* current/);
     stdin.key("j");
     await waitForOutput(stdout, "Planning session plan-msg-next highlighted.");
     stdin.key("\r", "return");
@@ -2000,8 +2000,8 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
     assert.deepEqual(messageBodies, []);
     stdin.key("", "t", true);
     await waitForOutput(stdout, "Applied Team handoff planning-message template.");
-    assert.match(stdout.output, /kind: note/);
-    assert.match(stdout.output, /Team handoff:/);
+    assertStdoutMatches(stdout, /kind: note/);
+    assertStdoutMatches(stdout, /Team handoff:/);
     stdin.key("\r", "return");
     await waitForOutput(stdout, "Appended planning message msg-terminal-1 to plan-msg-next.");
     assert.deepEqual(messageBodies, [{
@@ -2091,14 +2091,14 @@ test("runTerminalApp creates a planning session from the tracks screen", async (
     await waitForOutput(stdout, "track-create");
     stdin.key("N");
     await waitForOutput(stdout, "Planning session create action");
-    assert.match(stdout.output, /status: active \(press y to cycle\)/);
+    assertStdoutMatches(stdout, /status: active \(press y to cycle\)/);
     stdin.key("y");
     await waitForOutput(stdout, "Planning session status set to waiting_user.");
     stdin.key("\r", "return");
     await waitForOutput(stdout, "Created waiting_user planning session plan-created.");
     assert.deepEqual(createBodies, [{ status: "waiting_user" }]);
-    assert.match(stdout.output, /planning session: plan-created \(2\/2\)/);
-    assert.match(stdout.output, /> plan-created \| waiting_user/);
+    assertStdoutMatches(stdout, /planning session: plan-created \(2\/2\)/);
+    assertStdoutMatches(stdout, /> plan-created \| waiting_user/);
   } finally {
     stdin.key("q");
     await app;
@@ -2175,5 +2175,20 @@ async function waitForOutput(stdout: FakeTerminalStdout, expectedText: string, t
     () => stdout.output.includes(expectedText),
     timeoutMs,
     () => `expected output ${JSON.stringify(expectedText)}; stdout tail ${formatStdoutTail(stdout)}`,
+  );
+}
+
+function assertStdoutIncludes(stdout: FakeTerminalStdout, expectedText: string): void {
+  assert.ok(
+    stdout.output.includes(expectedText),
+    `expected terminal output to include ${JSON.stringify(expectedText)}; stdout tail ${formatStdoutTail(stdout)}`,
+  );
+}
+
+function assertStdoutMatches(stdout: FakeTerminalStdout, expectedPattern: RegExp): void {
+  assert.match(
+    stdout.output,
+    expectedPattern,
+    `expected terminal output to match ${expectedPattern}; stdout tail ${formatStdoutTail(stdout)}`,
   );
 }
