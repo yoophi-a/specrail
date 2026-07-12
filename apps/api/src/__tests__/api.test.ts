@@ -123,6 +123,22 @@ function assertRunEventsInclude(
   );
 }
 
+function assertRunEventsContain(
+  events: Array<{ type?: string; summary?: string; payload?: unknown }>,
+  matches: (event: { type?: string; summary?: string; payload?: unknown }) => boolean,
+  expectedDescription: string,
+  label: string,
+): void {
+  const snapshot = events
+    .slice(-10)
+    .map((event, index) => `${index}: ${event.type ?? "unknown"}: ${event.summary ?? ""} payload=${JSON.stringify(event.payload ?? null)}`)
+    .join("\n");
+  assert.ok(
+    events.some(matches),
+    `${label} missing expected run event: ${expectedDescription}.\nObserved events:\n${snapshot || "<none>"}`,
+  );
+}
+
 async function readRunEventsText(baseUrl: string, runId: string): Promise<string> {
   const deadline = Date.now() + 5000;
   let lastStatus = 0;
@@ -1970,13 +1986,16 @@ test("API supports resuming and cancelling a run", async () => {
     const refusedEventsPayload = (await refusedEventsResponse.json()) as {
       events: Array<{ summary: string; payload?: { status?: string; refusalReasons?: string[] } }>;
     };
-    assert.ok(
-      refusedEventsPayload.events.some(
-        (event) =>
-          event.summary === `Workspace cleanup refused for execution ${runPayload.run.id}` &&
-          event.payload?.status === "refused" &&
-          event.payload.refusalReasons?.includes("Workspace cleanup apply requires explicit confirmation"),
-      ),
+    assertRunEventsContain(
+      refusedEventsPayload.events,
+      (event) =>
+        event.summary === `Workspace cleanup refused for execution ${runPayload.run.id}` &&
+        (event.payload as { status?: string; refusalReasons?: string[] } | undefined)?.status === "refused" &&
+        (event.payload as { refusalReasons?: string[] } | undefined)?.refusalReasons?.includes(
+          "Workspace cleanup apply requires explicit confirmation",
+        ) === true,
+      "refused workspace cleanup event with explicit-confirmation refusal reason",
+      "API cleanup refused events",
     );
 
     const appliedCleanupResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/apply`, {
@@ -1997,13 +2016,14 @@ test("API supports resuming and cancelling a run", async () => {
     const appliedEventsPayload = (await appliedEventsResponse.json()) as {
       events: Array<{ summary: string; payload?: { status?: string; operationCount?: number } }>;
     };
-    assert.ok(
-      appliedEventsPayload.events.some(
-        (event) =>
-          event.summary === `Workspace cleanup applied for execution ${runPayload.run.id}` &&
-          event.payload?.status === "applied" &&
-          event.payload.operationCount === 1,
-      ),
+    assertRunEventsContain(
+      appliedEventsPayload.events,
+      (event) =>
+        event.summary === `Workspace cleanup applied for execution ${runPayload.run.id}` &&
+        (event.payload as { status?: string; operationCount?: number } | undefined)?.status === "applied" &&
+        (event.payload as { operationCount?: number } | undefined)?.operationCount === 1,
+      "applied workspace cleanup event with one operation",
+      "API cleanup applied events",
     );
   });
 });
