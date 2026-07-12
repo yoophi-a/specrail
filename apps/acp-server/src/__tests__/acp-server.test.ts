@@ -46,6 +46,17 @@ function assertAcpError(
   }
 }
 
+function findAcpNotificationByMethod<T extends Record<string, unknown>>(
+  notifications: T[],
+  expectedMethod: string,
+  label: string,
+): T {
+  const notification = notifications.find((payload) => payload.method === expectedMethod);
+  const snapshot = JSON.stringify(notifications) ?? "undefined";
+  assert.ok(notification, `${label} missing notification method ${expectedMethod}. Actual notifications:\n${snapshot}`);
+  return notification;
+}
+
 function createFakeService(options: { workspaceRoot?: string; trackId?: string; projectId?: string } = {}) {
   const track: Track = {
     id: options.trackId ?? "track-1",
@@ -789,15 +800,14 @@ test("ACP server emits richer permission request and resolution updates", async 
   );
 
   assert.deepEqual(promptResponse?.result, { stopReason: "end_turn" });
-  assert.ok(startNotifications.some((payload) => payload.method === "session/request_permission"));
+  const permissionRequest = findAcpNotificationByMethod(startNotifications, "session/request_permission", "ACP permission request notifications") as {
+    params?: { toolName?: string; requestId?: string };
+  };
 
   const infoUpdates = startNotifications.filter((payload) => payload.method === "session/update");
   assertJsonIncludes(infoUpdates, '"status":"waiting_approval"', "ACP session info updates");
   assertJsonIncludes(startNotifications, '"eventProjection":{"kind":"approval_requested","requestId":"run-1-approval-request","toolName":"Bash","toolUseId":"tool-run-1"}', "ACP start notifications");
 
-  const permissionRequest = startNotifications.find((payload) => payload.method === "session/request_permission") as
-    | { params?: { toolName?: string; requestId?: string } }
-    | undefined;
   assert.equal(permissionRequest?.params?.toolName, "Bash");
   assert.equal(permissionRequest?.params?.requestId, "run-1-approval-request");
 
