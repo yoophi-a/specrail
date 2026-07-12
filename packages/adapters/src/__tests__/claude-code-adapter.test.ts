@@ -35,6 +35,10 @@ function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+function formatCommandArgs(args: string[]): string {
+  return args.map((arg, index) => `${index}: ${JSON.stringify(arg)}`).join("\n");
+}
+
 function assertRuntimeEventsIncludeSummary(
   events: Array<{ type?: string; subtype?: string; summary?: string }>,
   expectedSummary: string | undefined,
@@ -67,7 +71,7 @@ test("buildClaudeCodeSpawnCommand uses print stream-json mode and maps non-defau
     "--model",
     "claude-sonnet-4",
   ]);
-  assert.ok(command.args.includes("--session-id"));
+  assert.ok(command.args.includes("--session-id"), `Claude command args missing --session-id:\n${formatCommandArgs(command.args)}`);
   assert.equal(command.args.at(-1), "Implement the adapter");
 });
 

@@ -40,6 +40,10 @@ function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+function formatCommandArgs(args: string[]): string {
+  return args.map((arg, index) => `${index}: ${JSON.stringify(arg)}`).join("\n");
+}
+
 test("buildCodexSpawnCommand omits the profile flag for the default profile", () => {
   const command = buildCodexSpawnCommand({
     executionId: "run-1",
@@ -58,7 +62,7 @@ test("buildCodexSpawnCommand omits the profile flag for the default profile", ()
     "--skip-git-repo-check",
   ]);
   assert.equal(command.args[5], "Implement the endpoint");
-  assert.ok(!command.args.includes("--profile"));
+  assert.ok(!command.args.includes("--profile"), `Codex default profile command args should omit --profile:\n${formatCommandArgs(command.args)}`);
   assert.match(command.args[3] ?? "", /run-1-codex\.last-message\.txt$/);
 });
 
