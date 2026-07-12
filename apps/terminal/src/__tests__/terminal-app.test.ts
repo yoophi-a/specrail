@@ -1478,25 +1478,31 @@ test("renderAppShell renders run event monitor details", () => {
     },
   });
 
-  assert.match(rendered, /event summary: 4 events, last at 2026-04-10T12:04:00.000Z/);
-  assert.match(rendered, /failure focus: Failed Claude Code session run-1-claude \(exit 1\)/);
-  assert.match(rendered, /Runs \(1\/1, filter=terminal\)/);
-  assert.match(rendered, /stream: reconnecting \(attempt 2\)/);
-  assert.match(rendered, /report: \/runs\/run-1\/report\.md/);
-  assert.match(rendered, /operator actions: press e to resume this run, w to preview workspace cleanup, Space to pause tail/);
-  assert.match(rendered, /Help: runs — f cycles filters, Space pauses live tail, d toggles event detail, p\/n selects event detail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup\./);
-  assert.match(rendered, /recent activity:/);
-  assert.match(rendered, /tool_call \| claude_tool_call \| Claude requested tool Bash — tool=Bash, id=toolu-1, input=\{\"command\":\"pnpm test -- --runInBand\"\}/);
-  assert.match(rendered, /approval_requested \| claude_permission_denial \| Claude requested approval for Bash — request=approval-1, tool=Bash/);
-  assert.match(rendered, /message \| stream=stderr \| STDERR run-1-claude — first line second line with detailed provider output/);
-  assert.match(rendered, /task_status_changed \| status=failed \| Failed Claude Code session run-1-claude/);
-  assert.match(rendered, /event detail \(1\/4\):/);
-  assert.match(rendered, /id: evt-tool/);
-  assert.match(rendered, /type: tool_call \/ claude_tool_call/);
-  assert.match(rendered, /highlights:/);
-  assert.match(rendered, /tool call: Bash \(toolu-1\)/);
-  assert.match(rendered, /input: \{"command":"pnpm test -- --runInBand"\}/);
-  assert.match(rendered, /"toolUseId": "toolu-1"/);
+  assertTextMatchesAll(
+    rendered,
+    [
+      /event summary: 4 events, last at 2026-04-10T12:04:00.000Z/,
+      /failure focus: Failed Claude Code session run-1-claude \(exit 1\)/,
+      /Runs \(1\/1, filter=terminal\)/,
+      /stream: reconnecting \(attempt 2\)/,
+      /report: \/runs\/run-1\/report\.md/,
+      /operator actions: press e to resume this run, w to preview workspace cleanup, Space to pause tail/,
+      /Help: runs — f cycles filters, Space pauses live tail, d toggles event detail, p\/n selects event detail, e resumes terminal runs, c cancels active runs, w previews workspace cleanup\./,
+      /recent activity:/,
+      /tool_call \| claude_tool_call \| Claude requested tool Bash — tool=Bash, id=toolu-1, input=\{\"command\":\"pnpm test -- --runInBand\"\}/,
+      /approval_requested \| claude_permission_denial \| Claude requested approval for Bash — request=approval-1, tool=Bash/,
+      /message \| stream=stderr \| STDERR run-1-claude — first line second line with detailed provider output/,
+      /task_status_changed \| status=failed \| Failed Claude Code session run-1-claude/,
+      /event detail \(1\/4\):/,
+      /id: evt-tool/,
+      /type: tool_call \/ claude_tool_call/,
+      /highlights:/,
+      /tool call: Bash \(toolu-1\)/,
+      /input: \{"command":"pnpm test -- --runInBand"\}/,
+      /"toolUseId": "toolu-1"/,
+    ],
+    "terminal run event monitor render",
+  );
 });
 
 test("renderAppShell renders guarded workspace cleanup preview and confirmation state", () => {
