@@ -1882,7 +1882,7 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
     await waitForOutput(stdout, "Workspace cleanup applied for run-cleanup-a; detail and events refreshed.");
     assert.deepEqual(applyBodies[1], { confirm: "apply workspace cleanup for run-cleanup-a" });
     assertStdoutIncludes(stdout, "Workspace cleanup applied for execution run-cleanup-a");
-    assert(requests.includes("GET /runs/run-cleanup-a/events"));
+    assertObservedRequest(requests, "GET /runs/run-cleanup-a/events");
   } finally {
     stdin.key("q");
     await app;
@@ -2190,5 +2190,12 @@ function assertStdoutMatches(stdout: FakeTerminalStdout, expectedPattern: RegExp
     stdout.output,
     expectedPattern,
     `expected terminal output to match ${expectedPattern}; stdout tail ${formatStdoutTail(stdout)}`,
+  );
+}
+
+function assertObservedRequest(requests: string[], expectedRequest: string): void {
+  assert.ok(
+    requests.includes(expectedRequest),
+    `expected request ${JSON.stringify(expectedRequest)}; observed requests ${JSON.stringify(requests)}`,
   );
 }
