@@ -27,6 +27,7 @@ const smokePrompt = readOptionalSmokeEnvValue(process.env.CLAUDE_SMOKE_PROMPT, "
 const smokeProfile = readOptionalSmokeEnvValue(process.env.CLAUDE_SMOKE_MODEL, "default");
 
 type ClaudeSmokeMetadata = Awaited<ReturnType<typeof readClaudeCodeSessionMetadata>>;
+type ClaudeSmokeEvents = Awaited<ReturnType<typeof readClaudeCodeSessionEvents>>;
 
 interface WaitForTerminalStatusOptions {
   readMetadata?: typeof readClaudeCodeSessionMetadata;
@@ -48,6 +49,15 @@ function formatClaudeSmokeStatus(metadata: ClaudeSmokeMetadata | undefined): str
     metadata.failureMessage ? `failure ${metadata.failureMessage}` : undefined,
     `updated at ${metadata.updatedAt}`,
   ].filter(Boolean).join("; ");
+}
+
+function formatClaudeSmokeEvents(events: ClaudeSmokeEvents): string {
+  const subtypes = events.map((event) => event.subtype ?? event.type).slice(-10).join(" | ");
+  return subtypes || "no events observed";
+}
+
+function formatRawOutputSnippet(rawOutput: string | null | undefined): string {
+  return JSON.stringify((rawOutput ?? "").slice(-500));
 }
 
 async function waitForTerminalStatus(
@@ -104,6 +114,31 @@ test("Claude smoke wait timeout includes last observed metadata", async () => {
   );
 });
 
+test("Claude smoke diagnostics summarize assertion context", () => {
+  const metadata: ClaudeSmokeMetadata = {
+    executionId: "execution-1",
+    sessionRef: "session-1",
+    backend: "claude_code",
+    profile: "default",
+    workspacePath: "/workspace",
+    command: { command: "claude", args: [], cwd: "/workspace" },
+    providerSessionId: "provider-1",
+    resumeSessionRef: "provider-1",
+    status: "completed",
+    prompt: "Say ok",
+    createdAt: "2026-07-12T00:00:00.000Z",
+    updatedAt: "2026-07-12T00:00:01.000Z",
+  };
+  const events = [
+    { id: "event-1", executionId: "execution-1", type: "lifecycle", subtype: "claude_init", summary: "Started", timestamp: "2026-07-12T00:00:00.000Z", source: "claude_code" },
+    { id: "event-2", executionId: "execution-1", type: "lifecycle", subtype: "claude_completed", summary: "Completed", timestamp: "2026-07-12T00:00:01.000Z", source: "claude_code" },
+  ] as unknown as ClaudeSmokeEvents;
+
+  assert.match(formatClaudeSmokeStatus(metadata), /last status completed; provider session provider-1; updated at 2026-07-12T00:00:01\.000Z/);
+  assert.equal(formatClaudeSmokeEvents(events), "claude_init | claude_completed");
+  assert.equal(formatRawOutputSnippet("assistant result"), "\"assistant result\"");
+});
+
 const smokeTest = enabled ? test : test.skip;
 
 smokeTest("ClaudeCodeAdapter smoke run completes with real Claude CLI output", async () => {
@@ -127,17 +162,21 @@ smokeTest("ClaudeCodeAdapter smoke run completes with real Claude CLI output", a
   });
 
   const metadata = await waitForTerminalStatus(sessionsDir, spawnResult.sessionRef);
-  assert.equal(metadata.status, "completed", metadata.failureMessage ?? "Claude smoke run did not complete successfully.");
-  assert.ok(metadata.providerSessionId);
-  assert.equal(metadata.resumeSessionRef, metadata.providerSessionId);
+  assert.equal(metadata.status, "completed", metadata.failureMessage ?? `Claude smoke run did not complete successfully; ${formatClaudeSmokeStatus(metadata)}.`);
+  assert.ok(metadata.providerSessionId, `Expected Claude smoke provider session id; ${formatClaudeSmokeStatus(metadata)}.`);
+  assert.equal(
+    metadata.resumeSessionRef,
+    metadata.providerSessionId,
+    `Expected resume session ref to match provider session id; ${formatClaudeSmokeStatus(metadata)}.`,
+  );
 
   const events = await readClaudeCodeSessionEvents(sessionsDir, spawnResult.sessionRef);
-  assert.ok(events.some((event) => event.subtype === "claude_init"), "Expected a Claude init event.");
+  assert.ok(events.some((event) => event.subtype === "claude_init"), `Expected a Claude init event; observed ${formatClaudeSmokeEvents(events)}.`);
   assert.ok(
     events.some((event) => event.subtype === "claude_completed"),
-    "Expected a Claude completed lifecycle event.",
+    `Expected a Claude completed lifecycle event; observed ${formatClaudeSmokeEvents(events)}.`,
   );
 
   const rawOutput = await readClaudeCodeRawOutput(sessionsDir, spawnResult.sessionRef);
-  assert.match(rawOutput ?? "", /session_id|result|assistant/u);
+  assert.match(rawOutput ?? "", /session_id|result|assistant/u, `Expected Claude raw output to include a session/result marker; raw output tail ${formatRawOutputSnippet(rawOutput)}.`);
 });
