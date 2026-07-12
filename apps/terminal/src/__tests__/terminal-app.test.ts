@@ -1229,13 +1229,19 @@ test("renderRevisionDiffPatch and exportRevisionDiffPatch write patch metadata a
     currentContent: "# Plan\nOld step\nKeep",
   });
 
-  assert.match(patch, /track: track\/patch/);
-  assert.match(patch, /revision: rev\/patch:1/);
-  assert.match(patch, /--- current\/plan/);
-  assert.match(patch, /\+\+\+ revision\/plan@rev\/patch:1/);
-  assert.match(patch, /@@ line 2 @@/);
-  assert.match(patch, /^-Old step$/m);
-  assert.match(patch, /^\+New step$/m);
+  assertTextMatchesAll(
+    patch,
+    [
+      /track: track\/patch/,
+      /revision: rev\/patch:1/,
+      /--- current\/plan/,
+      /\+\+\+ revision\/plan@rev\/patch:1/,
+      /@@ line 2 @@/,
+      /^-Old step$/m,
+      /^\+New step$/m,
+    ],
+    "terminal revision diff patch",
+  );
 
   const directory = await mkdtemp(join(tmpdir(), "specrail-patch-export-test-"));
   const outputDirectory = join(directory, "nested", "diffs");
