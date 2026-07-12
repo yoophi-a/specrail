@@ -34,6 +34,37 @@ function assertContainsAll(body: string, patterns: RegExp[]): void {
   }
 }
 
+function formatHarnessCalls(calls: Array<{ method?: string; path?: string; body?: unknown }>): string {
+  return (
+    calls
+      .slice(-20)
+      .map((call, index) => `${index}: ${call.method ?? "GET"} ${call.path ?? "<missing>"} body=${JSON.stringify(call.body ?? null)}`)
+      .join("\n") || "<none>"
+  );
+}
+
+function assertCallObserved(
+  calls: Array<{ method?: string; path?: string; body?: unknown }>,
+  expected: { method: string; path: string },
+  label: string,
+): void {
+  assert.ok(
+    calls.some((call) => call.method === expected.method && call.path === expected.path),
+    `${label} missing expected call ${expected.method} ${expected.path}.\nObserved calls:\n${formatHarnessCalls(calls)}`,
+  );
+}
+
+function assertCallNotObserved(
+  calls: Array<{ method?: string; path?: string; body?: unknown }>,
+  forbidden: { method: string; path: string },
+  label: string,
+): void {
+  assert.ok(
+    !calls.some((call) => call.method === forbidden.method && call.path === forbidden.path),
+    `${label} observed forbidden call ${forbidden.method} ${forbidden.path}.\nObserved calls:\n${formatHarnessCalls(calls)}`,
+  );
+}
+
 test("operator UI helpers escape metadata and previews", () => {
   assert.equal(operatorUiEscapeHtml(`<script>alert("x")</script>`), "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
   assert.equal(operatorUiMetadataHtml([["Run", "run-1"], ["Missing", undefined]]), "<dl><dt>Run</dt><dd>run-1</dd><dt>Missing</dt><dd>unknown</dd></dl>");
@@ -160,9 +191,8 @@ test("operator UI client harness filters tracks by project scope", async () => {
   await selectProject("project/2");
   await createTrack({ title: "Project Two Track" });
 
-  const scopedTrackLoads = calls.filter((call) => call.method === "GET" && call.path.startsWith("/tracks?page=1&pageSize=20"));
-  assert.ok(scopedTrackLoads.some((call) => call.path === "/tracks?page=1&pageSize=20&projectId=project%2F1"));
-  assert.ok(scopedTrackLoads.some((call) => call.path === "/tracks?page=1&pageSize=20&projectId=project%2F2"));
+  assertCallObserved(calls, { method: "GET", path: "/tracks?page=1&pageSize=20&projectId=project%2F1" }, "operator project scope loads");
+  assertCallObserved(calls, { method: "GET", path: "/tracks?page=1&pageSize=20&projectId=project%2F2" }, "operator project scope loads");
   assert.equal(elements.get("#tracks")?.children.length, 1);
 
   await selectProject("");
@@ -253,13 +283,13 @@ test("operator UI client harness blocks invalid form submissions", async () => {
   await flushClientPromises();
 
   assert.equal(elements.get("#status")!.textContent, "Project name is required.");
-  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/projects"), false);
+  assertCallNotObserved(calls, { method: "POST", path: "/projects" }, "operator invalid project create");
 
   await elements.get("#track-create")!.click();
   await flushClientPromises();
 
   assert.equal(elements.get("#status")!.textContent, "Track title is required.");
-  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/tracks"), false);
+  assertCallNotObserved(calls, { method: "POST", path: "/tracks" }, "operator invalid track create");
 
   const callsBeforeMissingProjectUpdate = calls.length;
   await elements.get("#project-update")!.click();
@@ -293,14 +323,14 @@ test("operator UI client harness blocks invalid form submissions", async () => {
   await flushClientPromises();
 
   assert.equal(elements.get("#status")!.textContent, "Run start prompt is required for track-1.");
-  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/runs"), false);
+  assertCallNotObserved(calls, { method: "POST", path: "/runs" }, "operator invalid run start");
 
   detail.querySelector("#artifact-proposal-content").value = "";
   await detail.querySelector("[data-artifact-proposal]").click();
   await flushClientPromises();
 
   assert.equal(elements.get("#status")!.textContent, "Artifact proposal content is required for spec.");
-  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/tracks/track-1/artifacts/spec"), false);
+  assertCallNotObserved(calls, { method: "POST", path: "/tracks/track-1/artifacts/spec" }, "operator invalid artifact proposal");
 });
 
 test("operator UI client harness blocks planning messages without a session", async () => {
@@ -315,7 +345,7 @@ test("operator UI client harness blocks planning messages without a session", as
 
   assert.equal(elements.get("#status")!.textContent, "Create a planning session before appending a message for track-1.");
   assert.equal(calls.length, callsBeforeAppend);
-  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/planning-sessions/unknown/messages"), false);
+  assertCallNotObserved(calls, { method: "POST", path: "/planning-sessions/unknown/messages" }, "operator missing planning session append");
 });
 
 test("operator UI client harness preserves empty editable control values", async () => {
@@ -433,13 +463,17 @@ test("operator UI client harness submits selected-track detail actions", async (
   await detail.querySelector("[data-folder-session-search]").click();
   await flushClientPromises();
 
-  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Frun-existing"), true);
+  assertCallObserved(
+    calls,
+    { method: "GET", path: "/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Frun-existing" },
+    "operator folder-session search",
+  );
   assert.match(detail.querySelector("#folder-session-results").innerHTML, /data-folder-run-preview/);
 
   await detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview]")[0]?.click();
   await flushClientPromises();
 
-  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run-existing/session-preview?eventLimit=5"), true);
+  assertCallObserved(calls, { method: "GET", path: "/runs/run-existing/session-preview?eventLimit=5" }, "operator folder-session preview");
   const previewPanel = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview-panel]")[0];
   assert.match(previewPanel?.innerHTML ?? "", /<strong>Workspace:<\/strong> \/workspace\/run-existing\/app/);
   assert.match(previewPanel?.innerHTML ?? "", /<a href="\/runs\/run-existing\/report\.md">\/runs\/run-existing\/report\.md<\/a>/);
@@ -671,7 +705,11 @@ test("operator UI client harness surfaces folder-session search failures", async
   await searchButton.click();
   await flushClientPromises();
 
-  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Fsearch-failure"), true);
+  assertCallObserved(
+    calls,
+    { method: "GET", path: "/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Fsearch-failure" },
+    "operator folder-session search failure",
+  );
   assert.equal(elements.get("#status")!.textContent, "folder session search refused");
   assert.equal(searchButton.disabled, false);
 });
@@ -687,12 +725,16 @@ test("operator UI client harness encodes opaque folder-session preview and resum
   await detail.querySelector("[data-folder-session-search]").click();
   await flushClientPromises();
 
-  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Frun-folder"), true);
+  assertCallObserved(
+    calls,
+    { method: "GET", path: "/runs?page=1&pageSize=10&workspacePath=%2Fworkspace%2Frun-folder" },
+    "operator folder-session search",
+  );
 
   await detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview]")[0]?.click();
   await flushClientPromises();
 
-  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Ffolder/session-preview?eventLimit=5"), true);
+  assertCallObserved(calls, { method: "GET", path: "/runs/run%2Ffolder/session-preview?eventLimit=5" }, "operator folder-session preview");
   const previewPanel = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview-panel]")[0];
   assert.match(previewPanel?.innerHTML ?? "", /<a href="\/runs\/run%2Ffolder\/report\.md">\/runs\/run%2Ffolder\/report\.md<\/a>/);
 
@@ -722,7 +764,11 @@ test("operator UI client harness surfaces folder-session preview failures", asyn
   await previewButton.click();
   await flushClientPromises();
 
-  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Fpreview-failure/session-preview?eventLimit=5"), true);
+  assertCallObserved(
+    calls,
+    { method: "GET", path: "/runs/run%2Fpreview-failure/session-preview?eventLimit=5" },
+    "operator folder-session preview failure",
+  );
   assert.equal(elements.get("#status")!.textContent, "session preview refused");
   assert.equal(previewButton.disabled, false);
 });
@@ -825,7 +871,7 @@ test("operator UI client harness submits selected-run detail actions", async () 
 
   await requestCleanupPreview();
 
-  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run-1/workspace-cleanup/preview"), true);
+  assertCallObserved(calls, { method: "GET", path: "/runs/run-1/workspace-cleanup/preview" }, "operator cleanup preview");
 
   await requestCleanupConfirmation();
 
@@ -851,8 +897,8 @@ test("operator UI client harness encodes opaque selected-run action paths", asyn
   await loadInitialState();
   await flushClientPromises();
 
-  assert.ok(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Fopaque"));
-  assert.ok(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Fopaque/events"));
+  assertCallObserved(calls, { method: "GET", path: "/runs/run%2Fopaque" }, "operator opaque run detail");
+  assertCallObserved(calls, { method: "GET", path: "/runs/run%2Fopaque/events" }, "operator opaque run events");
   assert.equal(eventSources.at(-1)?.url, "/runs/run%2Fopaque/events/stream");
 
   detail.querySelector("#run-resume-prompt").value = "Resume opaque run.";
@@ -872,7 +918,7 @@ test("operator UI client harness encodes opaque selected-run action paths", asyn
 
   await requestCleanupPreview();
 
-  assert.equal(calls.some((call) => call.method === "GET" && call.path === "/runs/run%2Fopaque/workspace-cleanup/preview"), true);
+  assertCallObserved(calls, { method: "GET", path: "/runs/run%2Fopaque/workspace-cleanup/preview" }, "operator opaque cleanup preview");
 
   await requestCleanupConfirmation();
 
@@ -953,21 +999,21 @@ test("operator UI client harness blocks invalid run lifecycle submissions", asyn
   await flushClientPromises();
 
   assert.equal(elements.get("#status")!.textContent, "Run resume prompt is required for run-1.");
-  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/runs/run-1/resume"), false);
+  assertCallNotObserved(calls, { method: "POST", path: "/runs/run-1/resume" }, "operator invalid run resume");
 
   detail.querySelector("#run-fork-prompt").value = "   ";
   await detail.querySelector("[data-run-fork]").click();
   await flushClientPromises();
 
   assert.equal(elements.get("#status")!.textContent, "Run fork prompt is required for run-1.");
-  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/runs/run-1/fork"), false);
+  assertCallNotObserved(calls, { method: "POST", path: "/runs/run-1/fork" }, "operator invalid run fork");
 
   detail.querySelector("#run-cancel-confirmation").value = "nope";
   await detail.querySelector("[data-run-cancel]").click();
   await flushClientPromises();
 
   assert.equal(elements.get("#status")!.textContent, "Type cancel before cancelling run run-1.");
-  assert.equal(calls.some((call) => call.method === "POST" && call.path === "/runs/run-1/cancel"), false);
+  assertCallNotObserved(calls, { method: "POST", path: "/runs/run-1/cancel" }, "operator invalid run cancel");
 });
 
 test("operator UI client harness blocks blank cleanup confirmation", async () => {
@@ -1059,7 +1105,7 @@ test("operator UI client opens run detail from runId query parameter", async () 
   await loadInitialState();
   await flushClientPromises();
 
-  assert.ok(calls.some((call) => call.path === "/runs/run%2Flinked" && call.method === "GET"));
-  assert.ok(calls.some((call) => call.path === "/runs/run%2Flinked/events" && call.method === "GET"));
+  assertCallObserved(calls, { method: "GET", path: "/runs/run%2Flinked" }, "operator linked run detail");
+  assertCallObserved(calls, { method: "GET", path: "/runs/run%2Flinked/events" }, "operator linked run events");
   assert.match(detail.innerHTML, /Run run\/linked/);
 });
