@@ -26,24 +26,83 @@ const enabled = readOptionalSmokeBooleanEnvValue(process.env.SPECRAIL_RUN_CLAUDE
 const smokePrompt = readOptionalSmokeEnvValue(process.env.CLAUDE_SMOKE_PROMPT, "Reply with exactly the single word ok.");
 const smokeProfile = readOptionalSmokeEnvValue(process.env.CLAUDE_SMOKE_MODEL, "default");
 
+type ClaudeSmokeMetadata = Awaited<ReturnType<typeof readClaudeCodeSessionMetadata>>;
+
+interface WaitForTerminalStatusOptions {
+  readMetadata?: typeof readClaudeCodeSessionMetadata;
+  sleep?: (durationMs: number) => Promise<void>;
+  now?: () => number;
+}
+
+function formatClaudeSmokeStatus(metadata: ClaudeSmokeMetadata | undefined): string {
+  if (!metadata) {
+    return "no metadata observed";
+  }
+
+  return [
+    `last status ${metadata.status}`,
+    metadata.pid === undefined ? undefined : `pid ${metadata.pid}`,
+    metadata.providerSessionId ? `provider session ${metadata.providerSessionId}` : undefined,
+    metadata.exitCode === undefined ? undefined : `exit code ${metadata.exitCode}`,
+    metadata.signal ? `signal ${metadata.signal}` : undefined,
+    metadata.failureMessage ? `failure ${metadata.failureMessage}` : undefined,
+    `updated at ${metadata.updatedAt}`,
+  ].filter(Boolean).join("; ");
+}
+
 async function waitForTerminalStatus(
   sessionsDir: string,
   sessionRef: string,
   timeoutMs = 60_000,
-): Promise<Awaited<ReturnType<typeof readClaudeCodeSessionMetadata>>> {
-  const startedAt = Date.now();
+  options: WaitForTerminalStatusOptions = {},
+): Promise<ClaudeSmokeMetadata> {
+  const readMetadata = options.readMetadata ?? readClaudeCodeSessionMetadata;
+  const sleep = options.sleep ?? ((durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs)));
+  const now = options.now ?? Date.now;
+  const startedAt = now();
+  let lastMetadata: ClaudeSmokeMetadata | undefined;
 
-  while (Date.now() - startedAt < timeoutMs) {
-    const metadata = await readClaudeCodeSessionMetadata(sessionsDir, sessionRef);
+  while (now() - startedAt < timeoutMs) {
+    const metadata = await readMetadata(sessionsDir, sessionRef);
+    lastMetadata = metadata;
     if (["completed", "failed", "cancelled"].includes(metadata.status)) {
       return metadata;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await sleep(250);
   }
 
-  throw new Error(`Timed out waiting for Claude smoke run ${sessionRef} to finish.`);
+  throw new Error(`Timed out waiting for Claude smoke run ${sessionRef} to finish; ${formatClaudeSmokeStatus(lastMetadata)}.`);
 }
+
+test("Claude smoke wait timeout includes last observed metadata", async () => {
+  let currentTime = 0;
+  const metadata: ClaudeSmokeMetadata = {
+    executionId: "execution-1",
+    sessionRef: "session-1",
+    backend: "claude_code",
+    profile: "default",
+    workspacePath: "/workspace",
+    command: { command: "claude", args: [], cwd: "/workspace" },
+    pid: 123,
+    providerSessionId: "provider-1",
+    status: "running",
+    prompt: "Say ok",
+    createdAt: "2026-07-12T00:00:00.000Z",
+    updatedAt: "2026-07-12T00:00:01.000Z",
+  };
+
+  await assert.rejects(
+    () => waitForTerminalStatus("sessions", "session-1", 500, {
+      now: () => currentTime,
+      sleep: async (durationMs) => {
+        currentTime += durationMs;
+      },
+      readMetadata: async () => metadata,
+    }),
+    /last status running; pid 123; provider session provider-1; updated at 2026-07-12T00:00:01\.000Z/,
+  );
+});
 
 const smokeTest = enabled ? test : test.skip;
 
