@@ -106,6 +106,23 @@ async function waitForRunEvent(
   );
 }
 
+function assertRunEventsInclude(
+  events: Array<{ type?: string; summary?: string }>,
+  expected: { summary: RegExp; type?: string },
+  label: string,
+): void {
+  const snapshot = events
+    .slice(-10)
+    .map((event, index) => `${index}: ${event.type ?? "unknown"}: ${event.summary ?? ""}`)
+    .join("\n");
+  assert.ok(
+    events.some((event) => (expected.type === undefined || event.type === expected.type) && expected.summary.test(event.summary ?? "")),
+    `${label} missing expected run event${expected.type ? ` of type ${expected.type}` : ""} matching ${expected.summary}.\nObserved events:\n${
+      snapshot || "<none>"
+    }`,
+  );
+}
+
 async function readRunEventsText(baseUrl: string, runId: string): Promise<string> {
   const deadline = Date.now() + 5000;
   let lastStatus = 0;
@@ -1660,7 +1677,7 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
     const eventsPayload = (await eventsResponse.json()) as { events: Array<{ type: string; summary: string }> };
     assert.ok(eventsPayload.events.length >= 2);
     assert.equal(eventsPayload.events[0]?.summary, "Run started");
-    assert.ok(eventsPayload.events.some((event) => event.type === "shell_command" && /Spawned Codex session/.test(event.summary)));
+    assertRunEventsInclude(eventsPayload.events, { type: "shell_command", summary: /Spawned Codex session/ }, "API run creation events");
   });
 });
 
@@ -1763,7 +1780,7 @@ test("API supports streaming run events over SSE", async () => {
     assert.equal(resumeResponse.status, 200);
 
     const resumedEvents = await stream.waitForEvent((event) => /Resumed Codex session/.test(event.summary));
-    assert.ok(resumedEvents.some((event) => /Resumed Codex session/.test(event.summary)));
+    assertRunEventsInclude(resumedEvents, { summary: /Resumed Codex session/ }, "API SSE resumed events");
 
     const cancelResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/cancel`, {
       method: "POST",
@@ -1771,7 +1788,7 @@ test("API supports streaming run events over SSE", async () => {
     assert.equal(cancelResponse.status, 200);
 
     const cancelledEvents = await stream.waitForEvent((event) => /Cancelled Codex session/.test(event.summary));
-    assert.ok(cancelledEvents.some((event) => /Cancelled Codex session/.test(event.summary)));
+    assertRunEventsInclude(cancelledEvents, { summary: /Cancelled Codex session/ }, "API SSE cancelled events");
     stream.close();
   });
 });
@@ -1893,8 +1910,8 @@ test("API supports resuming and cancelling a run", async () => {
     assert.ok(eventsPayload.events.length >= 4);
     assert.equal(eventsPayload.events[0]?.summary, "Run started");
     assert.match(eventsPayload.events[1]?.summary ?? "", /Spawned Codex session/);
-    assert.ok(eventsPayload.events.some((event) => /Resumed Codex session/.test(event.summary)));
-    assert.ok(eventsPayload.events.some((event) => /Cancelled Codex session/.test(event.summary)));
+    assertRunEventsInclude(eventsPayload.events, { summary: /Resumed Codex session/ }, "API lifecycle events");
+    assertRunEventsInclude(eventsPayload.events, { summary: /Cancelled Codex session/ }, "API lifecycle events");
 
     const cleanupPreviewResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/workspace-cleanup/preview`);
     await assertJsonResponseStatus(cleanupPreviewResponse, 200);
