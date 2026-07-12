@@ -108,16 +108,22 @@ async function waitForRunEvent(
 
 async function readRunEventsText(baseUrl: string, runId: string): Promise<string> {
   const deadline = Date.now() + 5000;
+  let lastStatus = 0;
+  let lastBodySnippet = "";
+  let lastParseError = "";
 
   while (Date.now() < deadline) {
     const eventsResponse = await fetch(`${baseUrl}/runs/${runId}/events`);
     const body = await eventsResponse.text();
+    lastStatus = eventsResponse.status;
+    lastBodySnippet = body.slice(0, 200);
 
     if (eventsResponse.status === 200) {
       try {
         JSON.parse(body);
         return body;
-      } catch {
+      } catch (error) {
+        lastParseError = error instanceof Error ? error.message : String(error);
         // The JSONL-backed event list can be read while the fake executor is
         // appending a line; retry until the endpoint returns a complete JSON
         // response before using it as the report mutation baseline.
@@ -127,7 +133,11 @@ async function readRunEventsText(baseUrl: string, runId: string): Promise<string
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 
-  throw new Error(`timed out reading stable run events for ${runId}`);
+  throw new Error(
+    `timed out reading stable run events for ${runId}; last status ${lastStatus}; last body ${JSON.stringify(lastBodySnippet)}${
+      lastParseError ? `; last parse error ${lastParseError}` : ""
+    }`,
+  );
 }
 
 function parseSseEvents(buffer: string): Array<{ id: string; summary: string }> {
