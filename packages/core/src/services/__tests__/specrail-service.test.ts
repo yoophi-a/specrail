@@ -19,6 +19,23 @@ import {
 } from "../file-repositories.js";
 import { SpecRailService } from "../specrail-service.js";
 
+function assertRunListIncludes(
+  items: Array<{ id?: string; status?: string; workspacePath?: string }>,
+  expectedRunId: string,
+  label: string,
+): void {
+  const snapshot = items.map((item, index) => `${index}: ${item.id ?? "<missing>"} ${item.status ?? "unknown"} ${item.workspacePath ?? ""}`).join("\n");
+  assert.ok(items.some((item) => item.id === expectedRunId), `${label} missing run ${expectedRunId}.\nObserved runs:\n${snapshot || "<none>"}`);
+}
+
+function assertEventsIncludeSummary(events: Array<{ type?: string; summary?: string }>, expectedSummary: string, label: string): void {
+  const snapshot = events.map((event, index) => `${index}: ${event.type ?? "unknown"}: ${event.summary ?? ""}`).join("\n");
+  assert.ok(
+    events.some((event) => event.summary === expectedSummary),
+    `${label} missing event summary ${JSON.stringify(expectedSummary)}.\nObserved events:\n${snapshot || "<none>"}`,
+  );
+}
+
 test("SpecRailService creates tracks, artifacts, runs, and execution events", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "specrail-service-"));
   const artifactRoot = path.join(rootDir, ".specrail");
@@ -224,11 +241,11 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   assert.equal(runSession.capabilities?.supportsContextCopyFork, true);
 
   const folderRuns = await service.listRunsPage({ workspacePath: path.join(workspaceRoot, "run-run-a"), pageSize: 5 });
-  assert.ok(folderRuns.items.some((item) => item.id === run.id));
+  assertRunListIncludes(folderRuns.items, run.id, "workspace run filter");
   const parentFolderRuns = await service.listRunsPage({ workspacePath: workspaceRoot, pageSize: 5 });
-  assert.ok(parentFolderRuns.items.some((item) => item.id === run.id));
+  assertRunListIncludes(parentFolderRuns.items, run.id, "parent workspace run filter");
   const childFolderRuns = await service.listRunsPage({ workspacePath: path.join(workspaceRoot, "run-run-a", "src"), pageSize: 5 });
-  assert.ok(childFolderRuns.items.some((item) => item.id === run.id));
+  assertRunListIncludes(childFolderRuns.items, run.id, "child workspace run filter");
 
   const runPreview = await service.getRunSessionPreview({ runId: run.id, eventLimit: 2 });
   assert.equal(runPreview.execution.id, run.id);
@@ -262,8 +279,8 @@ test("SpecRailService creates tracks, artifacts, runs, and execution events", as
   const events = await service.listRunEvents(run.id);
   assert.ok(events.length >= 4);
   assert.deepEqual(events.slice(0, 2).map((event) => event.summary), ["Run started", "Prepared Codex command"]);
-  assert.ok(events.some((event) => event.summary === "Run resumed"));
-  assert.ok(events.some((event) => event.summary === "Run cancelled"));
+  assertEventsIncludeSummary(events, "Run resumed", "run lifecycle events");
+  assertEventsIncludeSummary(events, "Run cancelled", "run lifecycle events");
 
   const binding = await service.bindChannel({
     projectId: "project-default",
@@ -617,9 +634,9 @@ test("SpecRailService keeps run lifecycle summaries semantic instead of exact-co
   assert.equal(cancelledRun.summary?.lastEventSummary, "Run cancelled");
 
   const events = await service.listRunEvents(run.id);
-  assert.ok(events.some((event) => event.summary === "Run resumed"));
-  assert.ok(events.some((event) => event.summary === "Run cancelled"));
-  assert.ok(events.some((event) => event.summary === "Resume telemetry recorded"));
+  assertEventsIncludeSummary(events, "Run resumed", "run lifecycle events");
+  assertEventsIncludeSummary(events, "Run cancelled", "run lifecycle events");
+  assertEventsIncludeSummary(events, "Resume telemetry recorded", "run lifecycle events");
 });
 
 test("SpecRailService applies explicit sorting and pagination for track and run listings", async () => {
@@ -1343,7 +1360,7 @@ test("SpecRailService delivers runtime approval decisions to executor callbacks"
   assert.equal(callbackResolution.callback.status, "handled");
 
   const callbackEvents = await service.listRunEvents(run.id);
-  assert.ok(callbackEvents.some((event) => event.summary === "Runtime approval callback delivered to executor"));
+  assertEventsIncludeSummary(callbackEvents, "Runtime approval callback delivered to executor", "runtime approval callback events");
   assert.deepEqual(callbackCalls[0], {
     outcome: "approved",
     requestId: `${run.id}:approval-requested`,
@@ -1376,7 +1393,7 @@ test("SpecRailService delivers runtime approval decisions to executor callbacks"
   assert.equal(failingResolution.callback.error, "callback transport unavailable");
 
   const failingEvents = await service.listRunEvents(failingRun.id);
-  assert.ok(failingEvents.some((event) => event.summary === "Runtime approval callback delivery failed"));
+  assertEventsIncludeSummary(failingEvents, "Runtime approval callback delivery failed", "runtime approval callback failure events");
   assert.equal((await service.getRun(failingRun.id))?.status, "running");
 });
 
