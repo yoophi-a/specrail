@@ -28,10 +28,18 @@ import {
 } from "../operator-ui.js";
 import { createHostedUiClientHarness, flushClientPromises } from "./operator-ui-harness.js";
 
-function assertContainsAll(body: string, patterns: RegExp[]): void {
-  for (const pattern of patterns) {
-    assert.match(body, pattern);
-  }
+function formatHtmlSnapshot(body: string): string {
+  const compact = body.replace(/\s+/gu, " ").trim();
+  return compact.length > 4_000 ? `${compact.slice(0, 4_000)}...<truncated>` : compact;
+}
+
+function assertContainsAll(body: string, patterns: RegExp[], label: string): void {
+  const missingPatterns = patterns.filter((pattern) => !pattern.test(body));
+  assert.deepEqual(
+    missingPatterns,
+    [],
+    `${label} missing expected rendered pattern(s): ${missingPatterns.map(String).join(", ")}\nRendered HTML snapshot:\n${formatHtmlSnapshot(body)}`,
+  );
 }
 
 function formatHarnessCalls(calls: Array<{ method?: string; path?: string; body?: unknown }>): string {
@@ -1095,8 +1103,8 @@ test("operator UI shell keeps hosted action and stream wiring", () => {
     streamsAndActions: [/new EventSource/, /events\/stream/, /async function withAction/, /function errorMessage/, /button.disabled = true/, /button.isConnected/, /function renderRunEventCard/, /function promptInput/, /function renderPlanningContextMessages/],
   };
 
-  for (const patterns of Object.values(controlGroups)) {
-    assertContainsAll(body, patterns);
+  for (const [group, patterns] of Object.entries(controlGroups)) {
+    assertContainsAll(body, patterns, `operator UI ${group} wiring`);
   }
 });
 
