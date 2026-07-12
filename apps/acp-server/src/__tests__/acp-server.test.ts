@@ -8,6 +8,15 @@ import type { Execution, ExecutionEvent, SpecRailService, Track } from "@specrai
 
 import { SpecRailAcpServer } from "../server.js";
 
+function assertJsonIncludes(value: unknown, expected: string, label: string): void {
+  const serialized = JSON.stringify(value) ?? "undefined";
+  const snapshot = serialized.length > 4_000 ? `${serialized.slice(0, 4_000)}...<truncated>` : serialized;
+  assert.ok(
+    serialized.includes(expected),
+    `${label} missing expected JSON fragment:\n${expected}\n\nActual ${label} snapshot:\n${snapshot}`,
+  );
+}
+
 function createFakeService(options: { workspaceRoot?: string; trackId?: string; projectId?: string } = {}) {
   const track: Track = {
     id: options.trackId ?? "track-1",
@@ -360,29 +369,25 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
   );
 
   assert.deepEqual(promptResponse?.result, { stopReason: "end_turn" });
-  assert.ok(
-    notifications.some((payload) => JSON.stringify(payload).includes("session_info_update")),
-  );
-  assert.ok(
-    notifications.some((payload) => JSON.stringify(payload).includes("Completed run-1")),
-  );
-  assert.ok(JSON.stringify(notifications).includes('"projectId":"project/default"'));
-  assert.ok(JSON.stringify(notifications).includes('"trackId":"track/1"'));
-  assert.ok(JSON.stringify(notifications).includes('"planningSessionId":"plan/acp"'));
-  assert.ok(JSON.stringify(notifications).includes('"backend":"codex"'));
-  assert.ok(JSON.stringify(notifications).includes('"profile":"default"'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"task_status_changed","status":"running"}'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"tool_call","toolName":"shell","toolUseId":"tool-call-run-1"}'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"tool_result","toolName":"shell","toolUseId":"tool-call-run-1","exitCode":0,"status":"completed"}'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"shell_command","command":"pnpm test","exitCode":0,"status":"completed"}'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"file_change","path":"README.md","operation":"modified"}'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"test_result","status":"passed","passed":12,"failed":0}'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"message","subtype":"assistant_text","role":"assistant"}'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"message","provider":{"kind":"codex","sessionRef":"codex-session-run-1","stream":"stdout"'));
-  assert.ok(JSON.stringify(notifications).includes('"eventProjection":{"kind":"summary","subtype":"claude_result_success","status":"completed","provider":{"kind":"claude_code"'));
-  assert.ok(JSON.stringify(notifications).includes('"providerSessionId":"claude-session-run-1"'));
-  assert.ok(JSON.stringify(notifications).includes('"providerEventType":"result"'));
-  assert.ok(JSON.stringify(notifications).includes('"totalCostUsd":0.012'));
+  assertJsonIncludes(notifications, "session_info_update", "ACP notifications");
+  assertJsonIncludes(notifications, "Completed run-1", "ACP notifications");
+  assertJsonIncludes(notifications, '"projectId":"project/default"', "ACP notifications");
+  assertJsonIncludes(notifications, '"trackId":"track/1"', "ACP notifications");
+  assertJsonIncludes(notifications, '"planningSessionId":"plan/acp"', "ACP notifications");
+  assertJsonIncludes(notifications, '"backend":"codex"', "ACP notifications");
+  assertJsonIncludes(notifications, '"profile":"default"', "ACP notifications");
+  assertJsonIncludes(notifications, '"eventProjection":{"kind":"task_status_changed","status":"running"}', "ACP notifications");
+  assertJsonIncludes(notifications, '"eventProjection":{"kind":"tool_call","toolName":"shell","toolUseId":"tool-call-run-1"}', "ACP notifications");
+  assertJsonIncludes(notifications, '"eventProjection":{"kind":"tool_result","toolName":"shell","toolUseId":"tool-call-run-1","exitCode":0,"status":"completed"}', "ACP notifications");
+  assertJsonIncludes(notifications, '"eventProjection":{"kind":"shell_command","command":"pnpm test","exitCode":0,"status":"completed"}', "ACP notifications");
+  assertJsonIncludes(notifications, '"eventProjection":{"kind":"file_change","path":"README.md","operation":"modified"}', "ACP notifications");
+  assertJsonIncludes(notifications, '"eventProjection":{"kind":"test_result","status":"passed","passed":12,"failed":0}', "ACP notifications");
+  assertJsonIncludes(notifications, '"eventProjection":{"kind":"message","subtype":"assistant_text","role":"assistant"}', "ACP notifications");
+  assertJsonIncludes(notifications, '"eventProjection":{"kind":"message","provider":{"kind":"codex","sessionRef":"codex-session-run-1","stream":"stdout"', "ACP notifications");
+  assertJsonIncludes(notifications, '"eventProjection":{"kind":"summary","subtype":"claude_result_success","status":"completed","provider":{"kind":"claude_code"', "ACP notifications");
+  assertJsonIncludes(notifications, '"providerSessionId":"claude-session-run-1"', "ACP notifications");
+  assertJsonIncludes(notifications, '"providerEventType":"result"', "ACP notifications");
+  assertJsonIncludes(notifications, '"totalCostUsd":0.012', "ACP notifications");
 
   const listResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 4, method: "session/list", params: { cwd: " /tmp/specrail " } },
@@ -423,7 +428,7 @@ test("ACP server initializes and maps session/new + prompt to SpecRail run lifec
     },
   );
   assert.equal(loadResponse?.error, undefined);
-  assert.ok(loadNotifications.some((payload) => JSON.stringify(payload).includes("Started run-1")));
+  assertJsonIncludes(loadNotifications, "Started run-1", "ACP load notifications");
 });
 
 test("ACP server trims session list cursors before pagination", async () => {
@@ -549,7 +554,7 @@ test("ACP server reads linked run workspace paths through scoped capability", as
     () => {},
   );
   assert.equal(directoryResponse?.error, undefined);
-  assert.ok(JSON.stringify(directoryResponse?.result).includes('"summary.md"'));
+  assertJsonIncludes(directoryResponse?.result, '"summary.md"', "ACP workspace directory result");
 
   const sortedDirectoryResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 12, method: "specrail/workspace/read", params: { sessionId, path: "unsorted" } },
@@ -698,15 +703,15 @@ test("ACP server creates a project-scoped track when session/new omits trackId",
   );
 
   assert.deepEqual(promptResponse?.result, { stopReason: "end_turn" });
-  assert.ok(JSON.stringify(notifications).includes('"projectId":"project/non-default"'));
-  assert.ok(JSON.stringify(notifications).includes('"trackId":"track-2"'));
+  assertJsonIncludes(notifications, '"projectId":"project/non-default"', "ACP notifications");
+  assertJsonIncludes(notifications, '"trackId":"track-2"', "ACP notifications");
 
   const listResponse = await server.handleMessage(
     { jsonrpc: "2.0", id: 3, method: "session/list", params: { cwd: "/tmp/specrail" } },
     () => {},
   );
-  assert.ok(JSON.stringify(listResponse?.result).includes('"projectId":"project/non-default"'));
-  assert.ok(JSON.stringify(listResponse?.result).includes('"trackId":"track-2"'));
+  assertJsonIncludes(listResponse?.result, '"projectId":"project/non-default"', "ACP session list result");
+  assertJsonIncludes(listResponse?.result, '"trackId":"track-2"', "ACP session list result");
 });
 
 test("ACP server emits richer permission request and resolution updates", async () => {
@@ -758,8 +763,8 @@ test("ACP server emits richer permission request and resolution updates", async 
   assert.ok(startNotifications.some((payload) => payload.method === "session/request_permission"));
 
   const infoUpdates = startNotifications.filter((payload) => payload.method === "session/update");
-  assert.ok(infoUpdates.some((payload) => JSON.stringify(payload).includes('"status":"waiting_approval"')));
-  assert.ok(JSON.stringify(startNotifications).includes('"eventProjection":{"kind":"approval_requested","requestId":"run-1-approval-request","toolName":"Bash","toolUseId":"tool-run-1"}'));
+  assertJsonIncludes(infoUpdates, '"status":"waiting_approval"', "ACP session info updates");
+  assertJsonIncludes(startNotifications, '"eventProjection":{"kind":"approval_requested","requestId":"run-1-approval-request","toolName":"Bash","toolUseId":"tool-run-1"}', "ACP start notifications");
 
   const permissionRequest = startNotifications.find((payload) => payload.method === "session/request_permission") as
     | { params?: { toolName?: string; requestId?: string } }
@@ -794,10 +799,10 @@ test("ACP server emits richer permission request and resolution updates", async 
   );
 
   assert.deepEqual(resumeResponse?.result, { stopReason: "end_turn" });
-  assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes("approval_resolved")));
-  assert.ok(JSON.stringify(resumeNotifications).includes('"eventProjection":{"kind":"approval_resolved","requestId":"run-1-approval-request","outcome":"approved","decidedBy":"user"}'));
-  assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes('"status":"running"')));
-  assert.ok(resumeNotifications.some((payload) => JSON.stringify(payload).includes('"status":"completed"')));
+  assertJsonIncludes(resumeNotifications, "approval_resolved", "ACP resume notifications");
+  assertJsonIncludes(resumeNotifications, '"eventProjection":{"kind":"approval_resolved","requestId":"run-1-approval-request","outcome":"approved","decidedBy":"user"}', "ACP resume notifications");
+  assertJsonIncludes(resumeNotifications, '"status":"running"', "ACP resume notifications");
+  assertJsonIncludes(resumeNotifications, '"status":"completed"', "ACP resume notifications");
 });
 
 test("ACP server projects rejected permission resolutions without resuming", async () => {
@@ -876,8 +881,8 @@ test("ACP server projects rejected permission resolutions without resuming", asy
   );
 
   assert.deepEqual(rejectResponse?.result, { stopReason: "cancelled" });
-  assert.ok(JSON.stringify(rejectNotifications).includes('"eventProjection":{"kind":"approval_resolved","requestId":"run-1-approval-request","outcome":"rejected","decidedBy":"user"}'));
-  assert.ok(rejectNotifications.some((payload) => JSON.stringify(payload).includes('"status":"cancelled"')));
+  assertJsonIncludes(rejectNotifications, '"eventProjection":{"kind":"approval_resolved","requestId":"run-1-approval-request","outcome":"rejected","decidedBy":"user"}', "ACP reject notifications");
+  assertJsonIncludes(rejectNotifications, '"status":"cancelled"', "ACP reject notifications");
   assert.equal(resumeRunCalls, 0);
 });
 
