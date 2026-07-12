@@ -1855,7 +1855,7 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
   );
 
   try {
-    await waitFor(() => stdout.output.includes("run-cleanup-a"));
+    await waitForOutput(stdout, "run-cleanup-a");
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     stdin.key("d");
@@ -1871,15 +1871,15 @@ test("runTerminalApp drives cleanup preview, confirmation, apply, and refresh th
     });
 
     stdin.key("w");
-    await waitFor(() => stdout.output.includes("Cleanup preview ready for run-cleanup-a."));
+    await waitForOutput(stdout, "Cleanup preview ready for run-cleanup-a.");
     assert.equal(applyBodies.length, 0);
 
     stdin.key("\r", "return");
-    await waitFor(() => stdout.output.includes("Workspace cleanup confirmation ready for run-cleanup-a."));
+    await waitForOutput(stdout, "Workspace cleanup confirmation ready for run-cleanup-a.");
     assert.deepEqual(applyBodies, [{ confirm: "" }]);
 
     stdin.key("\r", "return");
-    await waitFor(() => stdout.output.includes("Workspace cleanup applied for run-cleanup-a; detail and events refreshed."));
+    await waitForOutput(stdout, "Workspace cleanup applied for run-cleanup-a; detail and events refreshed.");
     assert.deepEqual(applyBodies[1], { confirm: "apply workspace cleanup for run-cleanup-a" });
     assert(stdout.output.includes("Workspace cleanup applied for execution run-cleanup-a"));
     assert(requests.includes("GET /runs/run-cleanup-a/events"));
@@ -1984,26 +1984,26 @@ test("runTerminalApp appends planning messages from the tracks screen", async ()
   );
 
   try {
-    await waitFor(() => stdout.output.includes("track-msg"));
+    await waitForOutput(stdout, "track-msg");
     stdin.key("M");
-    await waitFor(() => stdout.output.includes("Planning session chooser"));
+    await waitForOutput(stdout, "Planning session chooser");
     assert.match(stdout.output, /> 1\. plan-msg .* current/);
     stdin.key("j");
-    await waitFor(() => stdout.output.includes("Planning session plan-msg-next highlighted."));
+    await waitForOutput(stdout, "Planning session plan-msg-next highlighted.");
     stdin.key("\r", "return");
-    await waitFor(() => stdout.output.includes("Selected planning session plan-msg-next."));
-    await waitFor(() => stdout.output.includes("agent/note/tasks: Alternate context"));
+    await waitForOutput(stdout, "Selected planning session plan-msg-next.");
+    await waitForOutput(stdout, "agent/note/tasks: Alternate context");
     stdin.key("m");
-    await waitFor(() => stdout.output.includes("Composing planning message for plan-msg-next."));
+    await waitForOutput(stdout, "Composing planning message for plan-msg-next.");
     stdin.key("\r", "return");
-    await waitFor(() => stdout.output.includes("Planning message body is required."));
+    await waitForOutput(stdout, "Planning message body is required.");
     assert.deepEqual(messageBodies, []);
     stdin.key("", "t", true);
-    await waitFor(() => stdout.output.includes("Applied Team handoff planning-message template."));
+    await waitForOutput(stdout, "Applied Team handoff planning-message template.");
     assert.match(stdout.output, /kind: note/);
     assert.match(stdout.output, /Team handoff:/);
     stdin.key("\r", "return");
-    await waitFor(() => stdout.output.includes("Appended planning message msg-terminal-1 to plan-msg-next."));
+    await waitForOutput(stdout, "Appended planning message msg-terminal-1 to plan-msg-next.");
     assert.deepEqual(messageBodies, [{
       authorType: "user",
       kind: "note",
@@ -2088,14 +2088,14 @@ test("runTerminalApp creates a planning session from the tracks screen", async (
   );
 
   try {
-    await waitFor(() => stdout.output.includes("track-create"));
+    await waitForOutput(stdout, "track-create");
     stdin.key("N");
-    await waitFor(() => stdout.output.includes("Planning session create action"));
+    await waitForOutput(stdout, "Planning session create action");
     assert.match(stdout.output, /status: active \(press y to cycle\)/);
     stdin.key("y");
-    await waitFor(() => stdout.output.includes("Planning session status set to waiting_user."));
+    await waitForOutput(stdout, "Planning session status set to waiting_user.");
     stdin.key("\r", "return");
-    await waitFor(() => stdout.output.includes("Created waiting_user planning session plan-created."));
+    await waitForOutput(stdout, "Created waiting_user planning session plan-created.");
     assert.deepEqual(createBodies, [{ status: "waiting_user" }]);
     assert.match(stdout.output, /planning session: plan-created \(2\/2\)/);
     assert.match(stdout.output, /> plan-created \| waiting_user/);
@@ -2150,7 +2150,11 @@ async function readRequestJson(request: IncomingMessage): Promise<unknown> {
   return body ? JSON.parse(body) : null;
 }
 
-async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 1_000): Promise<void> {
+function formatStdoutTail(stdout: FakeTerminalStdout): string {
+  return JSON.stringify(stdout.output.slice(-500));
+}
+
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 1_000, diagnostics?: () => string): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await predicate()) {
@@ -2159,5 +2163,17 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
-  assert.equal(await predicate(), true);
+  if (await predicate()) {
+    return;
+  }
+
+  throw new Error(`timed out waiting for terminal test condition after ${timeoutMs}ms${diagnostics ? `; ${diagnostics()}` : ""}`);
+}
+
+async function waitForOutput(stdout: FakeTerminalStdout, expectedText: string, timeoutMs = 1_000): Promise<void> {
+  await waitFor(
+    () => stdout.output.includes(expectedText),
+    timeoutMs,
+    () => `expected output ${JSON.stringify(expectedText)}; stdout tail ${formatStdoutTail(stdout)}`,
+  );
 }
