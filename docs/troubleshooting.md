@@ -116,6 +116,8 @@ The smoke flag accepts `1`, `true`, `yes`, and `on` case-insensitively.
 
 For CI, the smoke workflow is additionally gated by the repository variable `SPECRAIL_ENABLE_CLAUDE_SMOKE=1`.
 
+When the smoke test is enabled and fails, read the assertion message before rerunning. Timeout failures include the last observed session metadata status and available process/provider fields; terminal-state assertion failures include the observed Claude event subtypes or raw-output tail when relevant.
+
 ## Claude Code run fails
 
 Check:

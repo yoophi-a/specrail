@@ -204,6 +204,8 @@ What this smoke test verifies:
 4. normalized session events include at least a Claude init event and a terminal completed lifecycle event.
 5. raw Claude stdout transcript capture is written under `.claude-stream.jsonl`.
 
+If the smoke wait times out, the failure includes the last observed session metadata status plus available pid, provider session, exit, signal, failure, and `updatedAt` fields. If the run reaches a terminal state but an assertion fails, the failure includes nearby context such as metadata status, recent Claude event subtypes, or a bounded raw-output tail. Use that context before rerunning, because it usually distinguishes a readiness problem from a provider-output or event-normalization problem.
+
 ### Manual/operator flow
 
 If you want to inspect the API-level behavior as well, use this fuller operator checklist:
