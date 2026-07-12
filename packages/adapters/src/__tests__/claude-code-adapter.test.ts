@@ -35,6 +35,18 @@ function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+function assertRuntimeEventsIncludeSummary(
+  events: Array<{ type?: string; subtype?: string; summary?: string }>,
+  expectedSummary: string | undefined,
+  label: string,
+): void {
+  assert.ok(expectedSummary, `${label} missing expected summary value`);
+  const snapshot = events
+    .map((event, index) => `${index}: ${event.type ?? "unknown"} ${event.subtype ?? ""}: ${event.summary ?? ""}`)
+    .join("\n");
+  assert.ok(events.some((event) => event.summary === expectedSummary), `${label} missing runtime event ${expectedSummary}.\nObserved events:\n${snapshot || "<none>"}`);
+}
+
 test("buildClaudeCodeSpawnCommand uses print stream-json mode and maps non-default profile to model", () => {
   const command = buildClaudeCodeSpawnCommand({
     executionId: "run-claude-1",
@@ -428,8 +440,8 @@ test("ClaudeCodeAdapter records runtime approval callback outcomes", async () =>
   assert.equal(metadata.finishedAt, "2026-04-10T13:00:03.000Z");
 
   const runtimeEvents = await readClaudeCodeSessionEvents(sessionsDir, spawnResult.sessionRef);
-  assert.ok(runtimeEvents.some((event) => event.summary === approvedEvents[0]?.summary));
-  assert.ok(runtimeEvents.some((event) => event.summary === rejectedEvents[0]?.summary));
+  assertRuntimeEventsIncludeSummary(runtimeEvents, approvedEvents[0]?.summary, "Claude approved approval event persistence");
+  assertRuntimeEventsIncludeSummary(runtimeEvents, rejectedEvents[0]?.summary, "Claude rejected approval event persistence");
 });
 
 test("ClaudeCodeAdapter normalizes lifecycle and fallback stream events into shared execution events", () => {
