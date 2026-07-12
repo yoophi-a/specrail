@@ -76,6 +76,20 @@ async function assertJsonResponseStatus(response: Response, expectedStatus: numb
   assert.equal(response.status, expectedStatus, `expected HTTP ${expectedStatus}, received HTTP ${response.status}: ${body}`);
 }
 
+function formatHtmlSnapshot(body: string): string {
+  const compact = body.replace(/\s+/gu, " ").trim();
+  return compact.length > 4_000 ? `${compact.slice(0, 4_000)}...<truncated>` : compact;
+}
+
+function assertHtmlMatchesAll(body: string, patterns: RegExp[], label: string): void {
+  const missingPatterns = patterns.filter((pattern) => !pattern.test(body));
+  assert.deepEqual(
+    missingPatterns,
+    [],
+    `${label} missing expected HTML pattern(s): ${missingPatterns.map(String).join(", ")}\nHTML snapshot:\n${formatHtmlSnapshot(body)}`,
+  );
+}
+
 async function waitForRunEvent(
   baseUrl: string,
   runId: string,
@@ -366,55 +380,61 @@ test("API serves the hosted operator UI shell", async () => {
 
     assert.equal(response.status, 200);
     assert.match(response.headers.get("content-type") ?? "", /text\/html/);
-    assert.match(body, /SpecRail Operator/);
-    assert.match(body, /Project scope/);
-    assert.match(body, /Create project/);
-    assert.match(body, /Update selected project/);
-    assert.match(body, /Create track/);
-    assert.match(body, /Update track workflow/);
-    assert.match(body, /track-workflow-status/);
-    assert.match(body, /Create planning session/);
-    assert.match(body, /Append planning message/);
-    assert.match(body, /Spec preview/);
-    assert.match(body, /Approval actions/);
-    assert.match(body, /data-approval-id/);
-    assert.match(body, /data-artifact-proposal/);
-    assert.match(body, /id="artifact-proposal-kind"/);
-    assert.match(body, /Propose artifact/);
-    assert.match(body, /data-run-start/);
-    assert.match(body, /run-start-prompt/);
-    assert.match(body, /data-run-resume/);
-    assert.match(body, /run-resume-prompt/);
-    assert.match(body, /data-run-cancel/);
-    assert.match(body, /run-cancel-confirmation/);
-    assert.match(body, /Run report/);
-    assert.match(body, /data-run-report/);
-    assert.match(body, /report\.md/);
-    assert.match(body, /download>↗ Open\/download Markdown run report/);
-    assert.match(body, /Recent events/);
-    assert.match(body, /EventSource/);
-    assert.match(body, /events\/stream/);
-    assert.match(body, /Live event stream disconnected/);
-    assert.match(body, /Workspace cleanup/);
-    assert.match(body, /data-cleanup-request/);
-    assert.match(body, /cleanup-confirmation/);
-    assert.match(body, /data-cleanup-apply/);
-    assert.match(body, /loadTrackDetail/);
-    assert.match(body, /loadRunDetail/);
-    assert.match(body, /\/projects/);
-    assert.match(body, /\/tracks/);
-    assert.match(body, /\/tracks\?page=1&pageSize=20/);
-    assert.match(body, /\/runs\/.*\/events/);
-    assert.match(body, /\/workspace-cleanup\/preview/);
-    assert.match(body, /\/workspace-cleanup\/apply/);
-    assert.match(body, /\/approval-requests\//);
-    assert.match(body, /\/tracks\/.*\/planning-sessions/);
-    assert.match(body, /\/planning-sessions\/.*\/messages/);
-    assert.match(body, /\/tracks\/.*\/artifacts\//);
-    assert.match(body, /\/runs/);
-    assert.match(body, /\/resume/);
-    assert.match(body, /\/cancel/);
-    assert.match(body, /projectId=/);
+    assertHtmlMatchesAll(
+      body,
+      [
+        /SpecRail Operator/,
+        /Project scope/,
+        /Create project/,
+        /Update selected project/,
+        /Create track/,
+        /Update track workflow/,
+        /track-workflow-status/,
+        /Create planning session/,
+        /Append planning message/,
+        /Spec preview/,
+        /Approval actions/,
+        /data-approval-id/,
+        /data-artifact-proposal/,
+        /id="artifact-proposal-kind"/,
+        /Propose artifact/,
+        /data-run-start/,
+        /run-start-prompt/,
+        /data-run-resume/,
+        /run-resume-prompt/,
+        /data-run-cancel/,
+        /run-cancel-confirmation/,
+        /Run report/,
+        /data-run-report/,
+        /report\.md/,
+        /download>↗ Open\/download Markdown run report/,
+        /Recent events/,
+        /EventSource/,
+        /events\/stream/,
+        /Live event stream disconnected/,
+        /Workspace cleanup/,
+        /data-cleanup-request/,
+        /cleanup-confirmation/,
+        /data-cleanup-apply/,
+        /loadTrackDetail/,
+        /loadRunDetail/,
+        /\/projects/,
+        /\/tracks/,
+        /\/tracks\?page=1&pageSize=20/,
+        /\/runs\/.*\/events/,
+        /\/workspace-cleanup\/preview/,
+        /\/workspace-cleanup\/apply/,
+        /\/approval-requests\//,
+        /\/tracks\/.*\/planning-sessions/,
+        /\/planning-sessions\/.*\/messages/,
+        /\/tracks\/.*\/artifacts\//,
+        /\/runs/,
+        /\/resume/,
+        /\/cancel/,
+        /projectId=/,
+      ],
+      "hosted operator UI shell",
+    );
   });
 });
 
