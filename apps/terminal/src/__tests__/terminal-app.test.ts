@@ -1318,15 +1318,21 @@ test("renderAppShell renders start composer folder session discovery controls", 
     summary: { fetchedAt: "2026-04-10T12:00:00.000Z", tracks: [{ id: "track-1", title: "Terminal shell" }], runs: [] },
   });
 
-  assert.match(rendered, /folder path: \/workspace\/app/);
-  assert.match(rendered, /folder sessions \(1, selected 1\/1/);
-  assert.match(rendered, /> run-folder \| completed \| codex \| fresh \| Run completed/);
-  assert.match(rendered, /selected session: run-folder-codex/);
-  assert.match(rendered, /selected workspace: \/workspace\/app/);
-  assert.match(rendered, /selected report: \/runs\/run-folder\/report\.md/);
-  assert.match(rendered, /selected capabilities: resume=true, providerFork=false, contextCopyFork=true/);
-  assert.match(rendered, /Ctrl\+F previews folder sessions; Ctrl\+R resumes selected session; Ctrl\+K forks selected session/);
-  assert.match(rendered, /Help: start composer — type edits prompt\/folder, Tab switches field, Ctrl\+F previews folder sessions, Ctrl\+R resumes selected session, Ctrl\+K forks selected session, Enter starts fresh, Esc aborts\./);
+  assertTextMatchesAll(
+    rendered,
+    [
+      /folder path: \/workspace\/app/,
+      /folder sessions \(1, selected 1\/1/,
+      /> run-folder \| completed \| codex \| fresh \| Run completed/,
+      /selected session: run-folder-codex/,
+      /selected workspace: \/workspace\/app/,
+      /selected report: \/runs\/run-folder\/report\.md/,
+      /selected capabilities: resume=true, providerFork=false, contextCopyFork=true/,
+      /Ctrl\+F previews folder sessions; Ctrl\+R resumes selected session; Ctrl\+K forks selected session/,
+      /Help: start composer — type edits prompt\/folder, Tab switches field, Ctrl\+F previews folder sessions, Ctrl\+R resumes selected session, Ctrl\+K forks selected session, Enter starts fresh, Esc aborts\./,
+    ],
+    "terminal folder-session render",
+  );
 });
 
 test("renderAppShell renders planning message composer state", () => {
