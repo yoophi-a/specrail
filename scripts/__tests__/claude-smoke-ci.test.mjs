@@ -18,12 +18,32 @@ function runSmokeCi(env = {}) {
   });
 }
 
+function formatStdoutSnapshot(stdout) {
+  const compact = stdout.replace(/\s+/gu, " ").trim();
+  return compact.length > 2_000 ? `${compact.slice(0, 2_000)}...<truncated>` : compact;
+}
+
+function assertStdoutMatchesAll(stdout, patterns, label) {
+  const missingPatterns = patterns.filter((pattern) => !pattern.test(stdout));
+  assert.deepEqual(
+    missingPatterns,
+    [],
+    `${label} missing expected stdout pattern(s): ${missingPatterns.map(String).join(", ")}\nStdout snapshot:\n${formatStdoutSnapshot(stdout)}`,
+  );
+}
+
 test("Claude smoke CI trims requested smoke flag before deciding to run", () => {
   const result = runSmokeCi({ SPECRAIL_RUN_CLAUDE_SMOKE: " true " });
 
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /- requested: `1`/u);
-  assert.match(result.stdout, /claude` CLI is not installed/u);
+  assertStdoutMatchesAll(
+    result.stdout,
+    [
+      /- requested: `1`/u,
+      /claude` CLI is not installed/u,
+    ],
+    "requested Claude smoke skip output",
+  );
 });
 
 test("Claude smoke CI trims strict mode before failing skipped runs", () => {
@@ -33,8 +53,14 @@ test("Claude smoke CI trims strict mode before failing skipped runs", () => {
   });
 
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /- strict mode: `1`/u);
-  assert.match(result.stdout, /SPECRAIL_RUN_CLAUDE_SMOKE=1/u);
+  assertStdoutMatchesAll(
+    result.stdout,
+    [
+      /- strict mode: `1`/u,
+      /SPECRAIL_RUN_CLAUDE_SMOKE=1/u,
+    ],
+    "strict Claude smoke skip output",
+  );
 });
 
 test("Claude smoke CI writes a summary hint when the smoke test fails", () => {
@@ -64,8 +90,14 @@ exit 42
     });
 
     assert.equal(result.status, 1);
-    assert.match(result.stdout, /simulated smoke failure/u);
-    assert.match(result.stdout, /Claude smoke failed\. Inspect the test output above/u);
+    assertStdoutMatchesAll(
+      result.stdout,
+      [
+        /simulated smoke failure/u,
+        /Claude smoke failed\. Inspect the test output above/u,
+      ],
+      "failed Claude smoke output",
+    );
   } finally {
     rmSync(fakeBin, { recursive: true, force: true });
   }
