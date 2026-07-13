@@ -121,15 +121,21 @@ test("operator UI client script stays on in-page controls instead of native dial
 
   assert.doesNotMatch(script, /window\.prompt/);
   assert.doesNotMatch(script, /window\.confirm/);
-  assert.match(body, /id="project-name"/);
-  assert.match(body, /id="track-title"/);
   assert.match(script, /planning-message-body/);
   assert.match(script, /artifact-proposal-content/);
-  assert.match(body, /id="track-workflow-status"/);
   assert.match(script, /run-start-prompt/);
   assert.match(script, /run-resume-prompt/);
-  assert.match(body, /id="run-cancel-confirmation"/);
-  assert.match(body, /id="cleanup-confirmation"/);
+  assertContainsAll(
+    body,
+    [
+      /id="project-name"/,
+      /id="track-title"/,
+      /id="track-workflow-status"/,
+      /id="run-cancel-confirmation"/,
+      /id="cleanup-confirmation"/,
+    ],
+    "operator UI in-page controls",
+  );
 });
 
 test("operator UI client harness submits top-level project and track actions", async () => {
