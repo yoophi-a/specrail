@@ -1110,9 +1110,13 @@ test("loadGitHubAppConfig normalizes credential environment values", () => {
 });
 
 test("loadGitHubAppConfig normalizes webhook secret environment values", () => {
-  assert.equal(loadGitHubAppConfig({ GITHUB_WEBHOOK_SECRET: " webhook-secret " }).webhookSecret, "webhook-secret");
-  assert.equal(loadGitHubAppConfig({ GITHUB_WEBHOOK_SECRET: "" }).webhookSecret, "");
-  assert.equal(loadGitHubAppConfig({ GITHUB_WEBHOOK_SECRET: " " }).webhookSecret, "");
+  assertGitHubConfigFields(
+    { GITHUB_WEBHOOK_SECRET: " webhook-secret " },
+    { webhookSecret: "webhook-secret" },
+    "trimmed webhook secret environment",
+  );
+  assertGitHubConfigFields({ GITHUB_WEBHOOK_SECRET: "" }, { webhookSecret: "" }, "empty webhook secret environment");
+  assertGitHubConfigFields({ GITHUB_WEBHOOK_SECRET: " " }, { webhookSecret: "" }, "blank webhook secret environment");
 });
 
 test("loadGitHubAppConfig normalizes follow terminal events flag", () => {
