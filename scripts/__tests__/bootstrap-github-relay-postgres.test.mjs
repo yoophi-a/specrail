@@ -3,20 +3,46 @@ import test from "node:test";
 
 import { readArgs, renderSchema, validateApplyOptions } from "../bootstrap-github-relay-postgres.mjs";
 
+function formatSqlSnapshot(sql) {
+  const compact = sql.replace(/\s+/gu, " ").trim();
+  return compact.length > 2_000 ? `${compact.slice(0, 2_000)}...<truncated>` : compact;
+}
+
+function assertSqlMatchesAll(sql, patterns, label) {
+  const missingPatterns = patterns.filter((pattern) => !pattern.test(sql));
+  assert.deepEqual(
+    missingPatterns,
+    [],
+    `${label} missing expected SQL pattern(s): ${missingPatterns.map(String).join(", ")}\nSQL snapshot:\n${formatSqlSnapshot(sql)}`,
+  );
+}
+
 test("bootstrap helper renders the default PostgreSQL relay schema", async () => {
   const sql = await renderSchema("github_relay_jobs");
 
-  assert.match(sql, /CREATE TABLE IF NOT EXISTS github_relay_jobs/u);
-  assert.match(sql, /CREATE INDEX IF NOT EXISTS github_relay_jobs_claim_idx/u);
-  assert.match(sql, /ON github_relay_jobs \(status, next_attempt_at, created_at\)/u);
+  assertSqlMatchesAll(
+    sql,
+    [
+      /CREATE TABLE IF NOT EXISTS github_relay_jobs/u,
+      /CREATE INDEX IF NOT EXISTS github_relay_jobs_claim_idx/u,
+      /ON github_relay_jobs \(status, next_attempt_at, created_at\)/u,
+    ],
+    "default PostgreSQL relay schema",
+  );
 });
 
 test("bootstrap helper renders custom table and claim index names", async () => {
   const sql = await renderSchema("specrail_relay_jobs");
 
-  assert.match(sql, /CREATE TABLE IF NOT EXISTS specrail_relay_jobs/u);
-  assert.match(sql, /CREATE INDEX IF NOT EXISTS github_relay_[a-f0-9]{12}_claim_idx/u);
-  assert.match(sql, /ON specrail_relay_jobs \(status, next_attempt_at, created_at\)/u);
+  assertSqlMatchesAll(
+    sql,
+    [
+      /CREATE TABLE IF NOT EXISTS specrail_relay_jobs/u,
+      /CREATE INDEX IF NOT EXISTS github_relay_[a-f0-9]{12}_claim_idx/u,
+      /ON specrail_relay_jobs \(status, next_attempt_at, created_at\)/u,
+    ],
+    "custom PostgreSQL relay schema",
+  );
   assert.doesNotMatch(sql, /github_relay_jobs_claim_idx/u);
 });
 
