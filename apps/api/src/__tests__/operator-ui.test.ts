@@ -513,9 +513,15 @@ test("operator UI client harness submits selected-track detail actions", async (
 
   assertCallObserved(calls, { method: "GET", path: "/runs/run-existing/session-preview?eventLimit=5" }, "operator folder-session preview");
   const previewPanel = detail.querySelector("#folder-session-results").querySelectorAll("[data-folder-run-preview-panel]")[0];
-  assert.match(previewPanel?.innerHTML ?? "", /<strong>Workspace:<\/strong> \/workspace\/run-existing\/app/);
-  assert.match(previewPanel?.innerHTML ?? "", /<a href="\/runs\/run-existing\/report\.md">\/runs\/run-existing\/report\.md<\/a>/);
-  assert.match(previewPanel?.innerHTML ?? "", /contextCopyFork=true/);
+  assertContainsAll(
+    previewPanel?.innerHTML ?? "",
+    [
+      /<strong>Workspace:<\/strong> \/workspace\/run-existing\/app/,
+      /<a href="\/runs\/run-existing\/report\.md">\/runs\/run-existing\/report\.md<\/a>/,
+      /contextCopyFork=true/,
+    ],
+    "operator folder-session preview panel",
+  );
 
   await startRun("Implement selected track now.");
 
