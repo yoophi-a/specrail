@@ -4,6 +4,20 @@ import test from "node:test";
 import { renderCompletedRunReport } from "../completed-run-report.js";
 import type { Execution, ExecutionEvent, Project, Track } from "../../domain/types.js";
 
+function formatReportSnapshot(report: string): string {
+  const compact = report.replace(/\s+/gu, " ").trim();
+  return compact.length > 2_000 ? `${compact.slice(0, 2_000)}...<truncated>` : compact;
+}
+
+function assertReportMatchesAll(report: string, patterns: RegExp[], label: string): void {
+  const missingPatterns = patterns.filter((pattern) => !pattern.test(report));
+  assert.deepEqual(
+    missingPatterns,
+    [],
+    `${label} missing expected report pattern(s): ${missingPatterns.map(String).join(", ")}\nReport snapshot:\n${formatReportSnapshot(report)}`,
+  );
+}
+
 test("renderCompletedRunReport renders metadata, escaped timeline, highlights, and source footer", () => {
   const project: Project = {
     id: "project-a",
@@ -61,15 +75,21 @@ test("renderCompletedRunReport renders metadata, escaped timeline, highlights, a
 
   const report = renderCompletedRunReport({ project, track, run, events, generatedAt: "2026-05-04T00:04:00.000Z" });
 
-  assert.match(report, /^# Run Report — run-a/);
-  assert.match(report, /- Project: SpecRail \(project-a\)/);
-  assert.match(report, /- Track: Report \| export \(track-a\)/);
-  assert.match(report, /Ship \| verify\nthen report/);
-  assert.match(report, /- Planning session: planning-a/);
-  assert.match(report, /- Spec revision: spec-r1/);
-  assert.match(report, /\| 2026-05-04T00:01:00.000Z \| task_status_changed \| codex \| Run started \|/);
-  assert.match(report, /\| 2026-05-04T00:02:00.000Z \| test_result \| vitest\\\|node \| Tests passed<br>118 ok \|/);
-  assert.match(report, /- 2026-05-04T00:02:00.000Z — test_result — Tests passed/);
-  assert.match(report, /Generated from `state\/events\/run-a\.jsonl` at 2026-05-04T00:04:00.000Z\./);
-  assert.match(report, /does not mutate `spec.md`, `plan.md`, or `tasks.md`/);
+  assertReportMatchesAll(
+    report,
+    [
+      /^# Run Report — run-a/,
+      /- Project: SpecRail \(project-a\)/,
+      /- Track: Report \| export \(track-a\)/,
+      /Ship \| verify\nthen report/,
+      /- Planning session: planning-a/,
+      /- Spec revision: spec-r1/,
+      /\| 2026-05-04T00:01:00.000Z \| task_status_changed \| codex \| Run started \|/,
+      /\| 2026-05-04T00:02:00.000Z \| test_result \| vitest\\\|node \| Tests passed<br>118 ok \|/,
+      /- 2026-05-04T00:02:00.000Z — test_result — Tests passed/,
+      /Generated from `state\/events\/run-a\.jsonl` at 2026-05-04T00:04:00.000Z\./,
+      /does not mutate `spec.md`, `plan.md`, or `tasks.md`/,
+    ],
+    "completed run report",
+  );
 });
