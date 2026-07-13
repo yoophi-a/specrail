@@ -37,6 +37,7 @@ import {
   startGitHubWebhookApp,
   verifyGitHubSignature256,
   type GitHubAcceptedRunCommandContext,
+  type GitHubAppConfig,
   type GitHubRelayJobQueue,
   type GitHubRelayPostgresQueryClient,
   type GitHubSpecRailPort,
@@ -45,6 +46,28 @@ import {
 const secret = "webhook-secret";
 const rawBody = JSON.stringify({ action: "created" });
 const signatureHeader = buildGitHubSignature256(secret, rawBody);
+
+type GitHubConfigTestEnv = Record<string, string | undefined>;
+
+function formatGitHubConfigSnapshot(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function assertGitHubConfigFields(env: GitHubConfigTestEnv, expected: Partial<GitHubAppConfig>, label: string): GitHubAppConfig {
+  const actual = loadGitHubAppConfig(env);
+  const observed: Record<string, unknown> = {};
+  for (const key of Object.keys(expected) as Array<keyof GitHubAppConfig>) {
+    observed[String(key)] = actual[key];
+  }
+
+  assert.deepEqual(
+    observed,
+    expected,
+    `${label} GitHub config mismatch.\nEnv:\n${formatGitHubConfigSnapshot(env)}\nExpected fields:\n${formatGitHubConfigSnapshot(expected)}\nObserved fields:\n${formatGitHubConfigSnapshot(observed)}`,
+  );
+
+  return actual;
+}
 
 function payload(body: string) {
   return {
@@ -908,27 +931,32 @@ test("GitHub webhook HTTP app surfaces terminal relay enqueue failures", async (
 });
 
 test("loadGitHubAppConfig parses repository project mappings and actor allowlists", () => {
-  const config = loadGitHubAppConfig({
-    SPECRAIL_API_BASE_URL: " https://specrail.example.test ",
-    SPECRAIL_GITHUB_PROJECT_ID: "project/default",
-    GITHUB_WEBHOOK_SECRET: "secret",
-    SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "Yoophi-A/SpecRail=project/specrail, other/repo = project/other",
-    GITHUB_ALLOWED_ACTORS: "OctoCat,@Hubot",
-    GITHUB_ALLOWED_ORGS: " Yoophi-A ",
-    GITHUB_ALLOWED_TEAMS: " Other/Maintainers ",
-    SPECRAIL_OPERATOR_BASE_URL: " https://operator.example.test ",
-    GITHUB_API_BASE_URL: " https://github.example.test/api/v3 ",
-    GITHUB_RELAY_QUEUE_DIR: "/var/lib/specrail/github-relay-queue",
-  });
+  const config = assertGitHubConfigFields(
+    {
+      SPECRAIL_API_BASE_URL: " https://specrail.example.test ",
+      SPECRAIL_GITHUB_PROJECT_ID: "project/default",
+      GITHUB_WEBHOOK_SECRET: "secret",
+      SPECRAIL_GITHUB_REPOSITORY_PROJECTS: "Yoophi-A/SpecRail=project/specrail, other/repo = project/other",
+      GITHUB_ALLOWED_ACTORS: "OctoCat,@Hubot",
+      GITHUB_ALLOWED_ORGS: " Yoophi-A ",
+      GITHUB_ALLOWED_TEAMS: " Other/Maintainers ",
+      SPECRAIL_OPERATOR_BASE_URL: " https://operator.example.test ",
+      GITHUB_API_BASE_URL: " https://github.example.test/api/v3 ",
+      GITHUB_RELAY_QUEUE_DIR: "/var/lib/specrail/github-relay-queue",
+    },
+    {
+      repositoryProjects: { "yoophi-a/specrail": "project/specrail", "other/repo": "project/other" },
+      allowedActors: ["octocat", "hubot"],
+      allowedOrganizations: ["yoophi-a"],
+      allowedTeams: ["other/maintainers"],
+      apiBaseUrl: "https://specrail.example.test",
+      operatorBaseUrl: "https://operator.example.test",
+      githubApiBaseUrl: "https://github.example.test/api/v3",
+      githubRelayQueueDir: "/var/lib/specrail/github-relay-queue",
+    },
+    "repository mapping and allowlist environment",
+  );
 
-  assert.deepEqual(config.repositoryProjects, { "yoophi-a/specrail": "project/specrail", "other/repo": "project/other" });
-  assert.deepEqual(config.allowedActors, ["octocat", "hubot"]);
-  assert.deepEqual(config.allowedOrganizations, ["yoophi-a"]);
-  assert.deepEqual(config.allowedTeams, ["other/maintainers"]);
-  assert.equal(config.apiBaseUrl, "https://specrail.example.test");
-  assert.equal(config.operatorBaseUrl, "https://operator.example.test");
-  assert.equal(config.githubApiBaseUrl, "https://github.example.test/api/v3");
-  assert.equal(config.githubRelayQueueDir, "/var/lib/specrail/github-relay-queue");
   assert.equal(resolveGitHubProjectId(config, "yoophi-a/specrail"), "project/specrail");
   assert.equal(resolveGitHubProjectId(config, "YOOPHI-A/SPECRAIL"), "project/specrail");
   assert.equal(resolveGitHubProjectId(config, "missing/repo"), undefined);
