@@ -9,9 +9,25 @@ import {
   loadTelegramAppConfig,
   parseAttachmentReferences,
   SpecRailApiClient,
+  type TelegramAppConfig,
   TelegramBotClient,
   type TelegramFrontendDeps,
 } from "../index.js";
+
+type TelegramConfigTestEnv = Record<string, string | undefined>;
+
+function formatTelegramConfigSnapshot(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function assertTelegramConfigEquals(env: TelegramConfigTestEnv, expected: TelegramAppConfig, label: string): void {
+  const actual = loadTelegramAppConfig(env);
+  assert.deepEqual(
+    actual,
+    expected,
+    `${label} Telegram config mismatch.\nEnv:\n${formatTelegramConfigSnapshot(env)}\nExpected config:\n${formatTelegramConfigSnapshot(expected)}\nActual config:\n${formatTelegramConfigSnapshot(actual)}`,
+  );
+}
 
 function createUnusedTelegramDeps(): TelegramFrontendDeps {
   return {
@@ -44,13 +60,13 @@ function createUnusedTelegramDeps(): TelegramFrontendDeps {
 }
 
 test("loadTelegramAppConfig validates port environment values", () => {
-  assert.deepEqual(loadTelegramAppConfig({}), {
+  assertTelegramConfigEquals({}, {
     apiBaseUrl: "http://127.0.0.1:4000",
     telegramBotToken: "",
     port: 4300,
     webhookPath: "/telegram/webhook",
     projectId: undefined,
-  });
+  }, "default environment");
 
   assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: " 4300 " }).port, 4300);
   assert.equal(loadTelegramAppConfig({ TELEGRAM_APP_PORT: "0" }).port, 0);
