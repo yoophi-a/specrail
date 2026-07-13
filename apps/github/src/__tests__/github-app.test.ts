@@ -1033,18 +1033,22 @@ test("loadGitHubAppConfig normalizes project id environment values", () => {
 });
 
 test("loadGitHubAppConfig normalizes credential environment values", () => {
-  const config = loadGitHubAppConfig({
-    GITHUB_TOKEN: " ",
-    GITHUB_INSTALLATION_TOKEN: " installation-token ",
-    GITHUB_APP_ID: " 12345 ",
-    GITHUB_INSTALLATION_ID: " 67890 ",
-    GITHUB_PRIVATE_KEY: " -----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY----- ",
-  });
-
-  assert.equal(config.githubToken, "installation-token");
-  assert.equal(config.githubAppId, "12345");
-  assert.equal(config.githubInstallationId, "67890");
-  assert.equal(config.githubPrivateKey, "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----");
+  assertGitHubConfigFields(
+    {
+      GITHUB_TOKEN: " ",
+      GITHUB_INSTALLATION_TOKEN: " installation-token ",
+      GITHUB_APP_ID: " 12345 ",
+      GITHUB_INSTALLATION_ID: " 67890 ",
+      GITHUB_PRIVATE_KEY: " -----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY----- ",
+    },
+    {
+      githubToken: "installation-token",
+      githubAppId: "12345",
+      githubInstallationId: "67890",
+      githubPrivateKey: "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----",
+    },
+    "credential environment",
+  );
 });
 
 test("loadGitHubAppConfig normalizes webhook secret environment values", () => {
