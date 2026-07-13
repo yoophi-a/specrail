@@ -1564,13 +1564,19 @@ test("renderAppShell renders guarded workspace cleanup preview and confirmation 
     },
   });
 
-  assert.match(rendered, /Workspace cleanup: run-cleanup-a/);
-  assert.match(rendered, /eligible: yes/);
-  assert.match(rendered, /remove_directory \/tmp\/specrail-workspaces\/run-cleanup-a/);
-  assert.match(rendered, /server confirmation: apply workspace cleanup for run-cleanup-a/);
-  assert.match(rendered, /result: refused/);
-  assert.match(rendered, /Press Enter again to apply cleanup with that exact phrase/);
-  assert.match(rendered, /Help: workspace cleanup — Enter requests confirmation\/applies when ready, Esc aborts, r refreshes selected run\./);
+  assertTextMatchesAll(
+    rendered,
+    [
+      /Workspace cleanup: run-cleanup-a/,
+      /eligible: yes/,
+      /remove_directory \/tmp\/specrail-workspaces\/run-cleanup-a/,
+      /server confirmation: apply workspace cleanup for run-cleanup-a/,
+      /result: refused/,
+      /Press Enter again to apply cleanup with that exact phrase/,
+      /Help: workspace cleanup — Enter requests confirmation\/applies when ready, Esc aborts, r refreshes selected run\./,
+    ],
+    "terminal workspace cleanup render",
+  );
 });
 
 test("selectNextItem advances run selection on runs screen", () => {
