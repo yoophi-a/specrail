@@ -1010,15 +1010,19 @@ test("loadGitHubAppConfig rejects malformed repository and team policy entries",
 });
 
 test("loadGitHubAppConfig falls back for blank URL environment values", () => {
-  const config = loadGitHubAppConfig({
-    SPECRAIL_API_BASE_URL: " ",
-    SPECRAIL_OPERATOR_BASE_URL: "",
-    GITHUB_API_BASE_URL: " ",
-  });
-
-  assert.equal(config.apiBaseUrl, "http://127.0.0.1:4000");
-  assert.equal(config.operatorBaseUrl, undefined);
-  assert.equal(config.githubApiBaseUrl, "https://api.github.com");
+  assertGitHubConfigFields(
+    {
+      SPECRAIL_API_BASE_URL: " ",
+      SPECRAIL_OPERATOR_BASE_URL: "",
+      GITHUB_API_BASE_URL: " ",
+    },
+    {
+      apiBaseUrl: "http://127.0.0.1:4000",
+      operatorBaseUrl: undefined,
+      githubApiBaseUrl: "https://api.github.com",
+    },
+    "blank URL fallback environment",
+  );
 });
 
 test("loadGitHubAppConfig normalizes project id environment values", () => {
