@@ -868,9 +868,19 @@ test("API supports creating tracks, planning sessions, messages, starting runs, 
       planningContext: { hasPendingChanges: boolean };
     };
     assert.equal(getTrackPayload.track.id, trackPayload.track.id);
-    assert.match(getTrackPayload.artifacts.spec, /# Spec — Executor MVP/);
-    assert.match(getTrackPayload.artifacts.plan, /# Plan/);
-    assert.match(getTrackPayload.artifacts.tasks, /# Tasks — Executor MVP/);
+    assertTextMatchesAll(
+      [
+        `spec:\n${getTrackPayload.artifacts.spec}`,
+        `plan:\n${getTrackPayload.artifacts.plan}`,
+        `tasks:\n${getTrackPayload.artifacts.tasks}`,
+      ].join("\n\n"),
+      [
+        /# Spec — Executor MVP/,
+        /# Plan/,
+        /# Tasks — Executor MVP/,
+      ],
+      "API track bootstrap artifacts",
+    );
     assert.equal(getTrackPayload.planningContext.hasPendingChanges, false);
 
     const repoVisibleSync = JSON.parse(
