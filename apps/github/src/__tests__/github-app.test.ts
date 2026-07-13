@@ -50,7 +50,7 @@ const signatureHeader = buildGitHubSignature256(secret, rawBody);
 type GitHubConfigTestEnv = Record<string, string | undefined>;
 
 function formatGitHubConfigSnapshot(value: unknown): string {
-  return JSON.stringify(value, null, 2);
+  return JSON.stringify(value, (_key, entry) => (entry === undefined ? "__undefined__" : entry), 2);
 }
 
 function assertGitHubConfigFields(env: GitHubConfigTestEnv, expected: Partial<GitHubAppConfig>, label: string): GitHubAppConfig {
@@ -67,6 +67,41 @@ function assertGitHubConfigFields(env: GitHubConfigTestEnv, expected: Partial<Gi
   );
 
   return actual;
+}
+
+type GitHubPolicyOutcomeExpectations = {
+  projectIds?: Array<{ repositoryFullName: string; projectId: string | undefined }>;
+  actorAuthorizations?: Array<{ actorLogin: string; authorized: boolean }>;
+};
+
+function assertGitHubPolicyOutcomes(config: GitHubAppConfig, expected: GitHubPolicyOutcomeExpectations, label: string): void {
+  const observed: GitHubPolicyOutcomeExpectations = {};
+  if (expected.projectIds) {
+    observed.projectIds = expected.projectIds.map(({ repositoryFullName }) => ({
+      repositoryFullName,
+      projectId: resolveGitHubProjectId(config, repositoryFullName),
+    }));
+  }
+  if (expected.actorAuthorizations) {
+    observed.actorAuthorizations = expected.actorAuthorizations.map(({ actorLogin }) => ({
+      actorLogin,
+      authorized: isGitHubActorAuthorized(config, actorLogin),
+    }));
+  }
+
+  const policySnapshot = {
+    projectId: config.projectId,
+    repositoryProjects: config.repositoryProjects,
+    allowedActors: config.allowedActors,
+    allowedOrganizations: config.allowedOrganizations,
+    allowedTeams: config.allowedTeams,
+  };
+
+  assert.deepEqual(
+    observed,
+    expected,
+    `${label} GitHub policy outcome mismatch.\nPolicy config:\n${formatGitHubConfigSnapshot(policySnapshot)}\nExpected outcomes:\n${formatGitHubConfigSnapshot(expected)}\nObserved outcomes:\n${formatGitHubConfigSnapshot(observed)}`,
+  );
 }
 
 function payload(body: string) {
@@ -957,13 +992,23 @@ test("loadGitHubAppConfig parses repository project mappings and actor allowlist
     "repository mapping and allowlist environment",
   );
 
-  assert.equal(resolveGitHubProjectId(config, "yoophi-a/specrail"), "project/specrail");
-  assert.equal(resolveGitHubProjectId(config, "YOOPHI-A/SPECRAIL"), "project/specrail");
-  assert.equal(resolveGitHubProjectId(config, "missing/repo"), undefined);
-  assert.equal(isGitHubActorAuthorized(config, "octocat"), true);
-  assert.equal(isGitHubActorAuthorized(config, "hubot"), true);
-  assert.equal(isGitHubActorAuthorized(config, "HUBOT"), true);
-  assert.equal(isGitHubActorAuthorized(config, "mallory"), false);
+  assertGitHubPolicyOutcomes(
+    config,
+    {
+      projectIds: [
+        { repositoryFullName: "yoophi-a/specrail", projectId: "project/specrail" },
+        { repositoryFullName: "YOOPHI-A/SPECRAIL", projectId: "project/specrail" },
+        { repositoryFullName: "missing/repo", projectId: undefined },
+      ],
+      actorAuthorizations: [
+        { actorLogin: "octocat", authorized: true },
+        { actorLogin: "hubot", authorized: true },
+        { actorLogin: "HUBOT", authorized: true },
+        { actorLogin: "mallory", authorized: false },
+      ],
+    },
+    "repository mapping and allowlist environment",
+  );
 });
 
 test("loadGitHubAppConfig rejects malformed repository and team policy entries", () => {
