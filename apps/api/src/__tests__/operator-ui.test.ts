@@ -104,15 +104,27 @@ test("operator UI renderer exposes style and client script helpers", () => {
   const style = renderOperatorUiStyleCss();
   const script = renderOperatorUiClientScript();
 
-  assert.match(style, /\.detail-grid/);
-  assert.match(style, /\.artifact-preview/);
-  assert.match(style, /\.form-grid/);
-  assert.match(style, /textarea/);
-  assert.match(script, /async function withAction/);
-  assert.match(script, /populateProjectForm/);
-  assert.match(script, /function option/);
-  assert.match(script, /new EventSource/);
-  assert.match(script, /workspace-cleanup\/apply/);
+  assertContainsAll(
+    style,
+    [
+      /\.detail-grid/,
+      /\.artifact-preview/,
+      /\.form-grid/,
+      /textarea/,
+    ],
+    "operator UI style helpers",
+  );
+  assertContainsAll(
+    script,
+    [
+      /async function withAction/,
+      /populateProjectForm/,
+      /function option/,
+      /new EventSource/,
+      /workspace-cleanup\/apply/,
+    ],
+    "operator UI client script helpers",
+  );
 });
 
 test("operator UI client script stays on in-page controls instead of native dialogs", () => {
