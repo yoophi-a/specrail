@@ -19,6 +19,20 @@ import {
   writeApprovedTrackArtifact,
 } from "../artifacts.js";
 
+function formatTextSnapshot(body: string): string {
+  const compact = body.replace(/\s+/gu, " ").trim();
+  return compact.length > 4_000 ? `${compact.slice(0, 4_000)}...<truncated>` : compact;
+}
+
+function assertTextMatchesAll(body: string, patterns: RegExp[], label: string): void {
+  const missingPatterns = patterns.filter((pattern) => !pattern.test(body));
+  assert.deepEqual(
+    missingPatterns,
+    [],
+    `${label} missing expected text pattern(s): ${missingPatterns.map(String).join(", ")}\nText snapshot:\n${formatTextSnapshot(body)}`,
+  );
+}
+
 test("materializeTrackArtifacts creates runtime and repo-visible .specrail files for a track", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "specrail-artifacts-"));
   const rootDir = path.join(tempRoot, ".specrail-data", "artifacts");
@@ -68,8 +82,17 @@ test("materializeTrackArtifacts creates runtime and repo-visible .specrail files
     readFile(repoTrackPaths.syncPath, "utf8"),
   ]);
 
-  assert.match(indexContent, /Project\n- Name: SpecRail/);
-  assert.match(specContent, /# Spec — Track API bootstrap/);
+  assertTextMatchesAll(
+    [
+      `index:\n${indexContent}`,
+      `spec:\n${specContent}`,
+    ].join("\n\n"),
+    [
+      /Project\n- Name: SpecRail/,
+      /# Spec — Track API bootstrap/,
+    ],
+    "materialized runtime artifacts",
+  );
   assert.deepEqual(JSON.parse(metadataContent), {
     id: "track-api-bootstrap",
     title: "Track API bootstrap",
@@ -78,8 +101,14 @@ test("materializeTrackArtifacts creates runtime and repo-visible .specrail files
   });
   assert.equal(eventsContent, "");
 
-  assert.match(projectContent, /version: 1/);
-  assert.match(projectContent, /managedBy: specrail/);
+  assertTextMatchesAll(
+    projectContent,
+    [
+      /version: 1/,
+      /managedBy: specrail/,
+    ],
+    "repo-visible project metadata",
+  );
   assert.equal(repoSpecContent, specContent);
 
   const syncMetadata = JSON.parse(syncContent) as {
