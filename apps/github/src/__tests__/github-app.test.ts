@@ -1120,17 +1120,20 @@ test("loadGitHubAppConfig normalizes webhook secret environment values", () => {
 });
 
 test("loadGitHubAppConfig normalizes follow terminal events flag", () => {
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: " true " }).followTerminalEvents, true);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: " TRUE " }).followTerminalEvents, true);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "1" }).followTerminalEvents, true);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "yes" }).followTerminalEvents, true);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "on" }).followTerminalEvents, true);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "" }).followTerminalEvents, false);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: " " }).followTerminalEvents, false);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "false" }).followTerminalEvents, false);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "0" }).followTerminalEvents, false);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "no" }).followTerminalEvents, false);
-  assert.equal(loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "off" }).followTerminalEvents, false);
+  for (const value of [" true ", " TRUE ", "1", "yes", "on"]) {
+    assertGitHubConfigFields(
+      { GITHUB_FOLLOW_TERMINAL_EVENTS: value },
+      { followTerminalEvents: true },
+      `truthy follow terminal events environment (${JSON.stringify(value)})`,
+    );
+  }
+  for (const value of ["", " ", "false", "0", "no", "off"]) {
+    assertGitHubConfigFields(
+      { GITHUB_FOLLOW_TERMINAL_EVENTS: value },
+      { followTerminalEvents: false },
+      `falsy follow terminal events environment (${JSON.stringify(value)})`,
+    );
+  }
   assert.throws(
     () => loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "enabled" }),
     /invalid GITHUB_FOLLOW_TERMINAL_EVENTS: enabled/u,
