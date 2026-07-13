@@ -1,10 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadConfig } from "../index.js";
+import { loadConfig, type SpecRailConfig } from "../index.js";
+
+type ConfigTestEnv = Record<string, string | undefined>;
+
+function formatConfigSnapshot(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function assertConfigEquals(env: ConfigTestEnv, expected: SpecRailConfig, label: string): void {
+  const actual = loadConfig(env);
+  assert.deepEqual(
+    actual,
+    expected,
+    `${label} config mismatch.\nEnv:\n${formatConfigSnapshot(env)}\nExpected config:\n${formatConfigSnapshot(expected)}\nActual config:\n${formatConfigSnapshot(actual)}`,
+  );
+}
 
 test("loadConfig returns execution defaults", () => {
-  assert.deepEqual(loadConfig({}), {
+  assertConfigEquals({}, {
     port: 4000,
     dataDir: ".specrail-data",
     repoArtifactDir: ".specrail",
@@ -12,19 +27,19 @@ test("loadConfig returns execution defaults", () => {
     executionProfile: "default",
     executionWorkspaceMode: "directory",
     executionWorkspaceRoot: ".specrail-data/workspaces",
-  });
+  }, "default environment");
 });
 
 test("loadConfig normalizes optional API environment values", () => {
-  assert.deepEqual(
-    loadConfig({
+  assertConfigEquals(
+    {
       SPECRAIL_DATA_DIR: "  /var/lib/specrail  ",
       SPECRAIL_REPO_ARTIFACT_DIR: "  /var/lib/specrail/repo-visible  ",
       SPECRAIL_EXECUTION_BACKEND: "  Claude-Code  ",
       SPECRAIL_EXECUTION_PROFILE: "  production  ",
       SPECRAIL_EXECUTION_WORKSPACE_MODE: "  git_worktree  ",
       SPECRAIL_EXECUTION_WORKSPACE_ROOT: "  /var/lib/specrail/workspaces  ",
-    }),
+    },
     {
       port: 4000,
       dataDir: "/var/lib/specrail",
@@ -34,19 +49,20 @@ test("loadConfig normalizes optional API environment values", () => {
       executionWorkspaceMode: "git_worktree",
       executionWorkspaceRoot: "/var/lib/specrail/workspaces",
     },
+    "normalized optional environment",
   );
 });
 
 test("loadConfig falls back for blank API environment values", () => {
-  assert.deepEqual(
-    loadConfig({
+  assertConfigEquals(
+    {
       SPECRAIL_DATA_DIR: " ",
       SPECRAIL_REPO_ARTIFACT_DIR: "",
       SPECRAIL_EXECUTION_BACKEND: " ",
       SPECRAIL_EXECUTION_PROFILE: "",
       SPECRAIL_EXECUTION_WORKSPACE_MODE: " ",
       SPECRAIL_EXECUTION_WORKSPACE_ROOT: "",
-    }),
+    },
     {
       port: 4000,
       dataDir: ".specrail-data",
@@ -56,6 +72,7 @@ test("loadConfig falls back for blank API environment values", () => {
       executionWorkspaceMode: "directory",
       executionWorkspaceRoot: ".specrail-data/workspaces",
     },
+    "blank optional environment fallback",
   );
   assert.equal(
     loadConfig({ SPECRAIL_DATA_DIR: "/var/lib/specrail", SPECRAIL_EXECUTION_WORKSPACE_ROOT: " " }).executionWorkspaceRoot,
