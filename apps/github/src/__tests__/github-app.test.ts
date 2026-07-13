@@ -1026,14 +1026,23 @@ test("loadGitHubAppConfig falls back for blank URL environment values", () => {
 });
 
 test("loadGitHubAppConfig normalizes project id environment values", () => {
-  assert.equal(loadGitHubAppConfig({}).projectId, "project-default");
-  assert.equal(loadGitHubAppConfig({ SPECRAIL_PROJECT_ID: " shared/project " }).projectId, "shared/project");
-  assert.equal(
-    loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: " github/project ", SPECRAIL_PROJECT_ID: "shared/project" }).projectId,
-    "github/project",
+  assertGitHubConfigFields({}, { projectId: "project-default" }, "default project id environment");
+  assertGitHubConfigFields({ SPECRAIL_PROJECT_ID: " shared/project " }, { projectId: "shared/project" }, "shared project id environment");
+  assertGitHubConfigFields(
+    { SPECRAIL_GITHUB_PROJECT_ID: " github/project ", SPECRAIL_PROJECT_ID: "shared/project" },
+    { projectId: "github/project" },
+    "GitHub-specific project id environment",
   );
-  assert.equal(loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: " ", SPECRAIL_PROJECT_ID: " shared/project " }).projectId, "shared/project");
-  assert.equal(loadGitHubAppConfig({ SPECRAIL_GITHUB_PROJECT_ID: "", SPECRAIL_PROJECT_ID: "" }).projectId, "project-default");
+  assertGitHubConfigFields(
+    { SPECRAIL_GITHUB_PROJECT_ID: " ", SPECRAIL_PROJECT_ID: " shared/project " },
+    { projectId: "shared/project" },
+    "blank GitHub-specific project id fallback environment",
+  );
+  assertGitHubConfigFields(
+    { SPECRAIL_GITHUB_PROJECT_ID: "", SPECRAIL_PROJECT_ID: "" },
+    { projectId: "project-default" },
+    "blank project id fallback environment",
+  );
 });
 
 test("loadGitHubAppConfig normalizes credential environment values", () => {
