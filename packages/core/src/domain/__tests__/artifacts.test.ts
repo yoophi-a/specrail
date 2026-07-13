@@ -10,6 +10,20 @@ import {
   type TaskDocument,
 } from "../artifacts.js";
 
+function formatMarkdownSnapshot(value: string): string {
+  const compact = value.replace(/\s+/gu, " ").trim();
+  return compact.length > 2_000 ? `${compact.slice(0, 2_000)}...<truncated>` : compact;
+}
+
+function assertMarkdownMatchesAll(value: string, patterns: RegExp[], label: string): void {
+  const missingPatterns = patterns.filter((pattern) => !pattern.test(value));
+  assert.deepEqual(
+    missingPatterns,
+    [],
+    `${label} missing expected markdown pattern(s): ${missingPatterns.map(String).join(", ")}\nMarkdown snapshot:\n${formatMarkdownSnapshot(value)}`,
+  );
+}
+
 test("renderSpecDocument outputs deterministic sections", () => {
   const spec: SpecDocument = {
     title: "Track API bootstrap",
@@ -22,9 +36,15 @@ test("renderSpecDocument outputs deterministic sections", () => {
 
   const rendered = renderSpecDocument(spec);
 
-  assert.match(rendered, /# Spec — Track API bootstrap/);
-  assert.match(rendered, /## Goals\n- Define the format\n- Keep it readable/);
-  assert.match(rendered, /## Acceptance criteria\n- Track creation generates spec.md/);
+  assertMarkdownMatchesAll(
+    rendered,
+    [
+      /# Spec — Track API bootstrap/,
+      /## Goals\n- Define the format\n- Keep it readable/,
+      /## Acceptance criteria\n- Track creation generates spec.md/,
+    ],
+    "rendered spec document",
+  );
 });
 
 test("renderPlanDocument includes approval status and ordered steps", () => {
@@ -41,9 +61,15 @@ test("renderPlanDocument includes approval status and ordered steps", () => {
 
   const rendered = renderPlanDocument(plan);
 
-  assert.match(rendered, /Approval status: draft/);
-  assert.match(rendered, /1\. \*\*Define types\*\* — Add shared interfaces/);
-  assert.match(rendered, /2\. \*\*Render markdown\*\* — Generate stable files/);
+  assertMarkdownMatchesAll(
+    rendered,
+    [
+      /Approval status: draft/,
+      /1\. \*\*Define types\*\* — Add shared interfaces/,
+      /2\. \*\*Render markdown\*\* — Generate stable files/,
+    ],
+    "rendered plan document",
+  );
 });
 
 test("renderTaskDocument renders task metadata and notes", () => {
@@ -69,7 +95,13 @@ test("renderTaskDocument renders task metadata and notes", () => {
 
   const rendered = renderTaskDocument(tasks);
 
-  assert.match(rendered, /- \[ \] Persist session metadata \(id=task-1, status=in_progress, priority=high, owner=specrail\)/);
-  assert.match(rendered, /notes: write run.json \| capture process info/);
-  assert.match(rendered, /- \[x\] Close the loop \(id=task-2, status=done, priority=medium\)/);
+  assertMarkdownMatchesAll(
+    rendered,
+    [
+      /- \[ \] Persist session metadata \(id=task-1, status=in_progress, priority=high, owner=specrail\)/,
+      /notes: write run.json \| capture process info/,
+      /- \[x\] Close the loop \(id=task-2, status=done, priority=medium\)/,
+    ],
+    "rendered task document",
+  );
 });
