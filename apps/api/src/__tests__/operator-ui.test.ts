@@ -133,10 +133,16 @@ test("operator UI client script stays on in-page controls instead of native dial
 
   assert.doesNotMatch(script, /window\.prompt/);
   assert.doesNotMatch(script, /window\.confirm/);
-  assert.match(script, /planning-message-body/);
-  assert.match(script, /artifact-proposal-content/);
-  assert.match(script, /run-start-prompt/);
-  assert.match(script, /run-resume-prompt/);
+  assertContainsAll(
+    script,
+    [
+      /planning-message-body/,
+      /artifact-proposal-content/,
+      /run-start-prompt/,
+      /run-resume-prompt/,
+    ],
+    "operator UI in-page client script controls",
+  );
   assertContainsAll(
     body,
     [
