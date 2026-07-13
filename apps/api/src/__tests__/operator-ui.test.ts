@@ -386,9 +386,15 @@ test("operator UI client harness preserves empty editable control values", async
 
   await createTrack({ title: "Empty Form Value Track" });
 
-  assert.match(detail.innerHTML, /id="folder-session-path"[^>]*value=""/);
-  assert.match(detail.innerHTML, /<textarea id="planning-message-body"><\/textarea>/);
-  assert.match(detail.innerHTML, /<textarea id="artifact-proposal-content"><\/textarea>/);
+  assertContainsAll(
+    detail.innerHTML,
+    [
+      /id="folder-session-path"[^>]*value=""/,
+      /<textarea id="planning-message-body"><\/textarea>/,
+      /<textarea id="artifact-proposal-content"><\/textarea>/,
+    ],
+    "operator UI empty editable controls",
+  );
   assert.doesNotMatch(detail.innerHTML, /id="folder-session-path"[^>]*value="unknown"/);
   assert.doesNotMatch(detail.innerHTML, /<textarea id="(?:planning-message-body|artifact-proposal-content)">unknown<\/textarea>/);
 });
