@@ -90,6 +90,20 @@ function assertHtmlMatchesAll(body: string, patterns: RegExp[], label: string): 
   );
 }
 
+function formatTextSnapshot(body: string): string {
+  const compact = body.replace(/\s+/gu, " ").trim();
+  return compact.length > 4_000 ? `${compact.slice(0, 4_000)}...<truncated>` : compact;
+}
+
+function assertTextMatchesAll(body: string, patterns: RegExp[], label: string): void {
+  const missingPatterns = patterns.filter((pattern) => !pattern.test(body));
+  assert.deepEqual(
+    missingPatterns,
+    [],
+    `${label} missing expected text pattern(s): ${missingPatterns.map(String).join(", ")}\nText snapshot:\n${formatTextSnapshot(body)}`,
+  );
+}
+
 async function waitForRunEvent(
   baseUrl: string,
   runId: string,
@@ -1766,13 +1780,19 @@ test("API serves completed run Markdown reports without mutating artifacts or ev
     );
 
     const report = await reportResponse.text();
-    assert.match(report, new RegExp(`# Run Report — ${runPayload.run.id}`));
-    assert.match(report, /## Summary/);
-    assert.match(report, /- Track: Report export/);
-    assert.match(report, /## Timeline/);
-    assert.match(report, /Run started/);
-    assert.match(report, new RegExp("Generated from `state/events/" + runPayload.run.id + "\\.jsonl`"));
-    assert.match(report, /does not mutate `spec.md`, `plan.md`, or `tasks.md`/);
+    assertTextMatchesAll(
+      report,
+      [
+        new RegExp(`# Run Report — ${runPayload.run.id}`),
+        /## Summary/,
+        /- Track: Report export/,
+        /## Timeline/,
+        /Run started/,
+        new RegExp("Generated from `state/events/" + runPayload.run.id + "\\.jsonl`"),
+        /does not mutate `spec.md`, `plan.md`, or `tasks.md`/,
+      ],
+      "API completed run report",
+    );
 
     const eventsAfter = await readRunEventsText(baseUrl, runPayload.run.id);
     const specAfter = await readFile(specPath, "utf8");
