@@ -1162,14 +1162,46 @@ test("loadGitHubAppConfig validates port environment values", () => {
 });
 
 test("loadGitHubAppConfig reads explicit relay queue backend settings", () => {
-  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "json_file" }).githubRelayQueueBackend, "json-file");
-  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "postgres" }).githubRelayQueueBackend, "postgres");
-  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_PATH: " /tmp/relay.json " }).githubRelayQueuePath, "/tmp/relay.json");
-  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_DIR: " /tmp/relay " }).githubRelayQueueDir, "/tmp/relay");
-  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_URL: " postgres://specrail.example/relay " }).githubRelayQueuePostgresUrl, "postgres://specrail.example/relay");
-  assert.equal(loadGitHubAppConfig({ DATABASE_URL: " postgres://specrail.example/default " }).githubRelayQueuePostgresUrl, "postgres://specrail.example/default");
-  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_TABLE: " specrail_relay_jobs " }).githubRelayQueuePostgresTable, "specrail_relay_jobs");
-  assert.equal(loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "120000" }).githubRelayQueueRunningLeaseMs, 120_000);
+  assertGitHubConfigFields(
+    { GITHUB_RELAY_QUEUE_BACKEND: "json_file" },
+    { githubRelayQueueBackend: "json-file" },
+    "json-file relay queue backend environment",
+  );
+  assertGitHubConfigFields(
+    { GITHUB_RELAY_QUEUE_BACKEND: "postgres" },
+    { githubRelayQueueBackend: "postgres" },
+    "PostgreSQL relay queue backend environment",
+  );
+  assertGitHubConfigFields(
+    { GITHUB_RELAY_QUEUE_PATH: " /tmp/relay.json " },
+    { githubRelayQueuePath: "/tmp/relay.json" },
+    "relay queue file path environment",
+  );
+  assertGitHubConfigFields(
+    { GITHUB_RELAY_QUEUE_DIR: " /tmp/relay " },
+    { githubRelayQueueDir: "/tmp/relay" },
+    "relay queue directory environment",
+  );
+  assertGitHubConfigFields(
+    { GITHUB_RELAY_QUEUE_POSTGRES_URL: " postgres://specrail.example/relay " },
+    { githubRelayQueuePostgresUrl: "postgres://specrail.example/relay" },
+    "relay queue PostgreSQL URL environment",
+  );
+  assertGitHubConfigFields(
+    { DATABASE_URL: " postgres://specrail.example/default " },
+    { githubRelayQueuePostgresUrl: "postgres://specrail.example/default" },
+    "relay queue DATABASE_URL fallback environment",
+  );
+  assertGitHubConfigFields(
+    { GITHUB_RELAY_QUEUE_POSTGRES_TABLE: " specrail_relay_jobs " },
+    { githubRelayQueuePostgresTable: "specrail_relay_jobs" },
+    "relay queue PostgreSQL table environment",
+  );
+  assertGitHubConfigFields(
+    { GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS: "120000" },
+    { githubRelayQueueRunningLeaseMs: 120_000 },
+    "relay queue running lease environment",
+  );
   assert.throws(() => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_BACKEND: "redis" }), /invalid GITHUB_RELAY_QUEUE_BACKEND: redis/u);
   assert.throws(
     () => loadGitHubAppConfig({ GITHUB_RELAY_QUEUE_POSTGRES_TABLE: "bad-table" }),
