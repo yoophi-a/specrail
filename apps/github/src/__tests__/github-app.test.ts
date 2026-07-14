@@ -104,6 +104,26 @@ function assertGitHubPolicyOutcomes(config: GitHubAppConfig, expected: GitHubPol
   );
 }
 
+type GitHubRelayQueueBackendExpectation = {
+  label: string;
+  config: Partial<GitHubAppConfig>;
+  backend: ReturnType<typeof resolveGitHubRelayQueueBackend>;
+};
+
+function assertGitHubRelayQueueBackendOutcomes(expected: GitHubRelayQueueBackendExpectation[], label: string): void {
+  const observed = expected.map(({ label: expectationLabel, config }) => ({
+    label: expectationLabel,
+    config,
+    backend: resolveGitHubRelayQueueBackend(config),
+  }));
+
+  assert.deepEqual(
+    observed,
+    expected,
+    `${label} GitHub relay queue backend mismatch.\nExpected outcomes:\n${formatGitHubConfigSnapshot(expected)}\nObserved outcomes:\n${formatGitHubConfigSnapshot(observed)}`,
+  );
+}
+
 function payload(body: string) {
   return {
     action: "created",
@@ -1234,18 +1254,43 @@ test("loadGitHubAppConfig ignores blank relay queue environment values", () => {
 });
 
 test("resolveGitHubRelayQueueBackend preserves existing env precedence", () => {
-  assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueueDir: "/tmp/relay", githubRelayQueuePath: "/tmp/relay.json" }), "directory");
-  assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueuePostgresUrl: "postgres://specrail.example/relay" }), "postgres");
-  assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueuePostgresUrl: "postgres://specrail.example/relay", githubRelayQueuePath: "/tmp/relay.json" }), "postgres");
-  assert.equal(resolveGitHubRelayQueueBackend({ githubRelayQueuePath: "/tmp/relay.json" }), "json-file");
-  assert.equal(resolveGitHubRelayQueueBackend({}), "none");
-  assert.equal(
-    resolveGitHubRelayQueueBackend({
-      githubRelayQueueBackend: "json-file",
-      githubRelayQueueDir: "/tmp/relay",
-      githubRelayQueuePath: "/tmp/relay.json",
-    }),
-    "json-file",
+  assertGitHubRelayQueueBackendOutcomes(
+    [
+      {
+        label: "directory path beats json file path",
+        config: { githubRelayQueueDir: "/tmp/relay", githubRelayQueuePath: "/tmp/relay.json" },
+        backend: "directory",
+      },
+      {
+        label: "PostgreSQL URL enables PostgreSQL backend",
+        config: { githubRelayQueuePostgresUrl: "postgres://specrail.example/relay" },
+        backend: "postgres",
+      },
+      {
+        label: "PostgreSQL URL beats json file path",
+        config: {
+          githubRelayQueuePostgresUrl: "postgres://specrail.example/relay",
+          githubRelayQueuePath: "/tmp/relay.json",
+        },
+        backend: "postgres",
+      },
+      {
+        label: "json file path enables json-file backend",
+        config: { githubRelayQueuePath: "/tmp/relay.json" },
+        backend: "json-file",
+      },
+      { label: "empty config disables relay queue backend", config: {}, backend: "none" },
+      {
+        label: "explicit backend wins over configured paths",
+        config: {
+          githubRelayQueueBackend: "json-file",
+          githubRelayQueueDir: "/tmp/relay",
+          githubRelayQueuePath: "/tmp/relay.json",
+        },
+        backend: "json-file",
+      },
+    ],
+    "relay queue backend precedence",
   );
 });
 
