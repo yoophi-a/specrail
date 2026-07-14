@@ -204,6 +204,25 @@ function assertNoGitHubRelayJob(actual: GitHubRelayJob | undefined, label: strin
   );
 }
 
+type GitHubRelayProcessResult = Awaited<ReturnType<typeof processGitHubRelayQueue>>;
+
+function assertGitHubRelayProcessResultFields(
+  actual: GitHubRelayProcessResult,
+  expected: Partial<GitHubRelayProcessResult>,
+  label: string,
+): void {
+  const observed: Record<string, unknown> = {};
+  for (const key of Object.keys(expected) as Array<keyof GitHubRelayProcessResult>) {
+    observed[String(key)] = actual[key];
+  }
+
+  assert.deepEqual(
+    observed,
+    expected,
+    `${label} GitHub relay process result mismatch.\nExpected fields:\n${formatGitHubConfigSnapshot(expected)}\nObserved fields:\n${formatGitHubConfigSnapshot(observed)}\nFull result:\n${formatGitHubConfigSnapshot(actual)}`,
+  );
+}
+
 function payload(body: string) {
   return {
     action: "created",
@@ -1884,9 +1903,8 @@ test("processGitHubRelayQueue posts terminal comments and completes jobs", async
     },
   });
 
-  assert.equal(result.processed, true);
-  assert.equal(result.jobId, job.id);
-  assert.equal((await queue.list())[0]?.status, "completed");
+  assertGitHubRelayProcessResultFields(result, { processed: true, jobId: job.id }, "terminal relay completion");
+  assertGitHubRelayJobFields((await queue.list())[0], { id: job.id, status: "completed" }, "terminal relay completed job");
   assert.deepEqual(comments, [{ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, body: "SpecRail run run-created completed." }]);
 });
 
