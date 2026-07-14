@@ -1962,10 +1962,16 @@ test("processGitHubRelayQueue retries when no terminal outcome is posted", async
   );
 
   const [retryable] = await queue.list();
-  assert.equal(retryable?.id, job.id);
-  assert.equal(retryable?.status, "pending");
-  assert.equal(retryable?.attempts, 1);
-  assert.equal(retryable?.lastError, `GitHub relay job ${job.id} did not post a terminal outcome: no_terminal_event`);
+  assertGitHubRelayJobFields(
+    retryable,
+    {
+      id: job.id,
+      status: "pending",
+      attempts: 1,
+      lastError: `GitHub relay job ${job.id} did not post a terminal outcome: no_terminal_event`,
+    },
+    "terminal relay no-terminal retry job",
+  );
 });
 
 test("GitHub webhook HTTP app enqueues durable terminal relay jobs", async () => {
