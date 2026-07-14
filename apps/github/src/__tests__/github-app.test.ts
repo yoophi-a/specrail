@@ -196,6 +196,14 @@ function assertGitHubRelayClaimedJobs(
   );
 }
 
+function assertNoGitHubRelayJob(actual: GitHubRelayJob | undefined, label: string): void {
+  assert.equal(
+    actual,
+    undefined,
+    `${label} expected no GitHub relay job.\nObserved job:\n${formatGitHubConfigSnapshot(actual)}`,
+  );
+}
+
 function payload(body: string) {
   return {
     action: "created",
@@ -1840,14 +1848,19 @@ test("PostgresGitHubRelayJobQueue reclaims stale running jobs after the lease", 
   const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
   const claimed = await queue.claimNext(new Date(created.createdAt));
 
-  assert.equal(claimed?.id, created.id);
-  assert.equal(await queue.claimNext(new Date(Date.parse(created.createdAt) + 999)), undefined);
+  assertGitHubRelayJobFields(claimed, { id: created.id, status: "running" }, "PostgresGitHubRelayJobQueue initial lease claim");
+  assertNoGitHubRelayJob(
+    await queue.claimNext(new Date(Date.parse(created.createdAt) + 999)),
+    "PostgresGitHubRelayJobQueue before stale lease expiry",
+  );
 
   const reclaimed = await queue.claimNext(new Date(Date.parse(created.createdAt) + 1_001));
 
-  assert.equal(reclaimed?.id, created.id);
-  assert.equal(reclaimed?.status, "running");
-  assert.equal(reclaimed?.attempts, 0);
+  assertGitHubRelayJobFields(
+    reclaimed,
+    { id: created.id, status: "running", attempts: 0 },
+    "PostgresGitHubRelayJobQueue stale lease reclaim",
+  );
 });
 
 test("processGitHubRelayQueue posts terminal comments and completes jobs", async () => {
