@@ -162,6 +162,21 @@ function assertGitHubRelayJobQueueFactoryOutcomes(expected: GitHubRelayJobQueueF
   );
 }
 
+type GitHubRelayJob = Awaited<ReturnType<GitHubRelayJobQueue["enqueue"]>>;
+
+function assertGitHubRelayJobFields(actual: GitHubRelayJob, expected: Partial<GitHubRelayJob>, label: string): void {
+  const observed: Record<string, unknown> = {};
+  for (const key of Object.keys(expected) as Array<keyof GitHubRelayJob>) {
+    observed[String(key)] = actual[key];
+  }
+
+  assert.deepEqual(
+    observed,
+    expected,
+    `${label} GitHub relay job field mismatch.\nExpected fields:\n${formatGitHubConfigSnapshot(expected)}\nObserved fields:\n${formatGitHubConfigSnapshot(observed)}\nFull job:\n${formatGitHubConfigSnapshot(actual)}`,
+  );
+}
+
 function payload(body: string) {
   return {
     action: "created",
@@ -1636,13 +1651,19 @@ function registerGitHubRelayQueueContractTests(name: string, createHarness: () =
     });
 
     assert.match(created.id, /\S/u);
-    assert.equal(created.status, "pending");
-    assert.equal(created.attempts, 0);
-    assert.equal(created.repositoryFullName, "yoophi-a/specrail");
-    assert.equal(created.issueNumber, 123);
-    assert.equal(created.runId, "run-created");
-    assert.equal(created.reportUrl, "https://specrail.example.test/runs/run-created/report.md");
-    assert.equal(created.operatorUrl, "https://operator.example.test/operator?runId=run-created");
+    assertGitHubRelayJobFields(
+      created,
+      {
+        status: "pending",
+        attempts: 0,
+        repositoryFullName: "yoophi-a/specrail",
+        issueNumber: 123,
+        runId: "run-created",
+        reportUrl: "https://specrail.example.test/runs/run-created/report.md",
+        operatorUrl: "https://operator.example.test/operator?runId=run-created",
+      },
+      `${name} enqueued relay job payload`,
+    );
     assert.ok(Date.parse(created.createdAt));
     assert.ok(Date.parse(created.updatedAt));
     assert.ok(created.nextAttemptAt && Date.parse(created.nextAttemptAt));
