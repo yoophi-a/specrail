@@ -1700,15 +1700,26 @@ function registerGitHubRelayQueueContractTests(name: string, createHarness: () =
   test(`${name} records retryable failures and stops after the third attempt`, async () => {
     const { queue, reload } = await createHarness();
     const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
-    assert.equal((await queue.claimNext(new Date(created.createdAt)))?.id, created.id);
+    assertGitHubRelayJobFields(
+      await queue.claimNext(new Date(created.createdAt)),
+      { id: created.id },
+      `${name} claimed relay job before failure`,
+    );
 
     const firstFailureAt = new Date(Date.parse(created.createdAt) + 1_000);
     await reload().fail(created.id, new Error("GitHub unavailable"), firstFailureAt);
     const [retryable] = await queue.list();
-    assert.equal(retryable?.status, "pending");
-    assert.equal(retryable?.attempts, 1);
-    assert.equal(retryable?.lastError, "GitHub unavailable");
-    assert.equal(retryable?.updatedAt, firstFailureAt.toISOString());
+    assertGitHubRelayJobFields(
+      retryable,
+      {
+        id: created.id,
+        status: "pending",
+        attempts: 1,
+        lastError: "GitHub unavailable",
+        updatedAt: firstFailureAt.toISOString(),
+      },
+      `${name} retryable relay job after first failure`,
+    );
     assert.ok(retryable?.nextAttemptAt);
 
     assert.equal(await reload().claimNext(new Date(Date.parse(retryable?.nextAttemptAt ?? "") - 1)), undefined);
@@ -1717,17 +1728,21 @@ function registerGitHubRelayQueueContractTests(name: string, createHarness: () =
     const secondFailureAt = new Date(Date.parse(retryable?.nextAttemptAt ?? "") + 2_000);
     await queue.fail(created.id, "still unavailable", secondFailureAt);
     const [secondRetry] = await reload().list();
-    assert.equal(secondRetry?.status, "pending");
-    assert.equal(secondRetry?.attempts, 2);
-    assert.equal(secondRetry?.lastError, "still unavailable");
+    assertGitHubRelayJobFields(
+      secondRetry,
+      { id: created.id, status: "pending", attempts: 2, lastError: "still unavailable" },
+      `${name} retryable relay job after second failure`,
+    );
     assert.equal((await queue.claimNext(new Date(Date.parse(secondRetry?.nextAttemptAt ?? "") + 1)))?.id, created.id);
 
     const thirdFailureAt = new Date(Date.parse(secondRetry?.nextAttemptAt ?? "") + 2_000);
     await reload().fail(created.id, new Error("permanent failure"), thirdFailureAt);
     const [failed] = await queue.list();
-    assert.equal(failed?.status, "failed");
-    assert.equal(failed?.attempts, 3);
-    assert.equal(failed?.lastError, "permanent failure");
+    assertGitHubRelayJobFields(
+      failed,
+      { id: created.id, status: "failed", attempts: 3, lastError: "permanent failure" },
+      `${name} permanently failed relay job after third failure`,
+    );
     assert.equal(await reload().claimNext(new Date(Date.parse(failed?.nextAttemptAt ?? "") + 1)), undefined);
   });
 }
