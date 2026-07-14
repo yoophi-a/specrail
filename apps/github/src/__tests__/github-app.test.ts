@@ -124,6 +124,44 @@ function assertGitHubRelayQueueBackendOutcomes(expected: GitHubRelayQueueBackend
   );
 }
 
+type GitHubRelayJobQueueKind = "none" | "directory" | "json-file" | "postgres" | "unknown";
+
+function getGitHubRelayJobQueueKind(queue: GitHubRelayJobQueue | undefined): GitHubRelayJobQueueKind {
+  if (!queue) {
+    return "none";
+  }
+  if (queue instanceof DirectoryGitHubRelayJobQueue) {
+    return "directory";
+  }
+  if (queue instanceof JsonFileGitHubRelayJobQueue) {
+    return "json-file";
+  }
+  if (queue instanceof PostgresGitHubRelayJobQueue) {
+    return "postgres";
+  }
+  return "unknown";
+}
+
+type GitHubRelayJobQueueFactoryExpectation = {
+  label: string;
+  config: Parameters<typeof createGitHubRelayJobQueueFromConfig>[0];
+  queueKind: GitHubRelayJobQueueKind;
+};
+
+function assertGitHubRelayJobQueueFactoryOutcomes(expected: GitHubRelayJobQueueFactoryExpectation[], label: string): void {
+  const observed = expected.map(({ label: expectationLabel, config }) => ({
+    label: expectationLabel,
+    config,
+    queueKind: getGitHubRelayJobQueueKind(createGitHubRelayJobQueueFromConfig(config)),
+  }));
+
+  assert.deepEqual(
+    observed,
+    expected,
+    `${label} GitHub relay job queue factory mismatch.\nExpected outcomes:\n${formatGitHubConfigSnapshot(expected)}\nObserved outcomes:\n${formatGitHubConfigSnapshot(observed)}`,
+  );
+}
+
 function payload(body: string) {
   return {
     action: "created",
@@ -1295,10 +1333,31 @@ test("resolveGitHubRelayQueueBackend preserves existing env precedence", () => {
 });
 
 test("createGitHubRelayJobQueueFromConfig creates configured durable backends", () => {
-  assert.equal(createGitHubRelayJobQueueFromConfig({}), undefined);
-  assert.ok(createGitHubRelayJobQueueFromConfig({ githubRelayQueueDir: "/tmp/relay" }) instanceof DirectoryGitHubRelayJobQueue);
-  assert.ok(createGitHubRelayJobQueueFromConfig({ githubRelayQueuePath: "/tmp/relay.json" }) instanceof JsonFileGitHubRelayJobQueue);
-  assert.ok(createGitHubRelayJobQueueFromConfig({ githubRelayQueuePostgresUrl: "postgres://specrail.example/relay" }) instanceof PostgresGitHubRelayJobQueue);
+  assertGitHubRelayJobQueueFactoryOutcomes(
+    [
+      {
+        label: "empty config disables durable relay queue",
+        config: {},
+        queueKind: "none",
+      },
+      {
+        label: "directory path creates directory relay queue",
+        config: { githubRelayQueueDir: "/tmp/relay" },
+        queueKind: "directory",
+      },
+      {
+        label: "json file path creates json-file relay queue",
+        config: { githubRelayQueuePath: "/tmp/relay.json" },
+        queueKind: "json-file",
+      },
+      {
+        label: "PostgreSQL URL creates PostgreSQL relay queue",
+        config: { githubRelayQueuePostgresUrl: "postgres://specrail.example/relay" },
+        queueKind: "postgres",
+      },
+    ],
+    "relay job queue factory",
+  );
   assert.throws(
     () => createGitHubRelayJobQueueFromConfig({ githubRelayQueueBackend: "directory" }),
     /GITHUB_RELAY_QUEUE_DIR is required/u,
