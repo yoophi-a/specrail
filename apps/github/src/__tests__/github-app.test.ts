@@ -1931,10 +1931,11 @@ test("processGitHubRelayQueue records retryable failures", async () => {
   );
 
   const [failed] = await queue.list();
-  assert.equal(failed?.id, job.id);
-  assert.equal(failed?.status, "pending");
-  assert.equal(failed?.attempts, 1);
-  assert.equal(failed?.lastError, "GitHub unavailable");
+  assertGitHubRelayJobFields(
+    failed,
+    { id: job.id, status: "pending", attempts: 1, lastError: "GitHub unavailable" },
+    "terminal relay retryable failure job",
+  );
   assert.ok(failed?.nextAttemptAt);
 });
 
