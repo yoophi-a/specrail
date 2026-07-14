@@ -1288,7 +1288,16 @@ test("loadGitHubAppConfig ignores blank relay queue environment values", () => {
     "blank relay queue environment",
   );
 
-  assert.equal(resolveGitHubRelayQueueBackend(config), "none");
+  assertGitHubRelayQueueBackendOutcomes(
+    [
+      {
+        label: "blank relay queue config disables relay queue backend",
+        config,
+        backend: "none",
+      },
+    ],
+    "blank relay queue backend fallback",
+  );
 });
 
 test("resolveGitHubRelayQueueBackend preserves existing env precedence", () => {
