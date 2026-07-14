@@ -164,7 +164,12 @@ function assertGitHubRelayJobQueueFactoryOutcomes(expected: GitHubRelayJobQueueF
 
 type GitHubRelayJob = Awaited<ReturnType<GitHubRelayJobQueue["enqueue"]>>;
 
-function assertGitHubRelayJobFields(actual: GitHubRelayJob, expected: Partial<GitHubRelayJob>, label: string): void {
+function assertGitHubRelayJobFields(actual: GitHubRelayJob | undefined, expected: Partial<GitHubRelayJob>, label: string): void {
+  assert.ok(
+    actual,
+    `${label} expected GitHub relay job.\nExpected fields:\n${formatGitHubConfigSnapshot(expected)}\nObserved job:\n${formatGitHubConfigSnapshot(actual)}`,
+  );
+
   const observed: Record<string, unknown> = {};
   for (const key of Object.keys(expected) as Array<keyof GitHubRelayJob>) {
     observed[String(key)] = actual[key];
@@ -1677,17 +1682,18 @@ function registerGitHubRelayQueueContractTests(name: string, createHarness: () =
     const created = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
     const claimed = await reload().claimNext(new Date(created.createdAt));
 
-    assert.equal(claimed?.id, created.id);
-    assert.equal(claimed?.status, "running");
+    assertGitHubRelayJobFields(claimed, { id: created.id, status: "running" }, `${name} claimed relay job`);
     assert.equal((await queue.claimNext(new Date(created.createdAt)))?.id, undefined);
-    assert.equal((await queue.list())[0]?.status, "running");
+    assertGitHubRelayJobFields((await queue.list())[0], { id: created.id, status: "running" }, `${name} listed running relay job`);
 
     const completedAt = new Date(Date.parse(created.createdAt) + 1_000);
     await reload().complete(created.id, completedAt);
     const [completed] = await queue.list();
-    assert.equal(completed?.status, "completed");
-    assert.equal(completed?.attempts, 0);
-    assert.equal(completed?.updatedAt, completedAt.toISOString());
+    assertGitHubRelayJobFields(
+      completed,
+      { id: created.id, status: "completed", attempts: 0, updatedAt: completedAt.toISOString() },
+      `${name} completed relay job`,
+    );
     assert.equal(await queue.claimNext(new Date(Date.parse(created.createdAt) + 2_000)), undefined);
   });
 
