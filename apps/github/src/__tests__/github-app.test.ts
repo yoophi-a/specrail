@@ -1213,18 +1213,23 @@ test("loadGitHubAppConfig reads explicit relay queue backend settings", () => {
 });
 
 test("loadGitHubAppConfig ignores blank relay queue environment values", () => {
-  const config = loadGitHubAppConfig({
-    GITHUB_RELAY_QUEUE_PATH: " ",
-    GITHUB_RELAY_QUEUE_DIR: "",
-    GITHUB_RELAY_QUEUE_POSTGRES_URL: " ",
-    DATABASE_URL: " ",
-    GITHUB_RELAY_QUEUE_POSTGRES_TABLE: "",
-  });
+  const config = assertGitHubConfigFields(
+    {
+      GITHUB_RELAY_QUEUE_PATH: " ",
+      GITHUB_RELAY_QUEUE_DIR: "",
+      GITHUB_RELAY_QUEUE_POSTGRES_URL: " ",
+      DATABASE_URL: " ",
+      GITHUB_RELAY_QUEUE_POSTGRES_TABLE: "",
+    },
+    {
+      githubRelayQueuePath: undefined,
+      githubRelayQueueDir: undefined,
+      githubRelayQueuePostgresUrl: undefined,
+      githubRelayQueuePostgresTable: undefined,
+    },
+    "blank relay queue environment",
+  );
 
-  assert.equal(config.githubRelayQueuePath, undefined);
-  assert.equal(config.githubRelayQueueDir, undefined);
-  assert.equal(config.githubRelayQueuePostgresUrl, undefined);
-  assert.equal(config.githubRelayQueuePostgresTable, undefined);
   assert.equal(resolveGitHubRelayQueueBackend(config), "none");
 });
 
