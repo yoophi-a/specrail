@@ -182,6 +182,20 @@ function assertGitHubRelayJobFields(actual: GitHubRelayJob | undefined, expected
   );
 }
 
+function assertGitHubRelayClaimedJobs(
+  claims: Array<GitHubRelayJob | undefined>,
+  expected: Array<Pick<GitHubRelayJob, "id" | "status">>,
+  label: string,
+): void {
+  const observed = claims.filter((job): job is GitHubRelayJob => Boolean(job)).map(({ id, status }) => ({ id, status }));
+
+  assert.deepEqual(
+    observed,
+    expected,
+    `${label} GitHub relay claimed jobs mismatch.\nExpected claimed jobs:\n${formatGitHubConfigSnapshot(expected)}\nObserved claimed jobs:\n${formatGitHubConfigSnapshot(observed)}\nRaw claims:\n${formatGitHubConfigSnapshot(claims)}`,
+  );
+}
+
 function payload(body: string) {
   return {
     action: "created",
@@ -1784,10 +1798,16 @@ test("DirectoryGitHubRelayJobQueue claims jobs atomically across queue instances
     secondWorker.claimNext(new Date(created.createdAt)),
   ]);
 
-  const claimedJobs = [firstClaim, secondClaim].filter((job): job is NonNullable<typeof job> => Boolean(job));
-  assert.equal(claimedJobs.length, 1);
-  assert.equal(claimedJobs[0]?.id, created.id);
-  assert.equal((await queue.list())[0]?.status, "running");
+  assertGitHubRelayClaimedJobs(
+    [firstClaim, secondClaim],
+    [{ id: created.id, status: "running" }],
+    "DirectoryGitHubRelayJobQueue atomic claim",
+  );
+  assertGitHubRelayJobFields(
+    (await queue.list())[0],
+    { id: created.id, status: "running" },
+    "DirectoryGitHubRelayJobQueue listed running job",
+  );
 });
 
 test("PostgresGitHubRelayJobQueue claims jobs atomically across queue instances", async () => {
@@ -1802,10 +1822,16 @@ test("PostgresGitHubRelayJobQueue claims jobs atomically across queue instances"
     secondWorker.claimNext(new Date(created.createdAt)),
   ]);
 
-  const claimedJobs = [firstClaim, secondClaim].filter((job): job is NonNullable<typeof job> => Boolean(job));
-  assert.equal(claimedJobs.length, 1);
-  assert.equal(claimedJobs[0]?.id, created.id);
-  assert.equal((await queue.list())[0]?.status, "running");
+  assertGitHubRelayClaimedJobs(
+    [firstClaim, secondClaim],
+    [{ id: created.id, status: "running" }],
+    "PostgresGitHubRelayJobQueue atomic claim",
+  );
+  assertGitHubRelayJobFields(
+    (await queue.list())[0],
+    { id: created.id, status: "running" },
+    "PostgresGitHubRelayJobQueue listed running job",
+  );
 });
 
 test("PostgresGitHubRelayJobQueue reclaims stale running jobs after the lease", async () => {
