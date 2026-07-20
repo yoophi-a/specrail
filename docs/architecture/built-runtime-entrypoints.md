@@ -70,13 +70,13 @@ Before adding image builds, run the built entrypoint smoke check:
 
 1. Runs `pnpm build`.
 2. Runs `pnpm check:built-entrypoints`.
-3. Fails if Node needs `tsx` or cannot import a built service entrypoint under the `specrail-built` condition.
+3. Runs `pnpm check:built-health`.
+4. Fails if Node needs `tsx`, cannot import a built service entrypoint under the `specrail-built` condition, or cannot serve `GET /healthz` from the built service process.
 
-This smoke check is an import-level guard. Docker build/publish jobs should later add process-level health checks that start each service with `PORT=0`-style configuration and confirm `GET /healthz` returns `{ ok: true, service: "<service-id>" }`.
+`check:built-entrypoints` is an import-level guard. `check:built-health` starts API, GitHub, and Telegram through their `start:built` scripts on allocated local ports and confirms `GET /healthz` returns `{ ok: true, service: "<service-id>" }`.
 
 ## Implementation Sequence
 
-1. Add process-level built service health checks for API, GitHub, and Telegram.
-2. Update the container image publishing contract with any final command changes.
-3. Add Dockerfiles or a generated image build script.
-4. Add a publish workflow that runs only after validation and smoke checks pass.
+1. Update the container image publishing contract with any final command changes.
+2. Add Dockerfiles or a generated image build script.
+3. Add a publish workflow that runs only after validation and smoke checks pass.
