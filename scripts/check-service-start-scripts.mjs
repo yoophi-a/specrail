@@ -1,9 +1,21 @@
 import { readFile } from "node:fs/promises";
 
 const requiredPackages = [
-  { path: "apps/api/package.json", name: "@specrail/api" },
-  { path: "apps/github/package.json", name: "@specrail/github" },
-  { path: "apps/telegram/package.json", name: "@specrail/telegram" },
+  {
+    path: "apps/api/package.json",
+    name: "@specrail/api",
+    builtStart: "node --conditions=specrail-built dist/apps/api/src/index.js",
+  },
+  {
+    path: "apps/github/package.json",
+    name: "@specrail/github",
+    builtStart: "node --conditions=specrail-built dist/index.js",
+  },
+  {
+    path: "apps/telegram/package.json",
+    name: "@specrail/telegram",
+    builtStart: "node --conditions=specrail-built dist/index.js",
+  },
 ];
 
 const expectedStart = "node --import tsx src/index.ts";
@@ -21,6 +33,10 @@ for (const entry of requiredPackages) {
   if (start !== expectedStart) {
     failures.push(`${entry.path}: expected scripts.start to be ${JSON.stringify(expectedStart)}`);
   }
+
+  if (pkg?.scripts?.["start:built"] !== entry.builtStart) {
+    failures.push(`${entry.path}: expected scripts.start:built to be ${JSON.stringify(entry.builtStart)}`);
+  }
 }
 
 if (failures.length > 0) {
@@ -28,4 +44,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`Checked ${requiredPackages.length} service start scripts.`);
+console.log(`Checked ${requiredPackages.length} service source and built start scripts.`);

@@ -38,7 +38,7 @@ Each long-running service package should expose two explicit runtime modes:
 | Mode | Use case | Command shape |
 | --- | --- | --- |
 | Source checkout | local dev and systemd templates | `node --import tsx src/index.ts` |
-| Built runtime | Docker images and publish smoke checks | `node dist/index.js` or a documented service-specific built path |
+| Built runtime | Docker images and publish smoke checks | package `start:built` scripts with `--conditions=specrail-built` |
 
 The preferred target is a flat service output:
 
@@ -48,17 +48,13 @@ apps/github/dist/index.js
 apps/telegram/dist/index.js
 ```
 
-If the repository keeps workspace-relative output paths instead, every service must declare the exact built command in `package.json` so Dockerfiles and checks do not infer paths.
+The repository currently keeps a workspace-relative output path for the API service, so Dockerfiles and checks must use declared `start:built` scripts instead of inferring paths.
 
 ## Package Exports
 
-Workspace package exports should support built runtime resolution without breaking source-checkout execution. The implementation can choose one of these strategies:
+Workspace package exports support built runtime resolution through a dedicated `specrail-built` condition. Source-checkout execution keeps the default source export so local `tsx` commands and tests do not require prebuilt `dist` files.
 
-1. Add a dedicated built-runtime script path that runs after package exports point at built `dist` files.
-2. Add explicit source conditions for source-checkout commands and use built `import`/`default` conditions for normal Node.js runtime.
-3. Keep source exports for local use but generate image-specific package metadata that points at built outputs.
-
-Whichever strategy is chosen, built service smoke checks must prove that Node resolves built `@specrail/*` packages without `tsx`.
+Built service smoke checks must prove that Node resolves built `@specrail/*` packages without `tsx`.
 
 ## Build Output Expectations
 
@@ -81,8 +77,7 @@ This smoke check should run before Docker build/publish jobs and can later be re
 
 ## Implementation Sequence
 
-1. Normalize package exports and service built commands while preserving source-checkout scripts.
-2. Add built service smoke checks for API, GitHub, and Telegram.
-3. Update the container image publishing contract with the concrete built commands.
-4. Add Dockerfiles or a generated image build script.
-5. Add a publish workflow that runs only after validation and smoke checks pass.
+1. Add built service smoke checks for API, GitHub, and Telegram.
+2. Update the container image publishing contract with any final command changes.
+3. Add Dockerfiles or a generated image build script.
+4. Add a publish workflow that runs only after validation and smoke checks pass.

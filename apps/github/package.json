@@ -14,7 +14,8 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "node --watch --import tsx src/index.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "start": "node --import tsx src/index.ts"
+    "start": "node --import tsx src/index.ts",
+    "start:built": "node --conditions=specrail-built dist/index.js"
   },
   "devDependencies": {
     "@types/pg": "^8.20.0",
