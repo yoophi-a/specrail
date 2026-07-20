@@ -61,7 +61,7 @@ export interface CodexAdapterOptions {
   onEvent?: (event: ExecutionEvent) => void | Promise<void>;
 }
 
-interface CodexJsonEvent {
+export interface CodexJsonEvent {
   id?: string;
   session_id?: string;
   sessionId?: string;
@@ -96,7 +96,7 @@ interface CodexJsonEvent {
   };
 }
 
-interface CodexContentBlock {
+export interface CodexContentBlock {
   type?: string;
   text?: string;
   id?: string;
@@ -185,7 +185,7 @@ function stringifyCodexValue(value: unknown): string | undefined {
   return JSON.stringify(value);
 }
 
-function buildCodexStructuredEvents(input: {
+export function normalizeCodexStructuredStreamEvent(input: {
   executionId: string;
   sessionRef: string;
   timestamp: string;
@@ -890,7 +890,7 @@ export class CodexAdapter implements ExecutorAdapter {
             });
           }
         }
-        const events = buildCodexStructuredEvents({
+        const events = normalizeCodexStructuredStreamEvent({
           executionId,
           sessionRef,
           timestamp,
