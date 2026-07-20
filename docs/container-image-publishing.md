@@ -16,6 +16,8 @@ Keep CLI-only clients such as the terminal app out of always-on service images u
 
 The package `start` scripts are source-checkout commands used by systemd-style deployments. Dockerfiles should convert the same service entrypoints to built JavaScript commands once the image build layout exists.
 
+Current implementation note: the repository has not yet normalized built service entrypoints. The package exports still point at `src/index.ts` for source-checkout operation, and service package builds can emit workspace-relative paths when TypeScript compiles path-mapped workspace dependencies through the service project. Do not assume `node apps/<service>/dist/index.js` works until the runtime package export and build-output layout are aligned.
+
 ## Tagging
 
 Every published image should have immutable tags:
@@ -83,6 +85,13 @@ When Dockerfiles are added, prefer a shared multi-stage pattern:
 
 Avoid embedding repository-local state, provider credentials, execution transcripts, test artifacts, or `.env` files in images.
 
+Before adding those Dockerfiles, settle the built runtime entrypoint contract:
+
+- decide whether service builds emit a flat `dist/index.js` or keep workspace-relative paths such as `dist/apps/<service>/src/index.js`
+- update workspace package exports so built JavaScript resolves built `@specrail/*` packages instead of source `.ts` files in image runtimes
+- keep source-checkout `start`/`dev` scripts working for local and systemd deployments, either through explicit source conditions or separate built-runtime scripts
+- add a build-output smoke check for each long-running service command before wiring image builds into CI
+
 ## Deployment Template Alignment
 
 - [GitHub and Telegram Docker Compose example](./github-docker-compose-example.md) uses placeholder `ghcr.io/your-org/specrail-*` images that should be replaced with tags from this contract.
@@ -91,6 +100,7 @@ Avoid embedding repository-local state, provider credentials, execution transcri
 
 ## Open Implementation Work
 
+- Align built JavaScript entrypoints and workspace package exports before adding Dockerfiles.
 - Add actual Dockerfiles or a generated image build script for the three service images.
 - Add a publish workflow that runs only after full validation.
 - Add image provenance/SBOM generation if the target registry or deployment environment requires it.
