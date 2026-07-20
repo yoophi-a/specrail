@@ -74,6 +74,14 @@ Pushes to `main` publish `sha-<git-sha>` and `main` tags. Release tag pushes pub
 
 Builds should fail if the validation gate fails. Docs-only changes should not publish images.
 
+Publish builds use Docker Buildx and attach registry-backed provenance and SBOM attestations to each service image:
+
+```text
+docker buildx build --provenance=true --sbom=true --push ...
+```
+
+Local non-push builds keep using plain `docker build` so the dry-run and developer path stays simple.
+
 ## Dockerfile Expectations
 
 Service images use the shared `docker/service.Dockerfile` multi-stage pattern:
@@ -102,4 +110,4 @@ Before publishing those images, keep the [built runtime entrypoint contract](./a
 
 ## Open Implementation Work
 
-- Add image provenance/SBOM generation if the target registry or deployment environment requires it.
+- Add target-specific image signing or registry policy enforcement if a deployment environment requires signatures beyond Buildx provenance and SBOM attestations.

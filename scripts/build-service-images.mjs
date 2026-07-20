@@ -77,7 +77,7 @@ export function createDockerBuildCommands({ owner, tag, tags, push = false }) {
     const images = resolvedTags.map((resolvedTag) => `ghcr.io/${owner}/${definition.image}:${resolvedTag}`);
     const buildCommand = [
       "docker",
-      "build",
+      ...(push ? ["buildx", "build"] : ["build"]),
       "--file",
       dockerfile,
       "--build-arg",
@@ -85,13 +85,10 @@ export function createDockerBuildCommands({ owner, tag, tags, push = false }) {
       "--build-arg",
       `SERVICE_PORT=${definition.port}`,
       ...images.flatMap((image) => ["--tag", image]),
+      ...(push ? ["--provenance=true", "--sbom=true", "--push"] : []),
       ".",
     ];
-    const commands = [buildCommand];
-    if (push) {
-      commands.push(...images.map((image) => ["docker", "push", image]));
-    }
-    return commands;
+    return [buildCommand];
   });
 }
 

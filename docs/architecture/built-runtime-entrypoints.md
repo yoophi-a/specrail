@@ -77,4 +77,4 @@ Before publishing image builds, run the built entrypoint smoke checks:
 
 ## Implementation Sequence
 
-1. Add image provenance/SBOM generation if the target registry or deployment environment requires it.
+1. Add target-specific image signing or registry policy enforcement if a deployment environment requires signatures beyond Buildx provenance and SBOM attestations.

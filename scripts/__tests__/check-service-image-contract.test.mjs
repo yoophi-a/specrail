@@ -60,6 +60,7 @@ steps:
   - run: pnpm build
   - run: pnpm check:built-entrypoints
   - run: pnpm check:built-health
+  - uses: docker/setup-buildx-action@v3
   - uses: docker/login-action@v3
   - run: pnpm docker:build-services -- --owner "\${GITHUB_REPOSITORY_OWNER}" --tag "\${tags}" --push
 `;
@@ -135,8 +136,20 @@ test("createDockerBuildCommands builds and optionally pushes the three service i
 
   assert.deepEqual(createDockerBuildCommands({ owner: "acme", tag: "sha-123", push: true }).at(-1), [
     "docker",
-    "push",
+    "buildx",
+    "build",
+    "--file",
+    "docker/service.Dockerfile",
+    "--build-arg",
+    "SERVICE_PACKAGE=@specrail/telegram",
+    "--build-arg",
+    "SERVICE_PORT=4300",
+    "--tag",
     "ghcr.io/acme/specrail-telegram:sha-123",
+    "--provenance=true",
+    "--sbom=true",
+    "--push",
+    ".",
   ]);
 });
 
@@ -155,8 +168,8 @@ test("runServiceImageBuilds dry-run accepts the pnpm argument separator", () => 
   assert.doesNotMatch(lines[0] ?? "", /:local/u);
 });
 
-test("createDockerBuildCommands can attach multiple tags in one build", () => {
-  const [apiBuild, apiShaPush, apiMainPush] = createDockerBuildCommands({
+test("createDockerBuildCommands can attach multiple publish tags in one buildx command", () => {
+  const [apiBuild] = createDockerBuildCommands({
     owner: "acme",
     tags: ["sha-123", "main"],
     push: true,
@@ -164,6 +177,7 @@ test("createDockerBuildCommands can attach multiple tags in one build", () => {
 
   assert.deepEqual(apiBuild, [
     "docker",
+    "buildx",
     "build",
     "--file",
     "docker/service.Dockerfile",
@@ -175,8 +189,9 @@ test("createDockerBuildCommands can attach multiple tags in one build", () => {
     "ghcr.io/acme/specrail-api:sha-123",
     "--tag",
     "ghcr.io/acme/specrail-api:main",
+    "--provenance=true",
+    "--sbom=true",
+    "--push",
     ".",
   ]);
-  assert.deepEqual(apiShaPush, ["docker", "push", "ghcr.io/acme/specrail-api:sha-123"]);
-  assert.deepEqual(apiMainPush, ["docker", "push", "ghcr.io/acme/specrail-api:main"]);
 });

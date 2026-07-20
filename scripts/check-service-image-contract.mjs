@@ -54,6 +54,7 @@ const requiredWorkflowSnippets = [
   "pnpm check:built-entrypoints",
   "pnpm check:built-health",
   "docker/login-action@v3",
+  "docker/setup-buildx-action@v3",
   "pnpm docker:build-services -- --owner \"${GITHUB_REPOSITORY_OWNER}\" --tag",
   "--push",
 ];
@@ -120,6 +121,26 @@ export async function checkServiceImageContract(rootDir = process.cwd()) {
     }
     if (!command.includes(`SERVICE_PORT=${port}`)) {
       failures.push(`scripts/build-service-images.mjs: ${expectedImage} missing SERVICE_PORT=${port}`);
+    }
+  }
+
+  const publishCommands = createDockerBuildCommands({ owner: "your-org", tags: ["sha-dry-run", "main"], push: true }).map((command) =>
+    command.join(" "),
+  );
+  for (const [, image] of expectedBuilds) {
+    const expectedImage = `ghcr.io/your-org/${image}:sha-dry-run`;
+    const command = publishCommands.find((entry) => entry.includes(expectedImage));
+    if (!command) {
+      failures.push(`scripts/build-service-images.mjs: missing publish command for ${expectedImage}`);
+      continue;
+    }
+    if (!command.startsWith("docker buildx build ")) {
+      failures.push(`scripts/build-service-images.mjs: ${expectedImage} publish command must use docker buildx build`);
+    }
+    for (const requiredFlag of ["--provenance=true", "--sbom=true", "--push"]) {
+      if (!command.includes(requiredFlag)) {
+        failures.push(`scripts/build-service-images.mjs: ${expectedImage} missing ${requiredFlag}`);
+      }
     }
   }
 
