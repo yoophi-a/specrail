@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.18.0",
   "scripts": {
     "build": "pnpm -r build",
-    "check": "node scripts/check-service-start-scripts.mjs && pnpm -r check",
+    "check": "node scripts/check-service-start-scripts.mjs && node scripts/check-build-output-test-excludes.mjs && pnpm -r check",
     "validate": "pnpm check:links && pnpm check && pnpm test && pnpm build",
     "bootstrap:github-relay-postgres": "node scripts/bootstrap-github-relay-postgres.mjs",
     "dev:api": "pnpm --filter @specrail/api dev",
