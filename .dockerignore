@@ -1,0 +1,14 @@
+.git
+.DS_Store
+.env
+.env.*
+!.env.example
+.specrail-data
+.tmp
+coverage
+dist
+node_modules
+**/dist
+**/node_modules
+**/__tests__
+.tmp-issue-*.md

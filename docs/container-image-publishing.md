@@ -8,13 +8,13 @@ Publish one image per network service:
 
 | Service | Image | Runtime package | Default command |
 | --- | --- | --- | --- |
-| API and hosted operator UI | `ghcr.io/<owner>/specrail-api` | `@specrail/api` | `pnpm --filter @specrail/api start` |
-| GitHub webhook adapter | `ghcr.io/<owner>/specrail-github` | `@specrail/github` | `pnpm --filter @specrail/github start` |
-| Telegram adapter | `ghcr.io/<owner>/specrail-telegram` | `@specrail/telegram` | `pnpm --filter @specrail/telegram start` |
+| API and hosted operator UI | `ghcr.io/<owner>/specrail-api` | `@specrail/api` | generated from package `start:built` |
+| GitHub webhook adapter | `ghcr.io/<owner>/specrail-github` | `@specrail/github` | generated from package `start:built` |
+| Telegram adapter | `ghcr.io/<owner>/specrail-telegram` | `@specrail/telegram` | generated from package `start:built` |
 
 Keep CLI-only clients such as the terminal app out of always-on service images unless a deployment target explicitly needs them.
 
-The package `start` scripts are source-checkout commands used by systemd-style deployments. Dockerfiles should convert the same service entrypoints to built JavaScript commands once the image build layout exists.
+The package `start` scripts are source-checkout commands used by systemd-style deployments. Container images use the package `start:built` scripts through `docker/service.Dockerfile`.
 
 Current implementation note: source-checkout `start` scripts still point at `src/index.ts`, while built runtime scripts use the dedicated `specrail-built` export condition. Service package builds are not fully flat yet, so use the declared `start:built` scripts instead of inferring `node apps/<service>/dist/index.js`.
 
@@ -57,9 +57,7 @@ pnpm check:links
 pnpm check
 pnpm test
 pnpm build
-docker build specrail-api
-docker build specrail-github
-docker build specrail-telegram
+pnpm docker:build-services -- --owner <owner> --tag sha-<git-sha>
 docker push immutable tags
 ```
 
@@ -75,22 +73,23 @@ Builds should fail if `pnpm validate` fails. Docs-only changes should not publis
 
 ## Dockerfile Expectations
 
-When Dockerfiles are added, prefer a shared multi-stage pattern:
+Service images use the shared `docker/service.Dockerfile` multi-stage pattern:
 
 1. Install dependencies with the pinned pnpm version from `packageManager`.
 2. Build the workspace once.
-3. Prune or copy only production runtime dependencies for the target service.
-4. Copy the built `apps/<service>/dist` and required `packages/*/dist` outputs.
-5. Set a service-specific default command that runs built JavaScript, for example `node apps/api/dist/index.js` after copying the required package outputs.
+3. Run `pnpm check:built-entrypoints` and `pnpm check:built-health`.
+4. Deploy production dependencies for the target service with `pnpm --filter <package> deploy --prod --legacy`.
+5. Remove deployed source trees, test directories, and TypeScript configs from the runtime stage.
+6. Generate the final process command from the target package's `start:built` script.
 
 Avoid embedding repository-local state, provider credentials, execution transcripts, test artifacts, or `.env` files in images.
 
-Before adding those Dockerfiles, continue hardening the [built runtime entrypoint contract](./architecture/built-runtime-entrypoints.md):
+Before publishing those images, keep the [built runtime entrypoint contract](./architecture/built-runtime-entrypoints.md) aligned:
 
 - decide whether service builds emit a flat `dist/index.js` or keep workspace-relative paths such as `dist/apps/<service>/src/index.js`
 - keep workspace package exports resolving built `@specrail/*` packages through the `specrail-built` condition instead of source `.ts` files in image runtimes
 - keep source-checkout `start`/`dev` scripts working for local and systemd deployments, either through explicit source conditions or separate built-runtime scripts
-- run `pnpm build`, `pnpm check:built-entrypoints`, and `pnpm check:built-health` before wiring image builds into CI
+- run `pnpm build`, `pnpm check:built-entrypoints`, `pnpm check:built-health`, and `pnpm docker:build-services -- --owner <owner> --tag sha-<git-sha>` before wiring image publishing into CI
 
 ## Deployment Template Alignment
 
@@ -100,7 +99,6 @@ Before adding those Dockerfiles, continue hardening the [built runtime entrypoin
 
 ## Open Implementation Work
 
-- Add actual Dockerfiles or a generated image build script for the three service images.
 - Add a publish workflow that runs only after full validation.
 - Add image provenance/SBOM generation if the target registry or deployment environment requires it.
 - Decide whether release tags come from Git tags, GitHub releases, or a manual workflow dispatch.

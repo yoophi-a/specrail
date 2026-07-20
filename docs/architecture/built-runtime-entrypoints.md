@@ -2,7 +2,7 @@
 
 SpecRail currently runs services from a source checkout with `node --import tsx src/index.ts`. Container images need a different contract: they should run built JavaScript without depending on TypeScript source files or `tsx`.
 
-This note defines the target shape before Dockerfiles or publish workflows are added.
+This note defines the target shape used by service Dockerfiles and future publish workflows.
 
 ## Goals
 
@@ -66,7 +66,7 @@ Built service smoke checks prove that Node can import built service entrypoints 
 
 ## Validation Before Dockerfiles
 
-Before adding image builds, run the built entrypoint smoke check:
+Before publishing image builds, run the built entrypoint smoke checks:
 
 1. Runs `pnpm build`.
 2. Runs `pnpm check:built-entrypoints`.
@@ -77,6 +77,4 @@ Before adding image builds, run the built entrypoint smoke check:
 
 ## Implementation Sequence
 
-1. Update the container image publishing contract with any final command changes.
-2. Add Dockerfiles or a generated image build script.
-3. Add a publish workflow that runs only after validation and smoke checks pass.
+1. Add a publish workflow that runs only after validation and smoke checks pass.
