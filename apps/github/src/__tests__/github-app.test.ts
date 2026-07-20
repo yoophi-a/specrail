@@ -40,6 +40,7 @@ import {
   type GitHubAppConfig,
   type GitHubRelayJobQueue,
   type GitHubRelayPostgresQueryClient,
+  type GitHubRunCommandOutcome,
   type GitHubSpecRailPort,
 } from "../index.js";
 
@@ -297,8 +298,10 @@ function acceptedContext(overrides: Partial<GitHubAcceptedRunCommandContext> = {
   };
 }
 
-function createSpecRailPort(overrides: Partial<GitHubSpecRailPort> = {}): { port: GitHubSpecRailPort; calls: Array<{ name: string; input: unknown }> } {
-  const calls: Array<{ name: string; input: unknown }> = [];
+type GitHubSpecRailPortCall = { name: string; input: unknown };
+
+function createSpecRailPort(overrides: Partial<GitHubSpecRailPort> = {}): { port: GitHubSpecRailPort; calls: GitHubSpecRailPortCall[] } {
+  const calls: GitHubSpecRailPortCall[] = [];
   const port: GitHubSpecRailPort = {
     async findChannelBinding(input) {
       calls.push({ name: "findChannelBinding", input });
@@ -321,6 +324,18 @@ function createSpecRailPort(overrides: Partial<GitHubSpecRailPort> = {}): { port
   return { port, calls };
 }
 
+function assertGitHubRunCommandOutcome(
+  actual: { outcome: GitHubRunCommandOutcome; calls: GitHubSpecRailPortCall[] },
+  expected: { outcome: GitHubRunCommandOutcome; calls: GitHubSpecRailPortCall[] },
+  label: string,
+): void {
+  assert.deepEqual(
+    actual,
+    expected,
+    `${label} GitHub run command outcome mismatch.\nExpected orchestration:\n${formatGitHubConfigSnapshot(expected)}\nObserved orchestration:\n${formatGitHubConfigSnapshot(actual)}`,
+  );
+}
+
 test("executeGitHubRunCommand reuses an existing GitHub binding", async () => {
   const { port, calls } = createSpecRailPort({
     async findChannelBinding(input) {
@@ -340,25 +355,38 @@ test("executeGitHubRunCommand reuses an existing GitHub binding", async () => {
     apiBaseUrl: "https://specrail.example.test",
   });
 
-  assert.deepEqual(outcome, {
-    bindingCreated: false,
-    bindingId: "binding-existing",
-    trackId: "track-existing",
-    planningSessionId: "planning-existing",
-    runId: "run/created",
-    reportUrl: "https://specrail.example.test/runs/run%2Fcreated/report.md",
-  });
-  assert.deepEqual(calls.map((call) => call.name), ["findChannelBinding", "startRun"]);
-  assert.deepEqual(calls[0]?.input, {
-    channelType: "github",
-    externalChatId: "yoophi-a/specrail",
-    externalThreadId: "123",
-  });
-  assert.deepEqual(calls[1]?.input, {
-    trackId: "track-existing",
-    planningSessionId: "planning-existing",
-    prompt: "preserve opaque prompt #123",
-  });
+  assertGitHubRunCommandOutcome(
+    { outcome, calls },
+    {
+      outcome: {
+        bindingCreated: false,
+        bindingId: "binding-existing",
+        trackId: "track-existing",
+        planningSessionId: "planning-existing",
+        runId: "run/created",
+        reportUrl: "https://specrail.example.test/runs/run%2Fcreated/report.md",
+      },
+      calls: [
+        {
+          name: "findChannelBinding",
+          input: {
+            channelType: "github",
+            externalChatId: "yoophi-a/specrail",
+            externalThreadId: "123",
+          },
+        },
+        {
+          name: "startRun",
+          input: {
+            trackId: "track-existing",
+            planningSessionId: "planning-existing",
+            prompt: "preserve opaque prompt #123",
+          },
+        },
+      ],
+    },
+    "existing GitHub binding run command",
+  );
 });
 
 test("executeGitHubRunCommand creates a track and binding when none exists", async () => {
@@ -370,31 +398,59 @@ test("executeGitHubRunCommand creates a track and binding when none exists", asy
     specRail: port,
   });
 
-  assert.equal(outcome.bindingCreated, true);
-  assert.equal(outcome.bindingId, "binding-created");
-  assert.equal(outcome.trackId, "track-created");
-  assert.equal(outcome.runId, "run-created");
-  assert.deepEqual(calls.map((call) => call.name), ["findChannelBinding", "createTrack", "bindChannel", "startRun"]);
-  assert.deepEqual(calls[1]?.input, {
-    projectId: "project/default",
-    title: "GitHub PR #123: Implement GitHub entrypoint",
-    description: "Created from GitHub pull request yoophi-a/specrail#123 by @octocat.",
-    priority: "medium",
-  });
-  assert.deepEqual(calls[2]?.input, {
-    projectId: "project/default",
-    channelType: "github",
-    externalChatId: "yoophi-a/specrail",
-    externalThreadId: "123",
-    externalUserId: "octocat",
-    trackId: "track-created",
-    planningSessionId: undefined,
-  });
-  assert.deepEqual(calls[3]?.input, {
-    trackId: "track-created",
-    planningSessionId: undefined,
-    prompt: "Run SpecRail for GitHub pull request yoophi-a/specrail#123.",
-  });
+  assertGitHubRunCommandOutcome(
+    { outcome, calls },
+    {
+      outcome: {
+        bindingCreated: true,
+        bindingId: "binding-created",
+        trackId: "track-created",
+        planningSessionId: undefined,
+        runId: "run-created",
+        reportUrl: undefined,
+      },
+      calls: [
+        {
+          name: "findChannelBinding",
+          input: {
+            channelType: "github",
+            externalChatId: "yoophi-a/specrail",
+            externalThreadId: "123",
+          },
+        },
+        {
+          name: "createTrack",
+          input: {
+            projectId: "project/default",
+            title: "GitHub PR #123: Implement GitHub entrypoint",
+            description: "Created from GitHub pull request yoophi-a/specrail#123 by @octocat.",
+            priority: "medium",
+          },
+        },
+        {
+          name: "bindChannel",
+          input: {
+            projectId: "project/default",
+            channelType: "github",
+            externalChatId: "yoophi-a/specrail",
+            externalThreadId: "123",
+            externalUserId: "octocat",
+            trackId: "track-created",
+            planningSessionId: undefined,
+          },
+        },
+        {
+          name: "startRun",
+          input: {
+            trackId: "track-created",
+            planningSessionId: undefined,
+            prompt: "Run SpecRail for GitHub pull request yoophi-a/specrail#123.",
+          },
+        },
+      ],
+    },
+    "new GitHub binding run command",
+  );
 });
 
 test("executeGitHubRunCommand propagates SpecRail failures", async () => {
