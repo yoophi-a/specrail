@@ -39,7 +39,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - Docker Compose and systemd examples include `/healthz`-based service checks
   - API, GitHub webhook, and Telegram services expose lightweight `/healthz` endpoints
   - Kubernetes skeleton includes baseline probes, security contexts, resource requests/limits, ingress boundaries, and network policy starting points
-  - image publishing contract is documented; Dockerfiles/publish workflow and cluster-specific runtime tuning remain open
+  - image publishing contract is documented; Dockerfile scaffolding and publish workflow exist; cluster-specific runtime tuning remains open
 - production observability
   - safe metrics contract is documented for API, GitHub, Telegram, relay queues, and exporter boundaries
   - concrete metrics exporter or `/metrics` endpoint remains open
@@ -140,7 +140,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 
 2. **Add target-specific production manifests**
    - harden the Kubernetes skeleton with cluster-specific network policy, resource tuning, and ingress/auth annotations.
-   - implement Dockerfiles and image publish workflow from the documented container image contract.
+   - harden target-specific manifests and runtime tuning from the documented container image contract.
 
 3. **Deepen runtime approval broker integration**
    - replace resume/no-retry fallbacks with provider-native continuation when Codex or Claude Code exposes a safer continuation path.

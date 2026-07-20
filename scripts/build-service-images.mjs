@@ -25,9 +25,13 @@ export const serviceImageBuilds = [
 const dockerfile = "docker/service.Dockerfile";
 
 function parseArgs(argv) {
+  const defaultTags = (process.env.SPECRAIL_IMAGE_TAGS ?? process.env.SPECRAIL_IMAGE_TAG ?? "local")
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
   const options = {
     owner: process.env.SPECRAIL_IMAGE_OWNER ?? "your-org",
-    tag: process.env.SPECRAIL_IMAGE_TAG ?? "local",
+    tags: [],
     push: false,
     dryRun: false,
   };
@@ -43,7 +47,12 @@ function parseArgs(argv) {
     } else if (arg === "--owner") {
       options.owner = argv[++index];
     } else if (arg === "--tag") {
-      options.tag = argv[++index];
+      options.tags.push(
+        ...argv[++index]
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+      );
     } else {
       throw new Error(`unknown argument ${arg}`);
     }
@@ -52,16 +61,20 @@ function parseArgs(argv) {
   if (!options.owner) {
     throw new Error("owner must not be empty");
   }
-  if (!options.tag) {
-    throw new Error("tag must not be empty");
+  if (options.tags.length === 0) {
+    options.tags = defaultTags;
+  }
+  if (options.tags.length === 0) {
+    throw new Error("at least one tag is required");
   }
 
   return options;
 }
 
-export function createDockerBuildCommands({ owner, tag, push = false }) {
+export function createDockerBuildCommands({ owner, tag, tags, push = false }) {
+  const resolvedTags = tags ?? [tag ?? "local"];
   return serviceImageBuilds.flatMap((definition) => {
-    const image = `ghcr.io/${owner}/${definition.image}:${tag}`;
+    const images = resolvedTags.map((resolvedTag) => `ghcr.io/${owner}/${definition.image}:${resolvedTag}`);
     const buildCommand = [
       "docker",
       "build",
@@ -71,13 +84,12 @@ export function createDockerBuildCommands({ owner, tag, push = false }) {
       `SERVICE_PACKAGE=${definition.packageName}`,
       "--build-arg",
       `SERVICE_PORT=${definition.port}`,
-      "--tag",
-      image,
+      ...images.flatMap((image) => ["--tag", image]),
       ".",
     ];
     const commands = [buildCommand];
     if (push) {
-      commands.push(["docker", "push", image]);
+      commands.push(...images.map((image) => ["docker", "push", image]));
     }
     return commands;
   });

@@ -1,6 +1,6 @@
 # Container Image Publishing Contract
 
-SpecRail deployment templates reference container images, but this repository does not yet include Dockerfiles or a publish workflow. This contract defines what those future images must provide so Docker Compose, Kubernetes, and other deployment targets can converge on the same runtime assumptions.
+SpecRail deployment templates reference container images built from the shared service Dockerfile and published by the container image workflow. This contract defines what those images must provide so Docker Compose, Kubernetes, and other deployment targets can converge on the same runtime assumptions.
 
 ## Image Names
 
@@ -47,7 +47,7 @@ Each service image should:
 
 ## Build And Publish Flow
 
-The future publish workflow should run after the full validation gate:
+The `.github/workflows/container-images.yml` publish workflow runs the full validation gate before publishing:
 
 ```text
 checkout
@@ -57,8 +57,9 @@ pnpm check:links
 pnpm check
 pnpm test
 pnpm build
-pnpm docker:build-services -- --owner <owner> --tag sha-<git-sha>
-docker push immutable tags
+pnpm check:built-entrypoints
+pnpm check:built-health
+pnpm docker:build-services -- --owner <owner> --tag sha-<git-sha>[,<extra-tag>] --push
 ```
 
 For GitHub Actions, grant only the permissions needed to publish package images:
@@ -69,7 +70,9 @@ permissions:
   packages: write
 ```
 
-Builds should fail if `pnpm validate` fails. Docs-only changes should not publish images.
+Pushes to `main` publish `sha-<git-sha>` and `main` tags. Release tag pushes publish `sha-<git-sha>` and the Git tag, such as `v0.1.0`. Manual dispatches publish `sha-<git-sha>` for the selected ref. Docs-only branch pushes are ignored by the publish workflow.
+
+Builds should fail if the validation gate fails. Docs-only changes should not publish images.
 
 ## Dockerfile Expectations
 
@@ -89,7 +92,7 @@ Before publishing those images, keep the [built runtime entrypoint contract](./a
 - decide whether service builds emit a flat `dist/index.js` or keep workspace-relative paths such as `dist/apps/<service>/src/index.js`
 - keep workspace package exports resolving built `@specrail/*` packages through the `specrail-built` condition instead of source `.ts` files in image runtimes
 - keep source-checkout `start`/`dev` scripts working for local and systemd deployments, either through explicit source conditions or separate built-runtime scripts
-- run `pnpm build`, `pnpm check:built-entrypoints`, `pnpm check:built-health`, and `pnpm docker:build-services -- --owner <owner> --tag sha-<git-sha>` before wiring image publishing into CI
+- keep `pnpm build`, `pnpm check:built-entrypoints`, `pnpm check:built-health`, and `pnpm docker:build-services -- --owner <owner> --tag sha-<git-sha>` aligned with the publish workflow
 
 ## Deployment Template Alignment
 
@@ -99,6 +102,4 @@ Before publishing those images, keep the [built runtime entrypoint contract](./a
 
 ## Open Implementation Work
 
-- Add a publish workflow that runs only after full validation.
 - Add image provenance/SBOM generation if the target registry or deployment environment requires it.
-- Decide whether release tags come from Git tags, GitHub releases, or a manual workflow dispatch.

@@ -6,6 +6,7 @@ import { createDockerBuildCommands, serviceImageBuilds } from "./build-service-i
 
 export const serviceDockerfilePath = "docker/service.Dockerfile";
 export const dockerIgnorePath = ".dockerignore";
+export const containerImageWorkflowPath = ".github/workflows/container-images.yml";
 
 const requiredDockerfileSnippets = [
   "FROM node:${NODE_VERSION}-bookworm-slim AS base",
@@ -40,6 +41,23 @@ const requiredDockerIgnoreEntries = [
   "**/__tests__",
 ];
 
+const requiredWorkflowSnippets = [
+  "name: Container images",
+  "packages: write",
+  "paths-ignore:",
+  "\"**/*.md\"",
+  "pnpm install --frozen-lockfile",
+  "pnpm check:links",
+  "pnpm check",
+  "pnpm test",
+  "pnpm build",
+  "pnpm check:built-entrypoints",
+  "pnpm check:built-health",
+  "docker/login-action@v3",
+  "pnpm docker:build-services -- --owner \"${GITHUB_REPOSITORY_OWNER}\" --tag",
+  "--push",
+];
+
 const expectedBuilds = [
   ["api", "specrail-api", "@specrail/api", 4000],
   ["github", "specrail-github", "@specrail/github", 4200],
@@ -50,6 +68,7 @@ export async function checkServiceImageContract(rootDir = process.cwd()) {
   const failures = [];
   const dockerfile = await readFile(path.join(rootDir, serviceDockerfilePath), "utf8");
   const dockerIgnore = await readFile(path.join(rootDir, dockerIgnorePath), "utf8");
+  const workflow = await readFile(path.join(rootDir, containerImageWorkflowPath), "utf8");
 
   for (const snippet of requiredDockerfileSnippets) {
     if (!dockerfile.includes(snippet)) {
@@ -66,6 +85,12 @@ export async function checkServiceImageContract(rootDir = process.cwd()) {
   for (const entry of requiredDockerIgnoreEntries) {
     if (!dockerIgnoreEntries.has(entry)) {
       failures.push(`${dockerIgnorePath}: missing ${JSON.stringify(entry)}`);
+    }
+  }
+
+  for (const snippet of requiredWorkflowSnippets) {
+    if (!workflow.includes(snippet)) {
+      failures.push(`${containerImageWorkflowPath}: missing ${JSON.stringify(snippet)}`);
     }
   }
 

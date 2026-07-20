@@ -77,4 +77,4 @@ Before publishing image builds, run the built entrypoint smoke checks:
 
 ## Implementation Sequence
 
-1. Add a publish workflow that runs only after validation and smoke checks pass.
+1. Add image provenance/SBOM generation if the target registry or deployment environment requires it.

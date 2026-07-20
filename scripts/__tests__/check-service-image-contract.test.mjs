@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   checkServiceImageContract,
+  containerImageWorkflowPath,
   dockerIgnorePath,
   serviceDockerfilePath,
 } from "../check-service-image-contract.mjs";
@@ -41,11 +42,35 @@ node_modules
 **/__tests__
 `;
 
+const validWorkflow = `
+name: Container images
+permissions:
+  contents: read
+  packages: write
+on:
+  push:
+    paths-ignore:
+      - docs/**
+      - "**/*.md"
+steps:
+  - run: pnpm install --frozen-lockfile
+  - run: pnpm check:links
+  - run: pnpm check
+  - run: pnpm test
+  - run: pnpm build
+  - run: pnpm check:built-entrypoints
+  - run: pnpm check:built-health
+  - uses: docker/login-action@v3
+  - run: pnpm docker:build-services -- --owner "\${GITHUB_REPOSITORY_OWNER}" --tag "\${tags}" --push
+`;
+
 test("checkServiceImageContract accepts the service Dockerfile contract", async () => {
   const rootDir = await mkdtemp(path.join(tmpdir(), "specrail-service-images-ok-"));
   await mkdir(path.join(rootDir, "docker"), { recursive: true });
+  await mkdir(path.dirname(path.join(rootDir, containerImageWorkflowPath)), { recursive: true });
   await writeFile(path.join(rootDir, serviceDockerfilePath), validDockerfile, "utf8");
   await writeFile(path.join(rootDir, dockerIgnorePath), validDockerIgnore, "utf8");
+  await writeFile(path.join(rootDir, containerImageWorkflowPath), validWorkflow, "utf8");
 
   assert.deepEqual(await checkServiceImageContract(rootDir), []);
 });
@@ -53,13 +78,16 @@ test("checkServiceImageContract accepts the service Dockerfile contract", async 
 test("checkServiceImageContract reports missing Dockerfile contract snippets", async () => {
   const rootDir = await mkdtemp(path.join(tmpdir(), "specrail-service-images-fail-"));
   await mkdir(path.join(rootDir, "docker"), { recursive: true });
+  await mkdir(path.dirname(path.join(rootDir, containerImageWorkflowPath)), { recursive: true });
   await writeFile(path.join(rootDir, serviceDockerfilePath), "FROM scratch\n", "utf8");
   await writeFile(path.join(rootDir, dockerIgnorePath), "node_modules\n", "utf8");
+  await writeFile(path.join(rootDir, containerImageWorkflowPath), "name: broken\n", "utf8");
 
   const failures = await checkServiceImageContract(rootDir);
   assert.match(failures.join("\n"), /pnpm check:built-health/u);
   assert.match(failures.join("\n"), /USER specrail/u);
   assert.match(failures.join("\n"), /\.env/u);
+  assert.match(failures.join("\n"), /packages: write/u);
 });
 
 test("createDockerBuildCommands builds and optionally pushes the three service images", () => {
@@ -124,4 +152,31 @@ test("runServiceImageBuilds dry-run accepts the pnpm argument separator", () => 
 
   assert.equal(lines.length, 3);
   assert.match(lines[0] ?? "", /ghcr.io\/acme\/specrail-api:sha-123/u);
+  assert.doesNotMatch(lines[0] ?? "", /:local/u);
+});
+
+test("createDockerBuildCommands can attach multiple tags in one build", () => {
+  const [apiBuild, apiShaPush, apiMainPush] = createDockerBuildCommands({
+    owner: "acme",
+    tags: ["sha-123", "main"],
+    push: true,
+  });
+
+  assert.deepEqual(apiBuild, [
+    "docker",
+    "build",
+    "--file",
+    "docker/service.Dockerfile",
+    "--build-arg",
+    "SERVICE_PACKAGE=@specrail/api",
+    "--build-arg",
+    "SERVICE_PORT=4000",
+    "--tag",
+    "ghcr.io/acme/specrail-api:sha-123",
+    "--tag",
+    "ghcr.io/acme/specrail-api:main",
+    ".",
+  ]);
+  assert.deepEqual(apiShaPush, ["docker", "push", "ghcr.io/acme/specrail-api:sha-123"]);
+  assert.deepEqual(apiMainPush, ["docker", "push", "ghcr.io/acme/specrail-api:main"]);
 });
