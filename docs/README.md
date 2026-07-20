@@ -11,6 +11,7 @@ Use this index to find the right reference before changing SpecRail's core servi
 ## Architecture and roadmap
 
 - [Repository structure](./architecture/repository-structure.md) — package and app ownership.
+- [Built runtime entrypoints](./architecture/built-runtime-entrypoints.md) — target contract for built service commands, package exports, and pre-Docker smoke checks.
 - [MVP roadmap](./architecture/mvp-roadmap.md) — historical MVP milestones and validation focus.
 - [Completed run report export](./architecture/completed-run-report-export.md) — explicit derived Markdown export contract for completed run summaries/history.
 - [Next steps from 2026-04-09](./architecture/next-steps-2026-04-09.md) — earlier planning notes for follow-up work.

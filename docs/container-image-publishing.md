@@ -85,7 +85,7 @@ When Dockerfiles are added, prefer a shared multi-stage pattern:
 
 Avoid embedding repository-local state, provider credentials, execution transcripts, test artifacts, or `.env` files in images.
 
-Before adding those Dockerfiles, settle the built runtime entrypoint contract:
+Before adding those Dockerfiles, settle the [built runtime entrypoint contract](./architecture/built-runtime-entrypoints.md):
 
 - decide whether service builds emit a flat `dist/index.js` or keep workspace-relative paths such as `dist/apps/<service>/src/index.js`
 - update workspace package exports so built JavaScript resolves built `@specrail/*` packages instead of source `.ts` files in image runtimes
