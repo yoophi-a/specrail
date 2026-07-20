@@ -54,7 +54,7 @@ The repository currently keeps a workspace-relative output path for the API serv
 
 Workspace package exports support built runtime resolution through a dedicated `specrail-built` condition. Source-checkout execution keeps the default source export so local `tsx` commands and tests do not require prebuilt `dist` files.
 
-Built service smoke checks must prove that Node resolves built `@specrail/*` packages without `tsx`.
+Built service smoke checks prove that Node can import built service entrypoints under the `specrail-built` condition without `tsx`.
 
 ## Build Output Expectations
 
@@ -66,18 +66,17 @@ Built service smoke checks must prove that Node resolves built `@specrail/*` pac
 
 ## Validation Before Dockerfiles
 
-Before adding image builds, add a smoke check that:
+Before adding image builds, run the built entrypoint smoke check:
 
 1. Runs `pnpm build`.
-2. Starts each built long-running service command with `PORT=0`-style configuration where supported.
-3. Confirms `GET /healthz` returns `{ ok: true, service: "<service-id>" }`.
-4. Fails if Node needs `tsx` or resolves workspace imports to `.ts` source.
+2. Runs `pnpm check:built-entrypoints`.
+3. Fails if Node needs `tsx` or cannot import a built service entrypoint under the `specrail-built` condition.
 
-This smoke check should run before Docker build/publish jobs and can later be reused inside image tests.
+This smoke check is an import-level guard. Docker build/publish jobs should later add process-level health checks that start each service with `PORT=0`-style configuration and confirm `GET /healthz` returns `{ ok: true, service: "<service-id>" }`.
 
 ## Implementation Sequence
 
-1. Add built service smoke checks for API, GitHub, and Telegram.
+1. Add process-level built service health checks for API, GitHub, and Telegram.
 2. Update the container image publishing contract with any final command changes.
 3. Add Dockerfiles or a generated image build script.
 4. Add a publish workflow that runs only after validation and smoke checks pass.

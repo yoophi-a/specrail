@@ -90,7 +90,7 @@ Before adding those Dockerfiles, continue hardening the [built runtime entrypoin
 - decide whether service builds emit a flat `dist/index.js` or keep workspace-relative paths such as `dist/apps/<service>/src/index.js`
 - keep workspace package exports resolving built `@specrail/*` packages through the `specrail-built` condition instead of source `.ts` files in image runtimes
 - keep source-checkout `start`/`dev` scripts working for local and systemd deployments, either through explicit source conditions or separate built-runtime scripts
-- add a build-output smoke check for each long-running service command before wiring image builds into CI
+- run `pnpm build` plus `pnpm check:built-entrypoints` before wiring image builds into CI
 
 ## Deployment Template Alignment
 
@@ -100,7 +100,7 @@ Before adding those Dockerfiles, continue hardening the [built runtime entrypoin
 
 ## Open Implementation Work
 
-- Add built service smoke checks before adding Dockerfiles.
+- Add process-level built service health checks before adding Dockerfiles.
 - Add actual Dockerfiles or a generated image build script for the three service images.
 - Add a publish workflow that runs only after full validation.
 - Add image provenance/SBOM generation if the target registry or deployment environment requires it.
