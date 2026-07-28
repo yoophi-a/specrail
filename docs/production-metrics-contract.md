@@ -87,6 +87,7 @@ Keep the sink at webhook-update granularity. Do not add chat ids, user ids, thre
 Route labels should use normalized route templates instead of raw URLs:
 
 - `/healthz`
+- `/metrics`
 - `/operator`
 - `/projects`
 - `/tracks`
@@ -123,13 +124,12 @@ Whichever shape is chosen, the in-process test surface should remain injectable 
 ## Deployment Notes
 
 - Do not expose metrics publicly with operator or webhook routes.
+- `GET /metrics` is disabled by default. Set `SPECRAIL_METRICS_ENABLED=true` on a service process to attach the in-memory Prometheus exporter for that service.
 - Keep scrape access inside the cluster, private network, or authenticated monitoring plane.
 - Scrape `/healthz` separately from `/metrics`.
 - Use alerting on aggregate rates and queue depth, not individual operational ids.
 
 ## Open Implementation Work
 
-- Add shared HTTP instrumentation helpers for API, GitHub, and Telegram servers.
-- Add a concrete metrics exporter or `/metrics` endpoint behind deployment-specific access controls.
-- Extend GitHub relay queue metrics for depth, retries, and terminal outcomes.
 - Add API metric sinks once the API outcome taxonomy is stable.
+- Extend GitHub relay queue metrics for depth, retries, and terminal outcomes.

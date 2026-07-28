@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
+import { InMemoryHttpMetricsCollector } from "@specrail/core";
 
 import {
   buildRunReportUrl,
@@ -65,6 +66,7 @@ test("loadTelegramAppConfig validates port environment values", () => {
     telegramBotToken: "",
     port: 4300,
     webhookPath: "/telegram/webhook",
+    metricsEnabled: false,
     projectId: undefined,
   }, "default environment");
 
@@ -101,6 +103,13 @@ test("loadTelegramAppConfig normalizes project id environment values", () => {
     "shared/project",
   );
   assert.equal(loadTelegramAppConfig({ SPECRAIL_TELEGRAM_PROJECT_ID: "", SPECRAIL_PROJECT_ID: "" }).projectId, undefined);
+});
+
+test("loadTelegramAppConfig validates metrics flag environment values", () => {
+  assert.equal(loadTelegramAppConfig({ SPECRAIL_METRICS_ENABLED: "true" }).metricsEnabled, true);
+  assert.equal(loadTelegramAppConfig({ SPECRAIL_METRICS_ENABLED: " 1 " }).metricsEnabled, true);
+  assert.equal(loadTelegramAppConfig({ SPECRAIL_METRICS_ENABLED: "off" }).metricsEnabled, false);
+  assert.throws(() => loadTelegramAppConfig({ SPECRAIL_METRICS_ENABLED: "maybe" }), /invalid SPECRAIL_METRICS_ENABLED: maybe/u);
 });
 
 test("TelegramBotClient validates sendMessage numeric identifiers", async () => {
@@ -155,6 +164,45 @@ test("Telegram webhook server serves a health check", async () => {
 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true, service: "specrail-telegram" });
+  } finally {
+    const closePromise = once(server, "close");
+    server.close();
+    server.closeAllConnections();
+    await closePromise;
+  }
+});
+
+test("Telegram webhook server exposes injected Prometheus HTTP metrics", async () => {
+  const collector = new InMemoryHttpMetricsCollector([1]);
+  const server = createTelegramWebhookServer(
+    {
+      apiBaseUrl: "http://127.0.0.1:4000",
+      telegramBotToken: "test-token",
+      port: 0,
+      webhookPath: "/telegram/webhook",
+    },
+    {
+      ...createUnusedTelegramDeps(),
+      httpMetrics: collector,
+      metricsExporter: collector,
+    },
+  );
+
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  try {
+    const healthResponse = await fetch(`http://127.0.0.1:${address.port}/healthz`);
+    assert.equal(healthResponse.status, 200);
+    await healthResponse.text();
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/metrics`);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(body, /specrail_http_requests_total\{method="GET",route="\/healthz",service="specrail-telegram",status_class="2xx"\} 1/u);
   } finally {
     const closePromise = once(server, "close");
     server.close();

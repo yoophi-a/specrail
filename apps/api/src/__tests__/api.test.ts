@@ -9,6 +9,7 @@ import { createDefaultServer, getPathSegments, normalizeExecutionBackendValue, s
 
 async function withServer(
   run: (baseUrl: string, paths: { dataDir: string; repoArtifactDir: string }) => Promise<void>,
+  envOverrides: Record<string, string | undefined> = {},
 ): Promise<void> {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "specrail-api-"));
   const repoArtifactDir = path.join(dataDir, "repo-visible");
@@ -16,12 +17,18 @@ async function withServer(
   const previousDataDir = process.env.SPECRAIL_DATA_DIR;
   const previousPort = process.env.SPECRAIL_PORT;
   const previousRepoArtifactDir = process.env.SPECRAIL_REPO_ARTIFACT_DIR;
+  const previousMetricsEnabled = process.env.SPECRAIL_METRICS_ENABLED;
   const previousPath = process.env.PATH;
 
   process.env.NODE_ENV = "test";
   process.env.SPECRAIL_DATA_DIR = dataDir;
   process.env.SPECRAIL_REPO_ARTIFACT_DIR = repoArtifactDir;
   process.env.SPECRAIL_PORT = "0";
+  if (envOverrides.SPECRAIL_METRICS_ENABLED === undefined) {
+    delete process.env.SPECRAIL_METRICS_ENABLED;
+  } else {
+    process.env.SPECRAIL_METRICS_ENABLED = envOverrides.SPECRAIL_METRICS_ENABLED;
+  }
 
   const fakeBinDir = path.join(dataDir, "bin");
   const fakeCodexPath = path.join(fakeBinDir, "codex");
@@ -63,6 +70,11 @@ setTimeout(() => process.exit(0), 10_000);
     process.env.SPECRAIL_DATA_DIR = previousDataDir;
     process.env.SPECRAIL_PORT = previousPort;
     process.env.SPECRAIL_REPO_ARTIFACT_DIR = previousRepoArtifactDir;
+    if (previousMetricsEnabled === undefined) {
+      delete process.env.SPECRAIL_METRICS_ENABLED;
+    } else {
+      process.env.SPECRAIL_METRICS_ENABLED = previousMetricsEnabled;
+    }
     process.env.PATH = previousPath;
   }
 }
@@ -375,6 +387,32 @@ test("API serves a health check", async () => {
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true, service: "specrail-api" });
   });
+});
+
+test("API exposes Prometheus HTTP metrics only when enabled", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/metrics`);
+
+    assert.equal(response.status, 404);
+    assert.equal((await response.json()).error.code, "not_found");
+  });
+
+  await withServer(
+    async (baseUrl) => {
+      const healthResponse = await fetch(`${baseUrl}/healthz`);
+      assert.equal(healthResponse.status, 200);
+      await healthResponse.text();
+
+      const response = await fetch(`${baseUrl}/metrics`);
+      const body = await response.text();
+
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /text\/plain/u);
+      assert.match(body, /# TYPE specrail_http_requests_total counter/u);
+      assert.match(body, /specrail_http_requests_total\{method="GET",route="\/healthz",service="specrail-api",status_class="2xx"\} 1/u);
+    },
+    { SPECRAIL_METRICS_ENABLED: "true" },
+  );
 });
 
 test("API returns bad request for malformed encoded paths", async () => {

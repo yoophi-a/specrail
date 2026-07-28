@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { QueryResultRow } from "pg";
+import { InMemoryHttpMetricsCollector } from "@specrail/core";
 import {
   authorizeGitHubActor,
   buildGitHubOperatorRunUrl,
@@ -551,7 +552,10 @@ async function withGitHubWebhookServer(
   authorization?: { isOrganizationMember(input: { organization: string; username: string }): Promise<boolean>; isTeamMember(input: { organization: string; teamSlug: string; username: string }): Promise<boolean> },
   diagnostics?: { log(input: { code: "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed"; repositoryFullName: string; issueNumber: number; senderLogin?: string; message?: string }): void },
   metrics?: { increment(input: { reason: "accepted" | "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed" | "specrail_request_failed" | "github_relay_enqueue_failed" }): void },
-  httpMetrics?: { observe(input: { service: string; route: string; method: string; statusClass: string; durationSeconds: number }): void },
+  httpMetrics?: {
+    observe(input: { service: string; route: string; method: string; statusClass: string; durationSeconds: number }): void;
+    renderPrometheusMetrics?(): string;
+  },
 ): Promise<void> {
   const server = createGitHubWebhookHttpServer({
     config: {
@@ -573,6 +577,7 @@ async function withGitHubWebhookServer(
     diagnostics,
     metrics,
     httpMetrics,
+    metricsExporter: httpMetrics?.renderPrometheusMetrics ? { renderPrometheusMetrics: () => httpMetrics.renderPrometheusMetrics?.() ?? "" } : undefined,
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -671,6 +676,31 @@ test("GitHub webhook HTTP app records safe HTTP metrics", async () => {
     [{ service: "specrail-github", route: "/github/webhook", method: "POST", statusClass: "4xx" }],
   );
   assert.ok(httpMetrics.every((metric) => metric.durationSeconds >= 0));
+});
+
+test("GitHub webhook HTTP app exposes injected Prometheus HTTP metrics", async () => {
+  const { port } = createSpecRailPort();
+  const collector = new InMemoryHttpMetricsCollector([1]);
+
+  await withGitHubWebhookServer(
+    port,
+    async (baseUrl) => {
+      const healthResponse = await fetch(`${baseUrl}/healthz`);
+      assert.equal(healthResponse.status, 200);
+      await healthResponse.text();
+
+      const response = await fetch(`${baseUrl}/metrics`);
+      const body = await response.text();
+
+      assert.equal(response.status, 200);
+      assert.match(body, /specrail_http_requests_total\{method="GET",route="\/healthz",service="specrail-github",status_class="2xx"\} 1/u);
+    },
+    {},
+    undefined,
+    undefined,
+    undefined,
+    collector,
+  );
 });
 
 test("GitHub webhook HTTP app surfaces orchestration failures", async () => {
@@ -1345,6 +1375,12 @@ test("loadGitHubAppConfig normalizes follow terminal events flag", () => {
     () => loadGitHubAppConfig({ GITHUB_FOLLOW_TERMINAL_EVENTS: "enabled" }),
     /invalid GITHUB_FOLLOW_TERMINAL_EVENTS: enabled/u,
   );
+});
+
+test("loadGitHubAppConfig validates metrics flag environment values", () => {
+  assertGitHubConfigFields({ SPECRAIL_METRICS_ENABLED: "true" }, { metricsEnabled: true }, "enabled metrics environment");
+  assertGitHubConfigFields({ SPECRAIL_METRICS_ENABLED: " 0 " }, { metricsEnabled: false }, "disabled metrics environment");
+  assert.throws(() => loadGitHubAppConfig({ SPECRAIL_METRICS_ENABLED: "maybe" }), /invalid SPECRAIL_METRICS_ENABLED: maybe/u);
 });
 
 test("loadGitHubAppConfig validates port environment values", () => {

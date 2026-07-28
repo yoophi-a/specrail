@@ -5,7 +5,13 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
 import type { QueryResultRow } from "pg";
-import { observeHttpRequestMetrics, resolveHttpRouteLabel, type HttpRequestMetricsSink } from "@specrail/core";
+import {
+  InMemoryHttpMetricsCollector,
+  observeHttpRequestMetrics,
+  resolveHttpRouteLabel,
+  type HttpRequestMetricsSink,
+  type PrometheusMetricsExporter,
+} from "@specrail/core";
 
 export const SPEC_RAIL_RUN_COMMAND = "/specrail run";
 
@@ -33,6 +39,7 @@ export interface GitHubAppConfig {
   githubRelayQueuePostgresUrl?: string;
   githubRelayQueuePostgresTable?: string;
   githubRelayQueueRunningLeaseMs?: number;
+  metricsEnabled?: boolean;
   repositoryProjects: Record<string, string>;
   allowedActors: string[];
   allowedOrganizations: string[];
@@ -169,6 +176,7 @@ export interface GitHubWebhookAppDeps {
   diagnostics?: GitHubDiagnosticLogger;
   metrics?: GitHubCommandMetricsSink;
   httpMetrics?: HttpRequestMetricsSink;
+  metricsExporter?: PrometheusMetricsExporter;
   scheduler?: GitHubBackgroundTaskScheduler;
   relayQueue?: GitHubRelayJobQueue;
 }
@@ -220,7 +228,7 @@ export type GitHubRunEventRelayResult =
   | { posted: false; reason: "no_terminal_event" | "stream_not_available" };
 
 export type GitHubRunEventRelayScheduleResult = { scheduled: true } | { scheduled: false; reason: "disabled" | "missing_github_client" };
-const GITHUB_HTTP_ROUTE_TEMPLATES = ["/healthz", "/github/webhook"];
+const GITHUB_HTTP_ROUTE_TEMPLATES = ["/healthz", "/metrics", "/github/webhook"];
 
 function parseRepositoryProjectMap(value: string | undefined): Record<string, string> {
   if (!value?.trim()) {
@@ -461,6 +469,7 @@ export function loadGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHu
     githubRelayQueuePostgresUrl: readOptionalEnvValue(env.GITHUB_RELAY_QUEUE_POSTGRES_URL) ?? readOptionalEnvValue(env.DATABASE_URL),
     githubRelayQueuePostgresTable: parseOptionalPostgresIdentifier(env.GITHUB_RELAY_QUEUE_POSTGRES_TABLE),
     githubRelayQueueRunningLeaseMs: parseOptionalPositiveInteger(env.GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS, "GITHUB_RELAY_QUEUE_RUNNING_LEASE_MS"),
+    metricsEnabled: parseBooleanEnv(env.SPECRAIL_METRICS_ENABLED, "SPECRAIL_METRICS_ENABLED"),
     repositoryProjects: parseRepositoryProjectMap(env.SPECRAIL_GITHUB_REPOSITORY_PROJECTS),
     allowedActors: parseAllowedActorList(env.GITHUB_ALLOWED_ACTORS),
     allowedOrganizations: parseAllowedOrganizationList(env.GITHUB_ALLOWED_ORGS),
@@ -818,6 +827,7 @@ export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRai
   const github = input.github ?? (tokenProvider ? createGitHubRestIssueCommentClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
   const authorization = tokenProvider ? createGitHubRestAuthorizationClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined;
   const relayQueue = createGitHubRelayJobQueueFromConfig(config);
+  const httpMetrics = config.metricsEnabled ? new InMemoryHttpMetricsCollector() : undefined;
   const server = createGitHubWebhookHttpServer({
     config,
     specRail,
@@ -825,6 +835,8 @@ export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRai
     authorization,
     diagnostics: defaultGitHubDiagnosticLogger,
     metrics: defaultGitHubCommandMetricsSink,
+    httpMetrics,
+    metricsExporter: httpMetrics,
     scheduler: defaultGitHubBackgroundTaskScheduler,
     relayQueue,
   });
@@ -1599,6 +1611,12 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
   response.end(`${JSON.stringify(body)}\n`);
 }
 
+function sendPrometheusMetrics(response: ServerResponse, exporter: PrometheusMetricsExporter): void {
+  response.statusCode = 200;
+  response.setHeader("content-type", "text/plain; version=0.0.4; charset=utf-8");
+  response.end(exporter.renderPrometheusMetrics());
+}
+
 function logGitHubCommandDiagnostic(
   deps: GitHubWebhookAppDeps,
   command: GitHubAcceptedRunCommandContext,
@@ -1632,6 +1650,11 @@ export async function handleGitHubWebhookHttpRequest(
 
   if (request.method === "GET" && requestUrl.pathname === "/healthz") {
     sendJson(response, 200, { ok: true, service: "specrail-github" });
+    return;
+  }
+
+  if (request.method === "GET" && requestUrl.pathname === "/metrics" && deps.metricsExporter) {
+    sendPrometheusMetrics(response, deps.metricsExporter);
     return;
   }
 

@@ -1,12 +1,19 @@
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL, URL } from "node:url";
-import { observeHttpRequestMetrics, resolveHttpRouteLabel, type HttpRequestMetricsSink } from "@specrail/core";
+import {
+  InMemoryHttpMetricsCollector,
+  observeHttpRequestMetrics,
+  resolveHttpRouteLabel,
+  type HttpRequestMetricsSink,
+  type PrometheusMetricsExporter,
+} from "@specrail/core";
 
 export interface TelegramAppConfig {
   apiBaseUrl: string;
   telegramBotToken: string;
   port: number;
   webhookPath: string;
+  metricsEnabled?: boolean;
   projectId?: string;
 }
 
@@ -68,6 +75,7 @@ export function loadTelegramAppConfig(env: NodeJS.ProcessEnv = process.env): Tel
     telegramBotToken: readOptionalEnvValue(env.TELEGRAM_BOT_TOKEN) ?? "",
     port: parseTelegramPort(env.TELEGRAM_APP_PORT, 4300, "TELEGRAM_APP_PORT"),
     webhookPath: normalizeTelegramWebhookPath(env.TELEGRAM_WEBHOOK_PATH),
+    metricsEnabled: parseTelegramBoolean(env.SPECRAIL_METRICS_ENABLED, "SPECRAIL_METRICS_ENABLED"),
     projectId: readOptionalEnvValue(env.SPECRAIL_TELEGRAM_PROJECT_ID) ?? readOptionalEnvValue(env.SPECRAIL_PROJECT_ID),
   };
 }
@@ -100,6 +108,20 @@ function parseTelegramPort(value: string | undefined, defaultValue: number, envN
   return port;
 }
 
+function parseTelegramBoolean(value: string | undefined, envName: string, defaultValue = false): boolean {
+  const normalized = readOptionalEnvValue(value)?.toLowerCase();
+  if (!normalized) {
+    return defaultValue;
+  }
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  throw new Error(`invalid ${envName}: ${value}`);
+}
+
 async function readJson<T>(request: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
@@ -118,6 +140,12 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
   response.statusCode = statusCode;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(`${JSON.stringify(body)}\n`);
+}
+
+function sendPrometheusMetrics(response: ServerResponse, exporter: PrometheusMetricsExporter): void {
+  response.statusCode = 200;
+  response.setHeader("content-type", "text/plain; version=0.0.4; charset=utf-8");
+  response.end(exporter.renderPrometheusMetrics());
 }
 
 function sanitizeText(value: string | undefined): string {
@@ -393,6 +421,7 @@ export interface TelegramFrontendDeps {
   telegram: Pick<TelegramBotClient, "sendMessage">;
   metrics?: TelegramMetricsSink;
   httpMetrics?: HttpRequestMetricsSink;
+  metricsExporter?: PrometheusMetricsExporter;
   projectId?: string;
   runReportBaseUrl?: string;
 }
@@ -492,7 +521,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate, deps: Telegra
 }
 
 export function createTelegramWebhookServer(config: TelegramAppConfig, deps: TelegramFrontendDeps): http.Server {
-  const routeTemplates = ["/healthz", normalizeTelegramWebhookPath(config.webhookPath)];
+  const routeTemplates = ["/healthz", "/metrics", normalizeTelegramWebhookPath(config.webhookPath)];
   return http.createServer(async (request, response) => {
     const method = request.method ?? "GET";
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
@@ -506,6 +535,11 @@ export function createTelegramWebhookServer(config: TelegramAppConfig, deps: Tel
 
     if (method === "GET" && url.pathname === "/healthz") {
       sendJson(response, 200, { ok: true, service: "specrail-telegram" });
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/metrics" && deps.metricsExporter) {
+      sendPrometheusMetrics(response, deps.metricsExporter);
       return;
     }
 
@@ -529,9 +563,12 @@ export function createTelegramWebhookServer(config: TelegramAppConfig, deps: Tel
 export function createDefaultTelegramServer(config: TelegramAppConfig = loadTelegramAppConfig()): http.Server {
   const specRail = new SpecRailApiClient(config.apiBaseUrl);
   const telegram = new TelegramBotClient(config.telegramBotToken);
+  const httpMetrics = config.metricsEnabled ? new InMemoryHttpMetricsCollector() : undefined;
   return createTelegramWebhookServer(config, {
     specRail,
     telegram,
+    httpMetrics,
+    metricsExporter: httpMetrics,
     projectId: config.projectId,
     runReportBaseUrl: config.apiBaseUrl,
   });

@@ -23,6 +23,7 @@ test("loadConfig returns execution defaults", () => {
     port: 4000,
     dataDir: ".specrail-data",
     repoArtifactDir: ".specrail",
+    metricsEnabled: false,
     executionBackend: "codex",
     executionProfile: "default",
     executionWorkspaceMode: "directory",
@@ -39,11 +40,13 @@ test("loadConfig normalizes optional API environment values", () => {
       SPECRAIL_EXECUTION_PROFILE: "  production  ",
       SPECRAIL_EXECUTION_WORKSPACE_MODE: "  git_worktree  ",
       SPECRAIL_EXECUTION_WORKSPACE_ROOT: "  /var/lib/specrail/workspaces  ",
+      SPECRAIL_METRICS_ENABLED: "  true  ",
     },
     {
       port: 4000,
       dataDir: "/var/lib/specrail",
       repoArtifactDir: "/var/lib/specrail/repo-visible",
+      metricsEnabled: true,
       executionBackend: "claude_code",
       executionProfile: "production",
       executionWorkspaceMode: "git_worktree",
@@ -62,11 +65,13 @@ test("loadConfig falls back for blank API environment values", () => {
       SPECRAIL_EXECUTION_PROFILE: "",
       SPECRAIL_EXECUTION_WORKSPACE_MODE: " ",
       SPECRAIL_EXECUTION_WORKSPACE_ROOT: "",
+      SPECRAIL_METRICS_ENABLED: " ",
     },
     {
       port: 4000,
       dataDir: ".specrail-data",
       repoArtifactDir: ".specrail",
+      metricsEnabled: false,
       executionBackend: "codex",
       executionProfile: "default",
       executionWorkspaceMode: "directory",
@@ -88,6 +93,16 @@ test("loadConfig validates API port environment values", () => {
   assert.throws(() => loadConfig({ SPECRAIL_PORT: "abc" }), /invalid SPECRAIL_PORT: abc/u);
   assert.throws(() => loadConfig({ SPECRAIL_PORT: "4000.5" }), /invalid SPECRAIL_PORT: 4000.5/u);
   assert.throws(() => loadConfig({ SPECRAIL_PORT: "65536" }), /invalid SPECRAIL_PORT: 65536/u);
+});
+
+test("loadConfig validates metrics flag environment values", () => {
+  assert.equal(loadConfig({ SPECRAIL_METRICS_ENABLED: "1" }).metricsEnabled, true);
+  assert.equal(loadConfig({ SPECRAIL_METRICS_ENABLED: " yes " }).metricsEnabled, true);
+  assert.equal(loadConfig({ SPECRAIL_METRICS_ENABLED: "on" }).metricsEnabled, true);
+  assert.equal(loadConfig({ SPECRAIL_METRICS_ENABLED: "0" }).metricsEnabled, false);
+  assert.equal(loadConfig({ SPECRAIL_METRICS_ENABLED: " false " }).metricsEnabled, false);
+  assert.equal(loadConfig({ SPECRAIL_METRICS_ENABLED: "off" }).metricsEnabled, false);
+  assert.throws(() => loadConfig({ SPECRAIL_METRICS_ENABLED: "maybe" }), /invalid SPECRAIL_METRICS_ENABLED: maybe/u);
 });
 
 test("loadConfig reads execution workspace mode", () => {

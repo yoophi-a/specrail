@@ -6,6 +6,7 @@ export interface SpecRailConfig {
   port: number;
   dataDir: string;
   repoArtifactDir: string;
+  metricsEnabled: boolean;
   executionBackend: SpecRailExecutionBackend;
   executionProfile: string;
   executionWorkspaceMode: SpecRailExecutionWorkspaceMode;
@@ -37,6 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SpecRailConfig
     port: parseIntegerEnv(env.SPECRAIL_PORT, 4000, "SPECRAIL_PORT", { min: 0, max: 65535 }),
     dataDir,
     repoArtifactDir: readOptionalEnvValue(env.SPECRAIL_REPO_ARTIFACT_DIR) ?? ".specrail",
+    metricsEnabled: parseBooleanEnv(env.SPECRAIL_METRICS_ENABLED, false, "SPECRAIL_METRICS_ENABLED"),
     executionBackend: parseExecutionBackend(env.SPECRAIL_EXECUTION_BACKEND),
     executionProfile: readOptionalEnvValue(env.SPECRAIL_EXECUTION_PROFILE) ?? "default",
     executionWorkspaceMode,
@@ -130,4 +132,18 @@ function parseIntegerEnv(
   }
 
   return parsed;
+}
+
+function parseBooleanEnv(value: string | undefined, defaultValue: boolean, envName: string): boolean {
+  const normalized = readOptionalEnvValue(value)?.toLowerCase();
+  if (!normalized) {
+    return defaultValue;
+  }
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  throw new Error(`invalid ${envName}: ${value}`);
 }

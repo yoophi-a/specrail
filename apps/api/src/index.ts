@@ -40,12 +40,14 @@ import {
   ExecutionWorkspaceCleanupApplier,
   planExecutionWorkspaceCleanup,
   renderCompletedRunReport,
+  InMemoryHttpMetricsCollector,
   observeHttpRequestMetrics,
   resolveHttpRouteLabel,
   type ExecutionWorkspaceMode,
   type ApplyExecutionWorkspaceCleanupResult,
   type ExecutionEvent,
   type HttpRequestMetricsSink,
+  type PrometheusMetricsExporter,
   type ApprovalStatus,
   type ArtifactKind,
   type ChannelType,
@@ -67,6 +69,7 @@ interface ApiDeps {
   sessionsDir?: string;
   cleanupApplier: ExecutionWorkspaceCleanupApplier;
   httpMetrics?: HttpRequestMetricsSink;
+  metricsExporter?: PrometheusMetricsExporter;
 }
 
 interface TrackRequestBody {
@@ -137,6 +140,7 @@ interface ForkRunRequestBody {
 const EXECUTION_BACKENDS = ["codex", "claude_code"] as const;
 const API_HTTP_ROUTE_TEMPLATES = [
   "/healthz",
+  "/metrics",
   "/operator",
   "/projects",
   "/projects/:projectId",
@@ -425,6 +429,11 @@ async function readJson<T>(request: IncomingMessage): Promise<T> {
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
   response.end(`${JSON.stringify(body, null, 2)}\n`);
+}
+
+function sendPrometheusMetrics(response: ServerResponse, exporter: PrometheusMetricsExporter): void {
+  response.writeHead(200, { "content-type": "text/plain; version=0.0.4; charset=utf-8" });
+  response.end(exporter.renderPrometheusMetrics());
 }
 
 function sendHtml(response: ServerResponse, statusCode: number, body: string): void {
@@ -1393,6 +1402,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         return;
       }
 
+      if (method === "GET" && segments.length === 1 && segments[0] === "metrics" && deps.metricsExporter) {
+        sendPrometheusMetrics(response, deps.metricsExporter);
+        return;
+      }
+
       if (method === "GET" && segments.length === 1 && segments[0] === "operator") {
         sendHtml(response, 200, renderOperatorUiHtml());
         return;
@@ -1955,6 +1969,7 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 export function createDefaultServer(): http.Server {
   const config = loadConfig();
   const dependencies = createDependencies(config.dataDir, config.repoArtifactDir);
+  const httpMetrics = config.metricsEnabled ? new InMemoryHttpMetricsCollector() : undefined;
 
   return createSpecRailHttpServer({
     artifactRoot: dependencies.artifactRoot,
@@ -1965,6 +1980,8 @@ export function createDefaultServer(): http.Server {
     localRepoPath: dependencies.localRepoPath,
     sessionsDir: dependencies.sessionsDir,
     cleanupApplier: new ExecutionWorkspaceCleanupApplier(),
+    httpMetrics,
+    metricsExporter: httpMetrics,
   });
 }
 
