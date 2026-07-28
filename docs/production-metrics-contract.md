@@ -66,15 +66,15 @@ specrail_github_commands_total{service="specrail-github",reason="<reason>"}
 
 Keep the existing safe diagnostic logs for operational identifiers. Do not add repository, issue, sender, team, or organization labels to the metric.
 
-## Existing Telegram Update Metric
+## Existing Telegram Update Metrics
 
-The Telegram adapter exposes an injectable update outcome metrics sink with these outcomes:
+The Telegram adapter exposes an injectable update outcome metrics sink and exports the same counters through the opt-in Telegram Prometheus collector. The supported outcomes are:
 
 - `accepted`
 - `ignored`
 - `failed`
 
-Exporter integrations should map that sink to:
+Exporter integrations and the built-in opt-in `/metrics` endpoint should map that sink to:
 
 ```text
 specrail_telegram_updates_total{service="specrail-telegram",outcome="<outcome>"}

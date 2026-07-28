@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
-import { InMemoryHttpMetricsCollector } from "@specrail/core";
 
 import {
   buildRunReportUrl,
@@ -10,6 +9,7 @@ import {
   loadTelegramAppConfig,
   parseAttachmentReferences,
   SpecRailApiClient,
+  TelegramPrometheusMetricsCollector,
   type TelegramAppConfig,
   TelegramBotClient,
   type TelegramFrontendDeps,
@@ -172,8 +172,8 @@ test("Telegram webhook server serves a health check", async () => {
   }
 });
 
-test("Telegram webhook server exposes injected Prometheus HTTP metrics", async () => {
-  const collector = new InMemoryHttpMetricsCollector([1]);
+test("Telegram webhook server exposes injected Prometheus metrics", async () => {
+  const collector = new TelegramPrometheusMetricsCollector();
   const server = createTelegramWebhookServer(
     {
       apiBaseUrl: "http://127.0.0.1:4000",
@@ -183,6 +183,7 @@ test("Telegram webhook server exposes injected Prometheus HTTP metrics", async (
     },
     {
       ...createUnusedTelegramDeps(),
+      metrics: collector,
       httpMetrics: collector,
       metricsExporter: collector,
     },
@@ -198,11 +199,19 @@ test("Telegram webhook server exposes injected Prometheus HTTP metrics", async (
     assert.equal(healthResponse.status, 200);
     await healthResponse.text();
 
+    const ignoredResponse = await fetch(`http://127.0.0.1:${address.port}/telegram/webhook`, {
+      method: "POST",
+      body: JSON.stringify({ update_id: 1 }),
+    });
+    assert.equal(ignoredResponse.status, 200);
+    await ignoredResponse.text();
+
     const response = await fetch(`http://127.0.0.1:${address.port}/metrics`);
     const body = await response.text();
 
     assert.equal(response.status, 200);
     assert.match(body, /specrail_http_requests_total\{method="GET",route="\/healthz",service="specrail-telegram",status_class="2xx"\} 1/u);
+    assert.match(body, /specrail_telegram_updates_total\{outcome="ignored",service="specrail-telegram"\} 1/u);
   } finally {
     const closePromise = once(server, "close");
     server.close();
