@@ -1,5 +1,6 @@
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL, URL } from "node:url";
+import { observeHttpRequestMetrics, resolveHttpRouteLabel, type HttpRequestMetricsSink } from "@specrail/core";
 
 export interface TelegramAppConfig {
   apiBaseUrl: string;
@@ -391,6 +392,7 @@ export interface TelegramFrontendDeps {
   >;
   telegram: Pick<TelegramBotClient, "sendMessage">;
   metrics?: TelegramMetricsSink;
+  httpMetrics?: HttpRequestMetricsSink;
   projectId?: string;
   runReportBaseUrl?: string;
 }
@@ -490,9 +492,17 @@ export async function handleTelegramUpdate(update: TelegramUpdate, deps: Telegra
 }
 
 export function createTelegramWebhookServer(config: TelegramAppConfig, deps: TelegramFrontendDeps): http.Server {
+  const routeTemplates = ["/healthz", normalizeTelegramWebhookPath(config.webhookPath)];
   return http.createServer(async (request, response) => {
     const method = request.method ?? "GET";
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
+    observeHttpRequestMetrics({
+      response,
+      sink: deps.httpMetrics,
+      service: "specrail-telegram",
+      route: resolveHttpRouteLabel(url.pathname, routeTemplates),
+      method,
+    });
 
     if (method === "GET" && url.pathname === "/healthz") {
       sendJson(response, 200, { ok: true, service: "specrail-telegram" });

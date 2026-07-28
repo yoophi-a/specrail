@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
 import type { QueryResultRow } from "pg";
+import { observeHttpRequestMetrics, resolveHttpRouteLabel, type HttpRequestMetricsSink } from "@specrail/core";
 
 export const SPEC_RAIL_RUN_COMMAND = "/specrail run";
 
@@ -167,6 +168,7 @@ export interface GitHubWebhookAppDeps {
   authorization?: GitHubAuthorizationPort;
   diagnostics?: GitHubDiagnosticLogger;
   metrics?: GitHubCommandMetricsSink;
+  httpMetrics?: HttpRequestMetricsSink;
   scheduler?: GitHubBackgroundTaskScheduler;
   relayQueue?: GitHubRelayJobQueue;
 }
@@ -218,6 +220,7 @@ export type GitHubRunEventRelayResult =
   | { posted: false; reason: "no_terminal_event" | "stream_not_available" };
 
 export type GitHubRunEventRelayScheduleResult = { scheduled: true } | { scheduled: false; reason: "disabled" | "missing_github_client" };
+const GITHUB_HTTP_ROUTE_TEMPLATES = ["/healthz", "/github/webhook"];
 
 function parseRepositoryProjectMap(value: string | undefined): Record<string, string> {
   if (!value?.trim()) {
@@ -1732,6 +1735,15 @@ export async function handleGitHubWebhookHttpRequest(
 
 export function createGitHubWebhookHttpServer(deps: GitHubWebhookAppDeps): http.Server {
   return http.createServer((request, response) => {
+    const requestUrl = new URL(request.url ?? "/", "http://localhost");
+    observeHttpRequestMetrics({
+      response,
+      sink: deps.httpMetrics,
+      service: "specrail-github",
+      route: resolveHttpRouteLabel(requestUrl.pathname, GITHUB_HTTP_ROUTE_TEMPLATES),
+      method: request.method,
+    });
+
     handleGitHubWebhookHttpRequest(request, response, deps).catch((error: unknown) => {
       sendJson(response, 500, { error: "internal_error", message: error instanceof Error ? error.message : String(error) });
     });

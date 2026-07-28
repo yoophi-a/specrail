@@ -165,6 +165,7 @@ test("Telegram webhook server serves a health check", async () => {
 
 test("Telegram webhook server records update outcome metrics", async () => {
   const outcomes: string[] = [];
+  const httpMetrics: Array<{ service: string; route: string; method: string; statusClass: string; durationSeconds: number }> = [];
   const server = createTelegramWebhookServer(
     {
       apiBaseUrl: "http://127.0.0.1:4000",
@@ -177,6 +178,11 @@ test("Telegram webhook server records update outcome metrics", async () => {
       metrics: {
         increment(input) {
           outcomes.push(input.outcome);
+        },
+      },
+      httpMetrics: {
+        observe(input) {
+          httpMetrics.push(input);
         },
       },
     },
@@ -208,6 +214,14 @@ test("Telegram webhook server records update outcome metrics", async () => {
     assert.equal(failedResponse.status, 500);
 
     assert.deepEqual(outcomes, ["ignored", "failed"]);
+    assert.deepEqual(
+      httpMetrics.map(({ service, route, method, statusClass }) => ({ service, route, method, statusClass })),
+      [
+        { service: "specrail-telegram", route: "/telegram/webhook", method: "POST", statusClass: "2xx" },
+        { service: "specrail-telegram", route: "/telegram/webhook", method: "POST", statusClass: "5xx" },
+      ],
+    );
+    assert.ok(httpMetrics.every((metric) => metric.durationSeconds >= 0));
   } finally {
     const closePromise = once(server, "close");
     server.close();

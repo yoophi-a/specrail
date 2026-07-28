@@ -52,6 +52,9 @@ importers:
 
   apps/github:
     dependencies:
+      '@specrail/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       pg:
         specifier: ^8.21.0
         version: 8.21.0
@@ -64,6 +67,10 @@ importers:
         version: 4.21.0
 
   apps/telegram:
+    dependencies:
+      '@specrail/core':
+        specifier: workspace:*
+        version: link:../../packages/core
     devDependencies:
       tsx:
         specifier: ^4.20.6

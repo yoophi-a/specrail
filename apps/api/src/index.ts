@@ -40,9 +40,12 @@ import {
   ExecutionWorkspaceCleanupApplier,
   planExecutionWorkspaceCleanup,
   renderCompletedRunReport,
+  observeHttpRequestMetrics,
+  resolveHttpRouteLabel,
   type ExecutionWorkspaceMode,
   type ApplyExecutionWorkspaceCleanupResult,
   type ExecutionEvent,
+  type HttpRequestMetricsSink,
   type ApprovalStatus,
   type ArtifactKind,
   type ChannelType,
@@ -63,6 +66,7 @@ interface ApiDeps {
   localRepoPath?: string;
   sessionsDir?: string;
   cleanupApplier: ExecutionWorkspaceCleanupApplier;
+  httpMetrics?: HttpRequestMetricsSink;
 }
 
 interface TrackRequestBody {
@@ -131,6 +135,37 @@ interface ForkRunRequestBody {
 }
 
 const EXECUTION_BACKENDS = ["codex", "claude_code"] as const;
+const API_HTTP_ROUTE_TEMPLATES = [
+  "/healthz",
+  "/operator",
+  "/projects",
+  "/projects/:projectId",
+  "/tracks",
+  "/tracks/:trackId",
+  "/tracks/:trackId/artifacts/:artifact",
+  "/tracks/:trackId/planning-sessions",
+  "/artifact-revisions/:revisionId",
+  "/planning-sessions/:planningSessionId",
+  "/planning-sessions/:planningSessionId/messages",
+  "/approval-requests/:approvalRequestId/approve",
+  "/approval-requests/:approvalRequestId/reject",
+  "/runs",
+  "/runs/:runId",
+  "/runs/:runId/approval-requests/:requestId/approve",
+  "/runs/:runId/approval-requests/:requestId/reject",
+  "/runs/:runId/resume",
+  "/runs/:runId/fork",
+  "/runs/:runId/cancel",
+  "/runs/:runId/session",
+  "/runs/:runId/session-preview",
+  "/runs/:runId/workspace-cleanup/preview",
+  "/runs/:runId/workspace-cleanup/apply",
+  "/runs/:runId/report.md",
+  "/runs/:runId/events",
+  "/runs/:runId/events/stream",
+  "/channel-bindings",
+  "/attachments",
+];
 
 interface ProposeArtifactRevisionRequestBody {
   content: string;
@@ -1340,6 +1375,15 @@ async function readExecutorSessionMetadata(sessionsDir: string | undefined, sess
 
 export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
   return http.createServer(async (request, response) => {
+    const requestUrl = new URL(request.url ?? "/", "http://localhost");
+    observeHttpRequestMetrics({
+      response,
+      sink: deps.httpMetrics,
+      service: "specrail-api",
+      route: resolveHttpRouteLabel(requestUrl.pathname, API_HTTP_ROUTE_TEMPLATES),
+      method: request.method,
+    });
+
     try {
       const method = request.method ?? "GET";
       const segments = getPathSegments(request);

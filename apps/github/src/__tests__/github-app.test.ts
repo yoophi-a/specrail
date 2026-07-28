@@ -551,6 +551,7 @@ async function withGitHubWebhookServer(
   authorization?: { isOrganizationMember(input: { organization: string; username: string }): Promise<boolean>; isTeamMember(input: { organization: string; teamSlug: string; username: string }): Promise<boolean> },
   diagnostics?: { log(input: { code: "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed"; repositoryFullName: string; issueNumber: number; senderLogin?: string; message?: string }): void },
   metrics?: { increment(input: { reason: "accepted" | "unsupported_repository" | "unauthorized_actor" | "github_authorization_failed" | "specrail_request_failed" | "github_relay_enqueue_failed" }): void },
+  httpMetrics?: { observe(input: { service: string; route: string; method: string; statusClass: string; durationSeconds: number }): void },
 ): Promise<void> {
   const server = createGitHubWebhookHttpServer({
     config: {
@@ -571,6 +572,7 @@ async function withGitHubWebhookServer(
     authorization,
     diagnostics,
     metrics,
+    httpMetrics,
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -639,6 +641,36 @@ test("GitHub webhook HTTP app rejects invalid signatures and bad JSON", async ()
     assert.deepEqual(await badJsonResponse.json(), { error: "invalid_json" });
     assert.deepEqual(calls, []);
   });
+});
+
+test("GitHub webhook HTTP app records safe HTTP metrics", async () => {
+  const { port } = createSpecRailPort();
+  const httpMetrics: Array<{ service: string; route: string; method: string; statusClass: string; durationSeconds: number }> = [];
+
+  await withGitHubWebhookServer(
+    port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run"));
+      const response = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body, "sha256=bad"));
+      assert.equal(response.status, 401);
+      await response.text();
+    },
+    {},
+    undefined,
+    undefined,
+    undefined,
+    {
+      observe(input) {
+        httpMetrics.push(input);
+      },
+    },
+  );
+
+  assert.deepEqual(
+    httpMetrics.map(({ service, route, method, statusClass }) => ({ service, route, method, statusClass })),
+    [{ service: "specrail-github", route: "/github/webhook", method: "POST", statusClass: "4xx" }],
+  );
+  assert.ok(httpMetrics.every((metric) => metric.durationSeconds >= 0));
 });
 
 test("GitHub webhook HTTP app surfaces orchestration failures", async () => {

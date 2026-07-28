@@ -5,6 +5,7 @@ export * from "./services/execution-workspace-cleanup-applier.js";
 export * from "./services/execution-workspace-cleanup-planner.js";
 export * from "./services/execution-workspace-manager.js";
 export * from "./services/file-repositories.js";
+export * from "./services/http-metrics.js";
 export * from "./services/ports.js";
 export * from "./services/specrail-service.js";
 export * from "./services/completed-run-report.js";

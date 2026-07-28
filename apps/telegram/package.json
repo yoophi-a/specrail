@@ -17,6 +17,9 @@
     "start": "node --import tsx src/index.ts",
     "start:built": "node --conditions=specrail-built dist/index.js"
   },
+  "dependencies": {
+    "@specrail/core": "workspace:*"
+  },
   "devDependencies": {
     "tsx": "^4.20.6"
   }

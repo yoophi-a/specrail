@@ -22,6 +22,7 @@
     "tsx": "^4.20.6"
   },
   "dependencies": {
+    "@specrail/core": "workspace:*",
     "pg": "^8.21.0"
   }
 }
