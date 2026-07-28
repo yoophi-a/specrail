@@ -82,6 +82,17 @@ specrail_telegram_updates_total{service="specrail-telegram",outcome="<outcome>"}
 
 Keep the sink at webhook-update granularity. Do not add chat ids, user ids, thread ids, track ids, run ids, attachment ids, prompt text, captions, or Telegram file ids as metric labels.
 
+## Existing GitHub Relay Metrics
+
+The GitHub webhook app exports durable terminal relay queue metrics through the opt-in Prometheus collector:
+
+- `specrail_github_relay_jobs_total{service="specrail-github",backend="<backend>",outcome="<outcome>"}`
+- `specrail_github_relay_queue_depth{service="specrail-github",backend="<backend>",state="<state>"}`
+
+Allowed backend labels are `none`, `directory`, `json-file`, and `postgres`. Allowed job outcomes are `completed`, `retry`, and `failed`. Queue depth states mirror the durable queue lifecycle: `pending`, `running`, `completed`, and `failed`.
+
+Do not add repository names, issue numbers, run ids, report URLs, operator URLs, or queue storage paths to relay metrics.
+
 ## HTTP Route Labels
 
 Route labels should use normalized route templates instead of raw URLs:
@@ -132,4 +143,3 @@ Whichever shape is chosen, the in-process test surface should remain injectable 
 ## Open Implementation Work
 
 - Add API metric sinks once the API outcome taxonomy is stable.
-- Extend GitHub relay queue metrics for depth, retries, and terminal outcomes.

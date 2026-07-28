@@ -42,7 +42,9 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
   - image publishing contract is documented; Dockerfile scaffolding and publish workflow emit Buildx provenance/SBOM attestations; cluster-specific runtime tuning remains open
 - production observability
   - safe metrics contract is documented for API, GitHub, Telegram, relay queues, and exporter boundaries
-  - concrete metrics exporter or `/metrics` endpoint remains open
+  - opt-in Prometheus HTTP metrics exporter exists for API, GitHub, and Telegram services
+  - GitHub command and durable relay queue metrics export through the opt-in GitHub metrics endpoint
+  - API domain metric sinks remain open once the API outcome taxonomy is stable
 - approval workflow depth
   - artifact revision approval is implemented
   - runtime permission request resolution is available through core service and HTTP APIs
@@ -60,7 +62,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - database-backed persistence
 - production auth system
 - worktree/git branch orchestration beyond metadata
-- production metrics exporter implementation beyond injectable sinks
+- API domain metrics beyond HTTP request instrumentation
 
 ## Next milestone candidates
 

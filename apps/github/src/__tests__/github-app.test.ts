@@ -26,6 +26,7 @@ import {
   executeGitHubRunCommand,
   formatGitHubTerminalOutcomeComment,
   getTerminalStatusFromRunEvent,
+  GitHubPrometheusMetricsCollector,
   handleGitHubWebhookCommand,
   isGitHubActorAuthorized,
   loadGitHubAppConfig,
@@ -699,6 +700,34 @@ test("GitHub webhook HTTP app exposes injected Prometheus HTTP metrics", async (
     undefined,
     undefined,
     undefined,
+    collector,
+  );
+});
+
+test("GitHub webhook HTTP app exports command metrics through Prometheus collector", async () => {
+  const { port } = createSpecRailPort();
+  const collector = new GitHubPrometheusMetricsCollector();
+
+  await withGitHubWebhookServer(
+    port,
+    async (baseUrl) => {
+      const body = JSON.stringify(payload("/specrail run"));
+      const acceptedResponse = await fetch(`${baseUrl}/github/webhook`, signedWebhookInit(body));
+      assert.equal(acceptedResponse.status, 202);
+      await acceptedResponse.text();
+
+      const metricsResponse = await fetch(`${baseUrl}/metrics`);
+      const metricsBody = await metricsResponse.text();
+      assert.equal(metricsResponse.status, 200);
+      assert.match(
+        metricsBody,
+        /specrail_github_commands_total\{reason="accepted",service="specrail-github"\} 1/u,
+      );
+    },
+    {},
+    undefined,
+    undefined,
+    collector,
     collector,
   );
 });
@@ -2030,6 +2059,35 @@ test("processGitHubRelayQueue posts terminal comments and completes jobs", async
   assertGitHubRelayProcessResultFields(result, { processed: true, jobId: job.id }, "terminal relay completion");
   assertGitHubRelayJobFields((await queue.list())[0], { id: job.id, status: "completed" }, "terminal relay completed job");
   assert.deepEqual(comments, [{ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, body: "SpecRail run run-created completed." }]);
+});
+
+test("processGitHubRelayQueue records relay Prometheus metrics", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "specrail-github-relay-"));
+  const queue = new JsonFileGitHubRelayJobQueue(path.join(dir, "queue.json"));
+  const job = await queue.enqueue({ repositoryFullName: "yoophi-a/specrail", issueNumber: 123, runId: "run-created" });
+  const collector = new GitHubPrometheusMetricsCollector();
+
+  await processGitHubRelayQueue({
+    queue,
+    backend: "json-file",
+    metrics: collector,
+    specRail: {
+      async *streamRunEvents() {
+        yield { type: "task_status_changed", payload: { status: "completed" } };
+      },
+    },
+    github: {
+      async createIssueComment() {
+        return { id: 1001 };
+      },
+    },
+  });
+
+  const rendered = collector.renderPrometheusMetrics();
+  assert.match(rendered, /specrail_github_relay_jobs_total\{backend="json-file",outcome="completed",service="specrail-github"\} 1/u);
+  assert.match(rendered, /specrail_github_relay_queue_depth\{backend="json-file",service="specrail-github",state="completed"\} 1/u);
+  assert.match(rendered, /specrail_github_relay_queue_depth\{backend="json-file",service="specrail-github",state="pending"\} 0/u);
+  assertGitHubRelayJobFields((await queue.list())[0], { id: job.id, status: "completed" }, "metric relay completed job");
 });
 
 test("processGitHubRelayQueue records retryable failures", async () => {

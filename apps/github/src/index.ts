@@ -168,6 +168,15 @@ export interface GitHubCommandMetricsSink {
   increment(input: { reason: GitHubCommandMetricReason }): void;
 }
 
+export type GitHubRelayMetricOutcome = "completed" | "failed" | "retry";
+
+export type GitHubRelayMetricState = GitHubTerminalRelayJob["status"];
+
+export interface GitHubRelayMetricsSink {
+  recordJobOutcome(input: { backend: GitHubRelayQueueBackend; outcome: GitHubRelayMetricOutcome }): void;
+  setQueueDepth(input: { backend: GitHubRelayQueueBackend; state: GitHubRelayMetricState; depth: number }): void;
+}
+
 export interface GitHubWebhookAppDeps {
   config: GitHubAppConfig;
   specRail: GitHubSpecRailPort;
@@ -177,6 +186,7 @@ export interface GitHubWebhookAppDeps {
   metrics?: GitHubCommandMetricsSink;
   httpMetrics?: HttpRequestMetricsSink;
   metricsExporter?: PrometheusMetricsExporter;
+  relayMetrics?: GitHubRelayMetricsSink;
   scheduler?: GitHubBackgroundTaskScheduler;
   relayQueue?: GitHubRelayJobQueue;
 }
@@ -769,6 +779,108 @@ export const defaultGitHubCommandMetricsSink: GitHubCommandMetricsSink = {
   },
 };
 
+export class GitHubPrometheusMetricsCollector implements HttpRequestMetricsSink, GitHubCommandMetricsSink, GitHubRelayMetricsSink, PrometheusMetricsExporter {
+  private readonly httpMetrics = new InMemoryHttpMetricsCollector();
+  private readonly commandCounts = new Map<string, { labels: Record<string, string>; value: number }>();
+  private readonly relayJobCounts = new Map<string, { labels: Record<string, string>; value: number }>();
+  private readonly relayQueueDepths = new Map<string, { labels: Record<string, string>; value: number }>();
+
+  observe(input: Parameters<HttpRequestMetricsSink["observe"]>[0]): void {
+    this.httpMetrics.observe(input);
+  }
+
+  increment(input: { reason: GitHubCommandMetricReason }): void {
+    incrementPrometheusCounter(this.commandCounts, {
+      service: "specrail-github",
+      reason: input.reason,
+    });
+  }
+
+  recordJobOutcome(input: { backend: GitHubRelayQueueBackend; outcome: GitHubRelayMetricOutcome }): void {
+    incrementPrometheusCounter(this.relayJobCounts, {
+      service: "specrail-github",
+      backend: input.backend,
+      outcome: input.outcome,
+    });
+  }
+
+  setQueueDepth(input: { backend: GitHubRelayQueueBackend; state: GitHubRelayMetricState; depth: number }): void {
+    setPrometheusGauge(this.relayQueueDepths, {
+      service: "specrail-github",
+      backend: input.backend,
+      state: input.state,
+    }, input.depth);
+  }
+
+  renderPrometheusMetrics(): string {
+    const sections = [
+      this.httpMetrics.renderPrometheusMetrics().trimEnd(),
+      renderPrometheusCounter("specrail_github_commands_total", "Total GitHub /specrail command outcomes.", this.commandCounts),
+      renderPrometheusCounter("specrail_github_relay_jobs_total", "Total GitHub terminal relay job outcomes.", this.relayJobCounts),
+      renderPrometheusGauge("specrail_github_relay_queue_depth", "Current GitHub terminal relay queue depth by state.", this.relayQueueDepths),
+    ].filter(Boolean);
+
+    return `${sections.join("\n")}\n`;
+  }
+}
+
+function incrementPrometheusCounter(metrics: Map<string, { labels: Record<string, string>; value: number }>, labels: Record<string, string>): void {
+  const key = stablePrometheusLabelKey(labels);
+  const metric = metrics.get(key);
+  if (metric) {
+    metric.value += 1;
+  } else {
+    metrics.set(key, { labels, value: 1 });
+  }
+}
+
+function setPrometheusGauge(metrics: Map<string, { labels: Record<string, string>; value: number }>, labels: Record<string, string>, value: number): void {
+  metrics.set(stablePrometheusLabelKey(labels), { labels, value });
+}
+
+function renderPrometheusCounter(name: string, help: string, metrics: Map<string, { labels: Record<string, string>; value: number }>): string {
+  return renderPrometheusMetricSet({ name, help, type: "counter", metrics });
+}
+
+function renderPrometheusGauge(name: string, help: string, metrics: Map<string, { labels: Record<string, string>; value: number }>): string {
+  return renderPrometheusMetricSet({ name, help, type: "gauge", metrics });
+}
+
+function renderPrometheusMetricSet(input: {
+  name: string;
+  help: string;
+  type: "counter" | "gauge";
+  metrics: Map<string, { labels: Record<string, string>; value: number }>;
+}): string {
+  const lines = [`# HELP ${input.name} ${input.help}`, `# TYPE ${input.name} ${input.type}`];
+  for (const metric of [...input.metrics.values()].sort((left, right) => stablePrometheusLabelKey(left.labels).localeCompare(stablePrometheusLabelKey(right.labels)))) {
+    lines.push(`${input.name}${formatPrometheusLabels(metric.labels)} ${formatPrometheusNumber(metric.value)}`);
+  }
+  return lines.join("\n");
+}
+
+function stablePrometheusLabelKey(labels: Record<string, string>): string {
+  return Object.entries(labels)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+}
+
+function formatPrometheusLabels(labels: Record<string, string>): string {
+  const entries = Object.entries(labels)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}="${escapePrometheusLabelValue(value)}"`);
+  return entries.length > 0 ? `{${entries.join(",")}}` : "";
+}
+
+function escapePrometheusLabelValue(value: string): string {
+  return value.replace(/\\/gu, "\\\\").replace(/\n/gu, "\\n").replace(/"/gu, '\\"');
+}
+
+function formatPrometheusNumber(value: number): string {
+  return Number.isFinite(value) ? String(value) : "0";
+}
+
 export function resolveGitHubRelayQueueBackend(
   config: Pick<GitHubAppConfig, "githubRelayQueueBackend" | "githubRelayQueueDir" | "githubRelayQueuePath" | "githubRelayQueuePostgresUrl">,
 ): GitHubRelayQueueBackend {
@@ -827,22 +939,23 @@ export function startGitHubWebhookApp(input: { config?: GitHubAppConfig; specRai
   const github = input.github ?? (tokenProvider ? createGitHubRestIssueCommentClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined);
   const authorization = tokenProvider ? createGitHubRestAuthorizationClient({ tokenProvider, apiBaseUrl: config.githubApiBaseUrl }) : undefined;
   const relayQueue = createGitHubRelayJobQueueFromConfig(config);
-  const httpMetrics = config.metricsEnabled ? new InMemoryHttpMetricsCollector() : undefined;
+  const metricsCollector = config.metricsEnabled ? new GitHubPrometheusMetricsCollector() : undefined;
   const server = createGitHubWebhookHttpServer({
     config,
     specRail,
     github,
     authorization,
     diagnostics: defaultGitHubDiagnosticLogger,
-    metrics: defaultGitHubCommandMetricsSink,
-    httpMetrics,
-    metricsExporter: httpMetrics,
+    metrics: metricsCollector ?? defaultGitHubCommandMetricsSink,
+    httpMetrics: metricsCollector,
+    metricsExporter: metricsCollector,
+    relayMetrics: metricsCollector,
     scheduler: defaultGitHubBackgroundTaskScheduler,
     relayQueue,
   });
   if (relayQueue && github) {
     const interval = setInterval(() => {
-      processGitHubRelayQueue({ queue: relayQueue, specRail, github }).catch((error: unknown) => {
+      processGitHubRelayQueue({ queue: relayQueue, specRail, github, backend: resolveGitHubRelayQueueBackend(config), metrics: metricsCollector }).catch((error: unknown) => {
         console.error("GitHub terminal outcome relay failed", error);
       });
     }, 5_000);
@@ -1509,12 +1622,16 @@ export async function processGitHubRelayQueue(input: {
   queue: GitHubRelayJobQueue;
   specRail: Pick<GitHubSpecRailPort, "streamRunEvents">;
   github: GitHubIssueCommentPort;
+  backend?: GitHubRelayQueueBackend;
+  metrics?: GitHubRelayMetricsSink;
   now?: Date;
 }): Promise<{ processed: boolean; jobId?: string; result?: GitHubRunEventRelayResult }> {
+  await recordGitHubRelayQueueDepth(input);
   const job = await input.queue.claimNext(input.now);
   if (!job) {
     return { processed: false };
   }
+  await recordGitHubRelayQueueDepth(input);
 
   try {
     const result = await relayGitHubRunTerminalOutcome({
@@ -1530,10 +1647,37 @@ export async function processGitHubRelayQueue(input: {
       throw new Error(`GitHub relay job ${job.id} did not post a terminal outcome: ${result.reason}`);
     }
     await input.queue.complete(job.id, input.now);
+    input.metrics?.recordJobOutcome({ backend: input.backend ?? "none", outcome: "completed" });
+    await recordGitHubRelayQueueDepth(input);
     return { processed: true, jobId: job.id, result };
   } catch (error) {
     await input.queue.fail(job.id, error, input.now);
+    const failedJob = (await input.queue.list()).find((candidate) => candidate.id === job.id);
+    input.metrics?.recordJobOutcome({ backend: input.backend ?? "none", outcome: failedJob?.status === "failed" ? "failed" : "retry" });
+    await recordGitHubRelayQueueDepth(input);
     throw error;
+  }
+}
+
+async function recordGitHubRelayQueueDepth(input: {
+  queue: GitHubRelayJobQueue;
+  backend?: GitHubRelayQueueBackend;
+  metrics?: GitHubRelayMetricsSink;
+}): Promise<void> {
+  if (!input.metrics) {
+    return;
+  }
+  const depths: Record<GitHubRelayMetricState, number> = {
+    pending: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+  };
+  for (const job of await input.queue.list()) {
+    depths[job.status] += 1;
+  }
+  for (const [state, depth] of Object.entries(depths) as Array<[GitHubRelayMetricState, number]>) {
+    input.metrics.setQueueDepth({ backend: input.backend ?? "none", state, depth });
   }
 }
 
