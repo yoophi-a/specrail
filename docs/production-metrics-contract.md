@@ -93,6 +93,18 @@ Allowed backend labels are `none`, `directory`, `json-file`, and `postgres`. All
 
 Do not add repository names, issue numbers, run ids, report URLs, operator URLs, or queue storage paths to relay metrics.
 
+## Existing API Domain Metrics
+
+The API service exports low-cardinality domain counters through the opt-in Prometheus collector:
+
+- `specrail_runs_started_total{service="specrail-api",project_id_present="<true|false>",backend="<backend>"}`
+- `specrail_run_events_total{service="specrail-api",event_type="<event_type>",status="<status>"}`
+- `specrail_runtime_approval_requests_total{service="specrail-api",decision="<approved|rejected>",provider="<provider>"}`
+
+Run start metrics are recorded only after the service successfully creates the run. Run event metrics are recorded when execution events are persisted through the API service event store. Runtime approval metrics are recorded after the approval decision is accepted and persisted.
+
+Keep API metrics aggregate-only. Do not add project ids, track ids, run ids, approval request ids, planning ids, prompts, workspace paths, session refs, or callback error details as metric labels.
+
 ## HTTP Route Labels
 
 Route labels should use normalized route templates instead of raw URLs:
@@ -142,4 +154,4 @@ Whichever shape is chosen, the in-process test surface should remain injectable 
 
 ## Open Implementation Work
 
-- Add API metric sinks once the API outcome taxonomy is stable.
+- Add exporter adapters beyond the built-in opt-in Prometheus endpoint if production deployments need OpenTelemetry or StatsD.

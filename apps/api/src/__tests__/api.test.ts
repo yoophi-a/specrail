@@ -415,6 +415,70 @@ test("API exposes Prometheus HTTP metrics only when enabled", async () => {
   );
 });
 
+test("API exposes opt-in Prometheus domain metrics", async () => {
+  await withServer(
+    async (baseUrl, { dataDir }) => {
+      const trackResponse = await fetch(`${baseUrl}/tracks`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: "API domain metrics",
+          description: "Exercise low-cardinality API metrics.",
+        }),
+      });
+      assert.equal(trackResponse.status, 201);
+      const trackPayload = (await trackResponse.json()) as { track: { id: string } };
+
+      const createRunResponse = await fetch(`${baseUrl}/runs`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          trackId: trackPayload.track.id,
+          prompt: "Start work",
+        }),
+      });
+      assert.equal(createRunResponse.status, 201);
+      const runPayload = (await createRunResponse.json()) as { run: { id: string } };
+      const requestId = `${runPayload.run.id}:approval-requested`;
+
+      await writeFile(
+        path.join(dataDir, "state", "events", `${runPayload.run.id}.jsonl`),
+        `${JSON.stringify({
+          id: requestId,
+          executionId: runPayload.run.id,
+          type: "approval_requested",
+          timestamp: "2026-04-09T07:00:00.000Z",
+          source: "codex",
+          summary: "Approve Bash",
+          status: "waiting_approval",
+          payload: { status: "waiting_approval", toolName: "Bash", toolUseId: "toolu-runtime" },
+        })}\n`,
+        { encoding: "utf8", flag: "a" },
+      );
+
+      const approveResponse = await fetch(`${baseUrl}/runs/${runPayload.run.id}/approval-requests/${requestId}/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decidedBy: "user" }),
+      });
+      assert.equal(approveResponse.status, 200);
+
+      const metricsResponse = await fetch(`${baseUrl}/metrics`);
+      const metricsBody = await metricsResponse.text();
+
+      assert.equal(metricsResponse.status, 200);
+      assert.match(metricsBody, /# TYPE specrail_runs_started_total counter/u);
+      assert.match(metricsBody, /specrail_runs_started_total\{backend="codex",project_id_present="true",service="specrail-api"\} 1/u);
+      assert.match(metricsBody, /# TYPE specrail_run_events_total counter/u);
+      assert.match(metricsBody, /specrail_run_events_total\{event_type="task_status_changed",service="specrail-api",status="running"\} [1-9][0-9]*/u);
+      assert.match(metricsBody, /specrail_run_events_total\{event_type="approval_resolved",service="specrail-api",status="running"\} 1/u);
+      assert.match(metricsBody, /# TYPE specrail_runtime_approval_requests_total counter/u);
+      assert.match(metricsBody, /specrail_runtime_approval_requests_total\{decision="approved",provider="codex",service="specrail-api"\} 1/u);
+    },
+    { SPECRAIL_METRICS_ENABLED: "true" },
+  );
+});
+
 test("API returns bad request for malformed encoded paths", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/tracks/%E0%A4%A`);

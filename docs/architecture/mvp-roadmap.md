@@ -43,9 +43,9 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - production observability
   - safe metrics contract is documented for API, GitHub, Telegram, relay queues, and exporter boundaries
   - opt-in Prometheus HTTP metrics exporter exists for API, GitHub, and Telegram services
+  - API run start, persisted run event, and runtime approval decision metrics export through the opt-in API metrics endpoint
   - GitHub command and durable relay queue metrics export through the opt-in GitHub metrics endpoint
   - Telegram update outcome metrics export through the opt-in Telegram metrics endpoint
-  - API domain metric sinks remain open once the API outcome taxonomy is stable
 - approval workflow depth
   - artifact revision approval is implemented
   - runtime permission request resolution is available through core service and HTTP APIs
@@ -63,7 +63,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - database-backed persistence
 - production auth system
 - worktree/git branch orchestration beyond metadata
-- API domain metrics beyond HTTP request instrumentation
+- exporter adapters beyond the built-in opt-in Prometheus endpoint
 
 ## Next milestone candidates
 

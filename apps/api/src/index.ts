@@ -46,6 +46,8 @@ import {
   type ExecutionWorkspaceMode,
   type ApplyExecutionWorkspaceCleanupResult,
   type ExecutionEvent,
+  type ExecutionStatus,
+  type EventStore,
   type HttpRequestMetricsSink,
   type PrometheusMetricsExporter,
   type ApprovalStatus,
@@ -70,6 +72,7 @@ interface ApiDeps {
   cleanupApplier: ExecutionWorkspaceCleanupApplier;
   httpMetrics?: HttpRequestMetricsSink;
   metricsExporter?: PrometheusMetricsExporter;
+  metrics?: ApiMetricsSink;
 }
 
 interface TrackRequestBody {
@@ -252,6 +255,79 @@ interface DefaultDependencies {
   serviceDependencies: SpecRailServiceDependencies;
 }
 
+type ApiMetricLabels = Record<string, string>;
+
+interface ApiMetricsSink extends HttpRequestMetricsSink, PrometheusMetricsExporter {
+  recordRunStarted(input: { backend: string; projectIdPresent: boolean }): void;
+  recordRunEvent(input: { eventType: string; status: string }): void;
+  recordRuntimeApprovalDecision(input: { decision: "approved" | "rejected"; provider: string }): void;
+}
+
+class ApiPrometheusMetricsCollector implements ApiMetricsSink {
+  private readonly httpMetrics = new InMemoryHttpMetricsCollector();
+  private readonly runStartCounts = new Map<string, { labels: ApiMetricLabels; value: number }>();
+  private readonly runEventCounts = new Map<string, { labels: ApiMetricLabels; value: number }>();
+  private readonly runtimeApprovalDecisionCounts = new Map<string, { labels: ApiMetricLabels; value: number }>();
+
+  observe(input: Parameters<HttpRequestMetricsSink["observe"]>[0]): void {
+    this.httpMetrics.observe(input);
+  }
+
+  recordRunStarted(input: { backend: string; projectIdPresent: boolean }): void {
+    incrementApiPrometheusCounter(this.runStartCounts, {
+      service: "specrail-api",
+      backend: normalizeApiMetricLabel(input.backend),
+      project_id_present: String(input.projectIdPresent),
+    });
+  }
+
+  recordRunEvent(input: { eventType: string; status: string }): void {
+    incrementApiPrometheusCounter(this.runEventCounts, {
+      service: "specrail-api",
+      event_type: normalizeApiMetricLabel(input.eventType),
+      status: normalizeApiMetricLabel(input.status),
+    });
+  }
+
+  recordRuntimeApprovalDecision(input: { decision: "approved" | "rejected"; provider: string }): void {
+    incrementApiPrometheusCounter(this.runtimeApprovalDecisionCounts, {
+      service: "specrail-api",
+      decision: input.decision,
+      provider: normalizeApiMetricLabel(input.provider),
+    });
+  }
+
+  renderPrometheusMetrics(): string {
+    return [
+      this.httpMetrics.renderPrometheusMetrics().trimEnd(),
+      renderApiPrometheusCounter("specrail_runs_started_total", "Total API run start outcomes.", this.runStartCounts),
+      renderApiPrometheusCounter("specrail_run_events_total", "Total persisted API run events.", this.runEventCounts),
+      renderApiPrometheusCounter("specrail_runtime_approval_requests_total", "Total runtime approval decisions resolved through the API.", this.runtimeApprovalDecisionCounts),
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+}
+
+class MetricsEventStore implements EventStore {
+  constructor(
+    private readonly delegate: EventStore,
+    private readonly metrics: ApiMetricsSink,
+  ) {}
+
+  async append(event: ExecutionEvent): Promise<void> {
+    await this.delegate.append(event);
+    this.metrics.recordRunEvent({
+      eventType: event.type,
+      status: readApiEventStatusLabel(event),
+    });
+  }
+
+  listByExecution(executionId: string): Promise<ExecutionEvent[]> {
+    return this.delegate.listByExecution(executionId);
+  }
+}
+
 interface ApiErrorDetail {
   field: string;
   message: string;
@@ -275,7 +351,75 @@ class RequestValidationError extends Error {
   }
 }
 
-function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultDependencies {
+function incrementApiPrometheusCounter(metrics: Map<string, { labels: ApiMetricLabels; value: number }>, labels: ApiMetricLabels): void {
+  const key = stableApiPrometheusLabelKey(labels);
+  const metric = metrics.get(key);
+  if (metric) {
+    metric.value += 1;
+  } else {
+    metrics.set(key, { labels, value: 1 });
+  }
+}
+
+function renderApiPrometheusCounter(name: string, help: string, metrics: Map<string, { labels: ApiMetricLabels; value: number }>): string {
+  const lines = [`# HELP ${name} ${help}`, `# TYPE ${name} counter`];
+  for (const metric of [...metrics.values()].sort((left, right) => stableApiPrometheusLabelKey(left.labels).localeCompare(stableApiPrometheusLabelKey(right.labels)))) {
+    lines.push(`${name}${formatApiPrometheusLabels(metric.labels)} ${formatApiPrometheusNumber(metric.value)}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function stableApiPrometheusLabelKey(labels: ApiMetricLabels): string {
+  return Object.entries(labels)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+}
+
+function formatApiPrometheusLabels(labels: ApiMetricLabels): string {
+  const entries = Object.entries(labels)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}="${escapeApiPrometheusLabelValue(value)}"`);
+  return entries.length > 0 ? `{${entries.join(",")}}` : "";
+}
+
+function escapeApiPrometheusLabelValue(value: string): string {
+  return value.replace(/\\/gu, "\\\\").replace(/\n/gu, "\\n").replace(/"/gu, '\\"');
+}
+
+function formatApiPrometheusNumber(value: number): string {
+  return Number.isFinite(value) ? String(value) : "0";
+}
+
+function normalizeApiMetricLabel(value: string | undefined): string {
+  const normalized = value?.trim().toLowerCase().replace(/[^a-z0-9_:-]+/gu, "_").replace(/^_+|_+$/gu, "");
+  return normalized || "unknown";
+}
+
+function readApiEventStatusLabel(event: ExecutionEvent): string {
+  if (event.status) {
+    return event.status;
+  }
+  const payloadStatus = event.payload?.status;
+  if (isExecutionStatus(payloadStatus)) {
+    return payloadStatus;
+  }
+  return "unknown";
+}
+
+function isExecutionStatus(value: unknown): value is ExecutionStatus {
+  return (
+    value === "created" ||
+    value === "queued" ||
+    value === "running" ||
+    value === "waiting_approval" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
+  );
+}
+
+function createDependencies(dataDir: string, repoArtifactRoot: string, metrics?: ApiMetricsSink): DefaultDependencies {
   const config = loadConfig();
   const stateDir = path.join(dataDir, "state");
   const artifactRoot = path.join(dataDir, "artifacts");
@@ -283,7 +427,8 @@ function createDependencies(dataDir: string, repoArtifactRoot: string): DefaultD
   const sessionsDir = path.join(dataDir, "sessions");
   const templateDir = path.resolve(PROJECT_ROOT, ".specrail-template");
 
-  const eventStore = new JsonlEventStore(stateDir);
+  const rawEventStore = new JsonlEventStore(stateDir);
+  const eventStore = metrics ? new MetricsEventStore(rawEventStore, metrics) : rawEventStore;
   const projectRepository = new FileProjectRepository(stateDir);
   const trackRepository = new FileTrackRepository(stateDir);
   const planningSessionRepository = new FilePlanningSessionRepository(stateDir);
@@ -1677,6 +1822,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
           decidedBy: body.decidedBy,
           comment: body.comment,
         });
+        const run = await deps.service.getRun(result.event.executionId);
+        deps.metrics?.recordRuntimeApprovalDecision({
+          decision: segments[4] === "approve" ? "approved" : "rejected",
+          provider: run?.backend ?? "unknown",
+        });
         sendJson(response, 200, { event: result.event });
         return;
       }
@@ -1746,6 +1896,11 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
         assertValidRunCreateBody(body);
 
         const run = await deps.service.startRun(body);
+        const track = await deps.service.getTrack(run.trackId);
+        deps.metrics?.recordRunStarted({
+          backend: run.backend,
+          projectIdPresent: Boolean(track?.projectId),
+        });
         sendJson(response, 201, { run });
         return;
       }
@@ -1968,8 +2123,8 @@ export function createSpecRailHttpServer(deps: ApiDeps): http.Server {
 
 export function createDefaultServer(): http.Server {
   const config = loadConfig();
-  const dependencies = createDependencies(config.dataDir, config.repoArtifactDir);
-  const httpMetrics = config.metricsEnabled ? new InMemoryHttpMetricsCollector() : undefined;
+  const metrics = config.metricsEnabled ? new ApiPrometheusMetricsCollector() : undefined;
+  const dependencies = createDependencies(config.dataDir, config.repoArtifactDir, metrics);
 
   return createSpecRailHttpServer({
     artifactRoot: dependencies.artifactRoot,
@@ -1980,8 +2135,9 @@ export function createDefaultServer(): http.Server {
     localRepoPath: dependencies.localRepoPath,
     sessionsDir: dependencies.sessionsDir,
     cleanupApplier: new ExecutionWorkspaceCleanupApplier(),
-    httpMetrics,
-    metricsExporter: httpMetrics,
+    httpMetrics: metrics,
+    metricsExporter: metrics,
+    metrics,
   });
 }
 
