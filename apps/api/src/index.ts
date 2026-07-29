@@ -41,7 +41,9 @@ import {
   planExecutionWorkspaceCleanup,
   renderCompletedRunReport,
   InMemoryHttpMetricsCollector,
+  incrementPrometheusCounter,
   observeHttpRequestMetrics,
+  renderPrometheusCounter,
   resolveHttpRouteLabel,
   type ExecutionWorkspaceMode,
   type ApplyExecutionWorkspaceCleanupResult,
@@ -49,6 +51,7 @@ import {
   type ExecutionStatus,
   type EventStore,
   type HttpRequestMetricsSink,
+  type PrometheusMetricMap,
   type PrometheusMetricsExporter,
   type ApprovalStatus,
   type ArtifactKind,
@@ -255,8 +258,6 @@ interface DefaultDependencies {
   serviceDependencies: SpecRailServiceDependencies;
 }
 
-type ApiMetricLabels = Record<string, string>;
-
 interface ApiMetricsSink extends HttpRequestMetricsSink, PrometheusMetricsExporter {
   recordRunStarted(input: { backend: string; projectIdPresent: boolean }): void;
   recordRunEvent(input: { eventType: string; status: string }): void;
@@ -265,16 +266,16 @@ interface ApiMetricsSink extends HttpRequestMetricsSink, PrometheusMetricsExport
 
 class ApiPrometheusMetricsCollector implements ApiMetricsSink {
   private readonly httpMetrics = new InMemoryHttpMetricsCollector();
-  private readonly runStartCounts = new Map<string, { labels: ApiMetricLabels; value: number }>();
-  private readonly runEventCounts = new Map<string, { labels: ApiMetricLabels; value: number }>();
-  private readonly runtimeApprovalDecisionCounts = new Map<string, { labels: ApiMetricLabels; value: number }>();
+  private readonly runStartCounts: PrometheusMetricMap = new Map();
+  private readonly runEventCounts: PrometheusMetricMap = new Map();
+  private readonly runtimeApprovalDecisionCounts: PrometheusMetricMap = new Map();
 
   observe(input: Parameters<HttpRequestMetricsSink["observe"]>[0]): void {
     this.httpMetrics.observe(input);
   }
 
   recordRunStarted(input: { backend: string; projectIdPresent: boolean }): void {
-    incrementApiPrometheusCounter(this.runStartCounts, {
+    incrementPrometheusCounter(this.runStartCounts, {
       service: "specrail-api",
       backend: normalizeApiMetricLabel(input.backend),
       project_id_present: String(input.projectIdPresent),
@@ -282,7 +283,7 @@ class ApiPrometheusMetricsCollector implements ApiMetricsSink {
   }
 
   recordRunEvent(input: { eventType: string; status: string }): void {
-    incrementApiPrometheusCounter(this.runEventCounts, {
+    incrementPrometheusCounter(this.runEventCounts, {
       service: "specrail-api",
       event_type: normalizeApiMetricLabel(input.eventType),
       status: normalizeApiMetricLabel(input.status),
@@ -290,7 +291,7 @@ class ApiPrometheusMetricsCollector implements ApiMetricsSink {
   }
 
   recordRuntimeApprovalDecision(input: { decision: "approved" | "rejected"; provider: string }): void {
-    incrementApiPrometheusCounter(this.runtimeApprovalDecisionCounts, {
+    incrementPrometheusCounter(this.runtimeApprovalDecisionCounts, {
       service: "specrail-api",
       decision: input.decision,
       provider: normalizeApiMetricLabel(input.provider),
@@ -300,9 +301,9 @@ class ApiPrometheusMetricsCollector implements ApiMetricsSink {
   renderPrometheusMetrics(): string {
     return [
       this.httpMetrics.renderPrometheusMetrics().trimEnd(),
-      renderApiPrometheusCounter("specrail_runs_started_total", "Total API run start outcomes.", this.runStartCounts),
-      renderApiPrometheusCounter("specrail_run_events_total", "Total persisted API run events.", this.runEventCounts),
-      renderApiPrometheusCounter("specrail_runtime_approval_requests_total", "Total runtime approval decisions resolved through the API.", this.runtimeApprovalDecisionCounts),
+      renderPrometheusCounter("specrail_runs_started_total", "Total API run start outcomes.", this.runStartCounts),
+      renderPrometheusCounter("specrail_run_events_total", "Total persisted API run events.", this.runEventCounts),
+      renderPrometheusCounter("specrail_runtime_approval_requests_total", "Total runtime approval decisions resolved through the API.", this.runtimeApprovalDecisionCounts),
     ]
       .filter(Boolean)
       .join("\n");
@@ -349,46 +350,6 @@ class RequestValidationError extends Error {
     super(message);
     this.name = "RequestValidationError";
   }
-}
-
-function incrementApiPrometheusCounter(metrics: Map<string, { labels: ApiMetricLabels; value: number }>, labels: ApiMetricLabels): void {
-  const key = stableApiPrometheusLabelKey(labels);
-  const metric = metrics.get(key);
-  if (metric) {
-    metric.value += 1;
-  } else {
-    metrics.set(key, { labels, value: 1 });
-  }
-}
-
-function renderApiPrometheusCounter(name: string, help: string, metrics: Map<string, { labels: ApiMetricLabels; value: number }>): string {
-  const lines = [`# HELP ${name} ${help}`, `# TYPE ${name} counter`];
-  for (const metric of [...metrics.values()].sort((left, right) => stableApiPrometheusLabelKey(left.labels).localeCompare(stableApiPrometheusLabelKey(right.labels)))) {
-    lines.push(`${name}${formatApiPrometheusLabels(metric.labels)} ${formatApiPrometheusNumber(metric.value)}`);
-  }
-  return `${lines.join("\n")}\n`;
-}
-
-function stableApiPrometheusLabelKey(labels: ApiMetricLabels): string {
-  return Object.entries(labels)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
-}
-
-function formatApiPrometheusLabels(labels: ApiMetricLabels): string {
-  const entries = Object.entries(labels)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}="${escapeApiPrometheusLabelValue(value)}"`);
-  return entries.length > 0 ? `{${entries.join(",")}}` : "";
-}
-
-function escapeApiPrometheusLabelValue(value: string): string {
-  return value.replace(/\\/gu, "\\\\").replace(/\n/gu, "\\n").replace(/"/gu, '\\"');
-}
-
-function formatApiPrometheusNumber(value: number): string {
-  return Number.isFinite(value) ? String(value) : "0";
 }
 
 function normalizeApiMetricLabel(value: string | undefined): string {

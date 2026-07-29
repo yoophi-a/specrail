@@ -2,9 +2,12 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL, URL } from "node:url";
 import {
   InMemoryHttpMetricsCollector,
+  incrementPrometheusCounter,
   observeHttpRequestMetrics,
+  renderPrometheusCounter,
   resolveHttpRouteLabel,
   type HttpRequestMetricsSink,
+  type PrometheusMetricMap,
   type PrometheusMetricsExporter,
 } from "@specrail/core";
 
@@ -415,7 +418,7 @@ export interface TelegramMetricsSink {
 
 export class TelegramPrometheusMetricsCollector implements HttpRequestMetricsSink, TelegramMetricsSink, PrometheusMetricsExporter {
   private readonly httpMetrics = new InMemoryHttpMetricsCollector();
-  private readonly updateCounts = new Map<string, { labels: Record<string, string>; value: number }>();
+  private readonly updateCounts: PrometheusMetricMap = new Map();
 
   observe(input: Parameters<HttpRequestMetricsSink["observe"]>[0]): void {
     this.httpMetrics.observe(input);
@@ -598,46 +601,6 @@ export function createDefaultTelegramServer(config: TelegramAppConfig = loadTele
     projectId: config.projectId,
     runReportBaseUrl: config.apiBaseUrl,
   });
-}
-
-function incrementPrometheusCounter(metrics: Map<string, { labels: Record<string, string>; value: number }>, labels: Record<string, string>): void {
-  const key = stablePrometheusLabelKey(labels);
-  const metric = metrics.get(key);
-  if (metric) {
-    metric.value += 1;
-  } else {
-    metrics.set(key, { labels, value: 1 });
-  }
-}
-
-function renderPrometheusCounter(name: string, help: string, metrics: Map<string, { labels: Record<string, string>; value: number }>): string {
-  const lines = [`# HELP ${name} ${help}`, `# TYPE ${name} counter`];
-  for (const metric of [...metrics.values()].sort((left, right) => stablePrometheusLabelKey(left.labels).localeCompare(stablePrometheusLabelKey(right.labels)))) {
-    lines.push(`${name}${formatPrometheusLabels(metric.labels)} ${formatPrometheusNumber(metric.value)}`);
-  }
-  return lines.join("\n");
-}
-
-function stablePrometheusLabelKey(labels: Record<string, string>): string {
-  return Object.entries(labels)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
-}
-
-function formatPrometheusLabels(labels: Record<string, string>): string {
-  const entries = Object.entries(labels)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}="${escapePrometheusLabelValue(value)}"`);
-  return entries.length > 0 ? `{${entries.join(",")}}` : "";
-}
-
-function escapePrometheusLabelValue(value: string): string {
-  return value.replace(/\\/gu, "\\\\").replace(/\n/gu, "\\n").replace(/"/gu, '\\"');
-}
-
-function formatPrometheusNumber(value: number): string {
-  return Number.isFinite(value) ? String(value) : "0";
 }
 
 const isMainModule = process.argv[1] ? pathToFileURL(process.argv[1]).href === import.meta.url : false;

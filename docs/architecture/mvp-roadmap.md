@@ -43,6 +43,7 @@ This roadmap reflects the implemented MVP baseline and the next practical gaps t
 - production observability
   - safe metrics contract is documented for API, GitHub, Telegram, relay queues, and exporter boundaries
   - opt-in Prometheus HTTP metrics exporter exists for API, GitHub, and Telegram services
+  - shared Prometheus metric rendering helpers keep counter/gauge formatting, label escaping, and sorting consistent across services
   - API run start, persisted run event, and runtime approval decision metrics export through the opt-in API metrics endpoint
   - GitHub command and durable relay queue metrics export through the opt-in GitHub metrics endpoint
   - Telegram update outcome metrics export through the opt-in Telegram metrics endpoint

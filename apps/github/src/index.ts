@@ -7,9 +7,14 @@ import pg from "pg";
 import type { QueryResultRow } from "pg";
 import {
   InMemoryHttpMetricsCollector,
+  incrementPrometheusCounter,
   observeHttpRequestMetrics,
+  renderPrometheusCounter,
+  renderPrometheusGauge,
   resolveHttpRouteLabel,
+  setPrometheusGauge,
   type HttpRequestMetricsSink,
+  type PrometheusMetricMap,
   type PrometheusMetricsExporter,
 } from "@specrail/core";
 
@@ -781,9 +786,9 @@ export const defaultGitHubCommandMetricsSink: GitHubCommandMetricsSink = {
 
 export class GitHubPrometheusMetricsCollector implements HttpRequestMetricsSink, GitHubCommandMetricsSink, GitHubRelayMetricsSink, PrometheusMetricsExporter {
   private readonly httpMetrics = new InMemoryHttpMetricsCollector();
-  private readonly commandCounts = new Map<string, { labels: Record<string, string>; value: number }>();
-  private readonly relayJobCounts = new Map<string, { labels: Record<string, string>; value: number }>();
-  private readonly relayQueueDepths = new Map<string, { labels: Record<string, string>; value: number }>();
+  private readonly commandCounts: PrometheusMetricMap = new Map();
+  private readonly relayJobCounts: PrometheusMetricMap = new Map();
+  private readonly relayQueueDepths: PrometheusMetricMap = new Map();
 
   observe(input: Parameters<HttpRequestMetricsSink["observe"]>[0]): void {
     this.httpMetrics.observe(input);
@@ -822,63 +827,6 @@ export class GitHubPrometheusMetricsCollector implements HttpRequestMetricsSink,
 
     return `${sections.join("\n")}\n`;
   }
-}
-
-function incrementPrometheusCounter(metrics: Map<string, { labels: Record<string, string>; value: number }>, labels: Record<string, string>): void {
-  const key = stablePrometheusLabelKey(labels);
-  const metric = metrics.get(key);
-  if (metric) {
-    metric.value += 1;
-  } else {
-    metrics.set(key, { labels, value: 1 });
-  }
-}
-
-function setPrometheusGauge(metrics: Map<string, { labels: Record<string, string>; value: number }>, labels: Record<string, string>, value: number): void {
-  metrics.set(stablePrometheusLabelKey(labels), { labels, value });
-}
-
-function renderPrometheusCounter(name: string, help: string, metrics: Map<string, { labels: Record<string, string>; value: number }>): string {
-  return renderPrometheusMetricSet({ name, help, type: "counter", metrics });
-}
-
-function renderPrometheusGauge(name: string, help: string, metrics: Map<string, { labels: Record<string, string>; value: number }>): string {
-  return renderPrometheusMetricSet({ name, help, type: "gauge", metrics });
-}
-
-function renderPrometheusMetricSet(input: {
-  name: string;
-  help: string;
-  type: "counter" | "gauge";
-  metrics: Map<string, { labels: Record<string, string>; value: number }>;
-}): string {
-  const lines = [`# HELP ${input.name} ${input.help}`, `# TYPE ${input.name} ${input.type}`];
-  for (const metric of [...input.metrics.values()].sort((left, right) => stablePrometheusLabelKey(left.labels).localeCompare(stablePrometheusLabelKey(right.labels)))) {
-    lines.push(`${input.name}${formatPrometheusLabels(metric.labels)} ${formatPrometheusNumber(metric.value)}`);
-  }
-  return lines.join("\n");
-}
-
-function stablePrometheusLabelKey(labels: Record<string, string>): string {
-  return Object.entries(labels)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
-}
-
-function formatPrometheusLabels(labels: Record<string, string>): string {
-  const entries = Object.entries(labels)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}="${escapePrometheusLabelValue(value)}"`);
-  return entries.length > 0 ? `{${entries.join(",")}}` : "";
-}
-
-function escapePrometheusLabelValue(value: string): string {
-  return value.replace(/\\/gu, "\\\\").replace(/\n/gu, "\\n").replace(/"/gu, '\\"');
-}
-
-function formatPrometheusNumber(value: number): string {
-  return Number.isFinite(value) ? String(value) : "0";
 }
 
 export function resolveGitHubRelayQueueBackend(

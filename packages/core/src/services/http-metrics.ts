@@ -1,4 +1,13 @@
 import type { ServerResponse } from "node:http";
+import {
+  formatPrometheusLabels,
+  formatPrometheusNumber,
+  incrementPrometheusCounter,
+  sortPrometheusMetrics,
+  stablePrometheusLabelKey,
+  type PrometheusLabels,
+  type PrometheusMetricMap,
+} from "./prometheus-metrics.js";
 
 export type HttpStatusClass = "1xx" | "2xx" | "3xx" | "4xx" | "5xx" | "unknown";
 
@@ -19,7 +28,7 @@ export interface PrometheusMetricsExporter {
 }
 
 export class InMemoryHttpMetricsCollector implements HttpRequestMetricsSink, PrometheusMetricsExporter {
-  private readonly requestCounts = new Map<string, { labels: PrometheusLabels; value: number }>();
+  private readonly requestCounts: PrometheusMetricMap = new Map();
   private readonly durationHistograms = new Map<string, { labels: PrometheusLabels; buckets: number[]; count: number; sum: number }>();
 
   constructor(private readonly bucketBounds: number[] = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]) {}
@@ -31,20 +40,14 @@ export class InMemoryHttpMetricsCollector implements HttpRequestMetricsSink, Pro
       method: input.method,
       status_class: input.statusClass,
     };
-    const requestKey = stableLabelKey(requestLabels);
-    const requestCount = this.requestCounts.get(requestKey);
-    if (requestCount) {
-      requestCount.value += 1;
-    } else {
-      this.requestCounts.set(requestKey, { labels: requestLabels, value: 1 });
-    }
+    incrementPrometheusCounter(this.requestCounts, requestLabels);
 
     const durationLabels: PrometheusLabels = {
       service: input.service,
       route: input.route,
       method: input.method,
     };
-    const durationKey = stableLabelKey(durationLabels);
+    const durationKey = stablePrometheusLabelKey(durationLabels);
     const histogram = this.durationHistograms.get(durationKey);
     if (histogram) {
       histogram.count += 1;
@@ -70,7 +73,7 @@ export class InMemoryHttpMetricsCollector implements HttpRequestMetricsSink, Pro
       "# TYPE specrail_http_requests_total counter",
     ];
 
-    for (const metric of sortMetrics(this.requestCounts.values())) {
+    for (const metric of sortPrometheusMetrics(this.requestCounts.values())) {
       lines.push(`specrail_http_requests_total${formatPrometheusLabels(metric.labels)} ${metric.value}`);
     }
 
@@ -79,13 +82,13 @@ export class InMemoryHttpMetricsCollector implements HttpRequestMetricsSink, Pro
       "# TYPE specrail_http_request_duration_seconds histogram",
     );
 
-    for (const metric of sortMetrics(this.durationHistograms.values())) {
+    for (const metric of sortPrometheusMetrics(this.durationHistograms.values())) {
       for (const [index, bound] of this.bucketBounds.entries()) {
         lines.push(`specrail_http_request_duration_seconds_bucket${formatPrometheusLabels({ ...metric.labels, le: String(bound) })} ${metric.buckets[index] ?? 0}`);
       }
       lines.push(`specrail_http_request_duration_seconds_bucket${formatPrometheusLabels({ ...metric.labels, le: "+Inf" })} ${metric.count}`);
       lines.push(`specrail_http_request_duration_seconds_count${formatPrometheusLabels(metric.labels)} ${metric.count}`);
-      lines.push(`specrail_http_request_duration_seconds_sum${formatPrometheusLabels(metric.labels)} ${formatMetricNumber(metric.sum)}`);
+      lines.push(`specrail_http_request_duration_seconds_sum${formatPrometheusLabels(metric.labels)} ${formatPrometheusNumber(metric.sum)}`);
     }
 
     return `${lines.join("\n")}\n`;
@@ -180,32 +183,4 @@ function matchesRouteTemplate(pathname: string, routeTemplate: string): boolean 
 
 function splitPath(pathname: string): string[] {
   return pathname === "/" ? [] : pathname.slice(1).split("/");
-}
-
-type PrometheusLabels = Record<string, string>;
-
-function stableLabelKey(labels: Record<string, string>): string {
-  return Object.entries(labels)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
-}
-
-function sortMetrics<T extends { labels: Record<string, string> }>(metrics: Iterable<T>): T[] {
-  return [...metrics].sort((left, right) => stableLabelKey(left.labels).localeCompare(stableLabelKey(right.labels)));
-}
-
-function formatPrometheusLabels(labels: Record<string, string>): string {
-  const entries = Object.entries(labels)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}="${escapePrometheusLabelValue(value)}"`);
-  return entries.length > 0 ? `{${entries.join(",")}}` : "";
-}
-
-function escapePrometheusLabelValue(value: string): string {
-  return value.replace(/\\/gu, "\\\\").replace(/\n/gu, "\\n").replace(/"/gu, '\\"');
-}
-
-function formatMetricNumber(value: number): string {
-  return Number.isFinite(value) ? String(value) : "0";
 }
